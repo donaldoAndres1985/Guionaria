@@ -39,7 +39,12 @@ export function useJobEvents() {
           if (job.status === "done") toast.success(`Video agregado: ${String(job.result?.title ?? "")}`);
           else toast.error(job.error ?? "No se pudo descargar el video");
         }
-        if (job.type === "download_media" || job.type === "download_url") {
+        if (job.type === "frame_media" && !isActive(job)) {
+          if (job.status === "done") toast.success("Video encuadrado");
+          else toast.error(job.error ?? "No se pudo encuadrar el video");
+          void client.invalidateQueries({ queryKey: ["framing"] });
+        }
+        if (job.type === "download_media" || job.type === "download_url" || job.type === "frame_media") {
           void client.invalidateQueries({ queryKey: ["scene-media"] });
           if (job.project_id != null) void client.invalidateQueries({ queryKey: ["media", job.project_id] });
         }

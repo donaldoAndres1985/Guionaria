@@ -32,7 +32,7 @@ from .services import channels, jobs, projects, script
 from .services import scenes as scene_svc
 from .services.errors import DomainError, NotFound
 from .services.jobs import JobContext, JobRead
-from .services.media import manual, video_url
+from .services.media import framing, manual, video_url
 from .services.media import service as media
 from .services.oplog import current_actor
 from .services.package import _approved_by_scene, credits_text
@@ -417,6 +417,43 @@ def build_mcp() -> MCPServer:
         """Aprueba un medio descargado para la escena (main) o lo guarda como alterno (alt)."""
         with _session() as s:
             return _scene_media(media.approve_asset(s, scene_id, asset_id, role))
+
+    @tool
+    def set_framing(
+        scene_id: int,
+        asset_id: int,
+        mode: Literal["none", "crop", "blur"] = "none",
+        crop: framing.Crop | None = None,
+        trim_in_s: float | None = None,
+        trim_out_s: float | None = None,
+    ) -> dict[str, Any]:
+        """Encuadre del medio aprobado. mode: none (tal cual), crop (área visible en fracciones
+        0–1 del original con la proporción del formato; sin crop se usa el recorte centrado) o
+        blur (medio completo sobre fondo desenfocado). trim_in_s/trim_out_s: tramo de un video.
+        Los videos con crop o blur se codifican en segundo plano (devuelve el job)."""
+        with _session() as s:
+            if mode == "crop" and crop is None:
+                crop = framing.get_framing(s, scene_id, asset_id).suggested_crop
+            data = framing.FramingIn(
+                mode=mode, crop=crop, trim_in_s=trim_in_s, trim_out_s=trim_out_s
+            )
+            state, pending = framing.save_framing(s, scene_id, asset_id, data)
+            scene = media.get_scene(s, scene_id)
+        out: dict[str, Any] = {"framing": state.model_dump()}
+        if pending:
+
+            async def work(ctx: JobContext) -> dict:
+                return await framing.render_framed_video(_session, scene_id, asset_id, ctx)
+
+            job = jobs.jobs.submit(
+                "frame_media",
+                work,
+                project_id=scene.project_id,
+                payload={"scene_id": scene_id, "asset_id": asset_id},
+                exclusive=False,
+            )
+            out["job"] = _job_summary(job)
+        return out
 
     @tool
     def approve_all_media(project_id: int) -> dict[str, Any]:

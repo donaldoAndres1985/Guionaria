@@ -1,5 +1,5 @@
-import { Film, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Crop as CropIcon, Film, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
@@ -9,6 +9,8 @@ import { coreUrl, type Project } from "@/lib/api";
 import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { CandidateCard } from "./CandidateCard";
+import { FramingDialog, type FramingTarget } from "./FramingDialog";
+import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
 import { VideoUrlDialog } from "./VideoUrlDialog";
 import { useMediaDrop } from "./useMediaDrop";
@@ -24,6 +26,7 @@ export function MediaStage({
   ctl: MediaController;
   onGoToScenes: () => void;
 }) {
+  const [framing, setFraming] = useState<FramingTarget | null>(null);
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
   const { dragging, dropProps } = useMediaDrop(
@@ -282,7 +285,11 @@ export function MediaStage({
                     {scene.approved.map((a) => (
                       <div key={a.asset.id} className="flex items-center gap-3 rounded-md border bg-background p-2 pr-3">
                         <img
-                          src={coreUrl(a.asset.thumb_url)}
+                          src={
+                            a.framing_mode !== "none" && a.asset.kind === "image" && a.approved_url
+                              ? `${coreUrl(a.approved_url)}?v=${encodeURIComponent(a.framing_mode + a.file_name)}`
+                              : coreUrl(a.asset.thumb_url)
+                          }
                           alt=""
                           className={cn(
                             "rounded object-cover",
@@ -297,7 +304,25 @@ export function MediaStage({
                           <div className="max-w-64 truncate font-mono text-[11px] text-subtle" title={a.file_name}>
                             {a.file_name}
                           </div>
+                          {framingLabel(a) && (
+                            <div className="flex items-center gap-1 text-[11px] text-brand">
+                              {a.framing_pending && <LoaderCircle className="size-3 animate-spin" />}
+                              {framingLabel(a)}
+                            </div>
+                          )}
                         </div>
+                        {ctl.editable && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={a.framing_pending}
+                            onClick={() =>
+                              setFraming({ sceneId: scene.scene_id, assetId: a.asset.id, fileUrl: a.asset.file_url })
+                            }
+                          >
+                            <CropIcon /> Encuadre
+                          </Button>
+                        )}
                         {ctl.editable && (
                           <button
                             type="button"
@@ -365,6 +390,7 @@ export function MediaStage({
       </div>
       <MediaViewer ctl={ctl} />
       <VideoUrlDialog ctl={ctl} />
+      <FramingDialog projectId={project.id} target={framing} onClose={() => setFraming(null)} />
     </div>
   );
 }

@@ -50,6 +50,11 @@ class ApprovedRead(BaseModel):
     asset: AssetRead
     role: Literal["main", "alt"]
     file_name: str
+    framing_mode: Literal["none", "crop", "blur"] = "none"
+    framing_pending: bool = False  # el video encuadrado se está generando
+    trim_in_s: float | None = None
+    trim_out_s: float | None = None
+    approved_url: str | None = None
 
 
 class SceneMediaRead(BaseModel):
