@@ -279,3 +279,106 @@ export interface ScenesState {
   review_count: number;
   segments_without_scenes: string[];
 }
+
+export interface Asset {
+  id: number;
+  kind: "image" | "video" | "audio";
+  file_name: string;
+  file_url: string;
+  thumb_url: string | null;
+  provider: string;
+  provider_id: string | null;
+  source_page_url: string | null;
+  author: string | null;
+  license: string | null;
+  width: number | null;
+  height: number | null;
+  duration_s: number | null;
+  orientation: string | null;
+  size_bytes: number | null;
+  low_res: boolean;
+}
+
+export type DownloadStatus = "none" | "queued" | "downloading" | "done" | "failed" | "manual";
+
+export interface Candidate {
+  id: number;
+  scene_id: number;
+  provider: string;
+  provider_id: string | null;
+  kind: "image" | "video";
+  preview_url: string | null;
+  video_preview_url: string | null;
+  full_url: string | null;
+  page_url: string | null;
+  width: number | null;
+  height: number | null;
+  duration_s: number | null;
+  author: string | null;
+  license: string | null;
+  query: string | null;
+  selected: boolean;
+  download_status: DownloadStatus;
+  error: string | null;
+  asset: Asset | null;
+}
+
+export interface ApprovedMedia {
+  asset: Asset;
+  role: "main" | "alt";
+  file_name: string;
+}
+
+export interface SceneMedia {
+  scene_id: number;
+  position: number;
+  seg_key: string;
+  media_kind: MediaKind;
+  narration: string | null;
+  visual_description: string | null;
+  query_en: string | null;
+  query_alt: string | null;
+  query_real: string | null;
+  start_s: number | null;
+  end_s: number | null;
+  status: SceneStatus;
+  needs_media: boolean;
+  default_query: string | null;
+  search_kind: "image" | "video" | null;
+  approved: ApprovedMedia[];
+  candidates: Candidate[];
+}
+
+export interface SceneMediaSummary {
+  scene_id: number;
+  position: number;
+  media_kind: MediaKind;
+  visual_description: string | null;
+  status: SceneStatus;
+  needs_media: boolean;
+  candidate_count: number;
+  downloaded_count: number;
+  approved_thumb_url: string | null;
+}
+
+export interface MediaOverview {
+  project_id: number;
+  orientation: "landscape" | "portrait";
+  editable: boolean;
+  approved: boolean;
+  configured_providers: string[];
+  scenes: SceneMediaSummary[];
+  needing_media: number;
+  with_media: number;
+}
+
+export interface SearchResult {
+  scene: SceneMedia;
+  warnings: string[];
+  page: number;
+  has_more: boolean;
+}
+
+/** Las URLs de archivos del núcleo son relativas (/api/assets/…). */
+export const coreUrl = (path: string | null | undefined) =>
+  path ? (path.startsWith("/") ? `${CORE_URL}${path}` : path) : undefined;

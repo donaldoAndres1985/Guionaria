@@ -18,6 +18,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { MediaBottomBar } from "@/features/media/MediaBottomBar";
+import { MediaStage } from "@/features/media/MediaStage";
+import { useMediaController } from "@/features/media/useMediaController";
 import { ScenesBottomBar } from "@/features/scenes/ScenesBottomBar";
 import { ScenesStage } from "@/features/scenes/ScenesStage";
 import { useScenesGeneration } from "@/features/scenes/useScenesGeneration";
@@ -82,6 +85,7 @@ function ProjectView({ project }: { project: Project }) {
   const generation = useScriptGeneration(project);
   const scenesGeneration = useScenesGeneration(project);
   const { data: scenesState } = useScenes(project.id);
+  const media = useMediaController(project);
 
   // Salir del proyecto con cambios del guion sin guardar pide confirmación.
   const blocker = useBlocker(
@@ -110,7 +114,7 @@ function ProjectView({ project }: { project: Project }) {
   };
 
   const stage = currentStage(project.status);
-  const compactStages = view === "escenas";
+  const compactStages = view === "escenas" || view === "medios";
   return (
     <PageLayout
       title={project.title}
@@ -125,6 +129,8 @@ function ProjectView({ project }: { project: Project }) {
           <ScriptBottomBar project={project} ctl={script} generation={generation} />
         ) : view === "escenas" ? (
           <ScenesBottomBar project={project} generation={scenesGeneration} />
+        ) : view === "medios" ? (
+          <MediaBottomBar project={project} ctl={media} />
         ) : (
           <BottomBar
             stats={[
@@ -190,7 +196,9 @@ function ProjectView({ project }: { project: Project }) {
                       ? "Generando…"
                       : s.id === "escenas" && scenesGeneration.running
                         ? "Generando…"
-                        : s.id === "escenas" && scenesState?.scenes.length
+                        : s.id === "medios" && media.overview?.needing_media
+                          ? `${STATE_TEXT[state]} · ${media.overview.with_media}/${media.overview.needing_media} con medio`
+                          : s.id === "escenas" && scenesState?.scenes.length
                           ? `${STATE_TEXT[state]} · ${scenesState.scenes.length} escenas${scenesState.review_count ? ` · ${scenesState.review_count} por revisar` : ""}`
                           : STATE_TEXT[state]
                 }
@@ -208,7 +216,7 @@ function ProjectView({ project }: { project: Project }) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {view !== "guion" && view !== "escenas" && (
+          {view !== "guion" && view !== "escenas" && view !== "medios" && (
             <div className="flex h-12 shrink-0 items-center border-b px-5">
               <span className="text-[13px] font-medium">
                 {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
@@ -296,6 +304,8 @@ function ProjectView({ project }: { project: Project }) {
               </div>
             ) : view === "guion" ? (
               <ScriptStage project={project} ctl={script} generation={generation} />
+            ) : view === "medios" ? (
+              <MediaStage project={project} ctl={media} onGoToScenes={() => setView("escenas")} />
             ) : view === "escenas" ? (
               <ScenesStage
                 project={project}

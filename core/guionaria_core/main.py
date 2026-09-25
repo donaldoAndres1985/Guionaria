@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import channels, health, jobs, projects, prompts, scenes, script, settings
+from .api import channels, health, jobs, media, projects, prompts, scenes, script, settings
 from .config import ensure_home
 from .db import run_migrations
 from .security import ALLOWED_ORIGINS
@@ -32,7 +32,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    for module in (health, settings, channels, projects, script, scenes, jobs, prompts):
+    for module in (health, settings, channels, projects, script, scenes, media, jobs, prompts):
         app.include_router(module.router)
 
     @app.exception_handler(DomainError)
