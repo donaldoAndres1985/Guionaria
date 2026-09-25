@@ -46,3 +46,26 @@ def test_dependency_check_works_on_selector_loop(home):
     finally:
         loop.close()
     assert any(d.name == "claude" for d in deps)
+
+
+def test_core_exits_when_parent_dies(tmp_path):
+    import subprocess
+    import sys
+
+    env = {**__import__("os").environ, "GUIONARIA_HOME": str(tmp_path / "h")}
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys, time; from guionaria_core.watchdog import exit_when_parent_dies;"
+            f"exit_when_parent_dies({parent.pid}); time.sleep(60); sys.exit(1)",
+        ],
+        env=env,
+    )
+    try:
+        parent.kill()
+        assert child.wait(timeout=10) == 0
+    finally:
+        child.kill()
+        parent.kill()

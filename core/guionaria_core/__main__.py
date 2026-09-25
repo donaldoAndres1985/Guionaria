@@ -14,6 +14,9 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser("serve", help="Inicia la API local (por defecto)")
     serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     serve.add_argument("--reload", action="store_true", help="Recarga en caliente (desarrollo)")
+    serve.add_argument(
+        "--parent-pid", type=int, help="PID de la app: el núcleo se cierra cuando ella termina"
+    )
 
     sub.add_parser("mcp", help="Servidor MCP por stdio para Claude Desktop")
 
@@ -26,6 +29,11 @@ def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
     port = getattr(args, "port", DEFAULT_PORT)
+    if parent_pid := getattr(args, "parent_pid", None):
+        from guionaria_core.watchdog import exit_when_parent_dies
+
+        exit_when_parent_dies(parent_pid)
+
     if getattr(args, "reload", False):
         # Sin límite, la recarga se traba esperando las conexiones keep-alive de la UI.
         uvicorn.run(
