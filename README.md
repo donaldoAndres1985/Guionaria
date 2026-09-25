@@ -35,8 +35,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **1 — MVP de producción** | Canales y proyectos · guion con Claude y editor TipTap · tabla de escenas · Pexels y Pixabay · descargas, miniaturas y renombrado · vista grande, arrastrar y soltar, Ctrl+V · paquete del proyecto | ✅ Completa |
 | **2A — Material real** | SearXNG, Wikimedia Commons, Openverse, Unsplash · video desde URL con yt-dlp (con fragmento) | ✅ Completa |
 | **2B — Voz y tiempos** | TTS local (Piper) o voz grabada · Whisper para tiempos reales · SRT/VTT | ✅ Completa |
-| 2C — Timeline | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ⏳ Siguiente |
-| 2D — MCP | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ⏳ |
+| **2C — Timeline** | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ✅ Completa |
+| 2D — MCP | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ⏳ Siguiente |
 | 2E — Encuadre | Zona visible en 16:9 o 9:16 y tramo del clip | ⏳ |
 | 3 — Organización | Biblioteca global, almacenamiento, calendario, ideas, historial | ⏳ |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
@@ -97,6 +97,15 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - Los tiempos reales reemplazan a los estimados en la tabla de escenas y en los nombres de los archivos aprobados. Se escriben `subs/voz.srt` y `subs/voz.vtt`.
 - Forma de onda con los segmentos marcados; clic en un segmento para escucharlo.
 - Si cambias el guion después, la voz queda **desactualizada** y las escenas vuelven a los tiempos estimados hasta que la generes o transcribas de nuevo.
+
+### Timeline
+
+- Vista previa de las pistas: video con miniaturas, marcadores y voz, sobre una regla de tiempo.
+- **Exportar timeline** escribe `timeline/proyecto.otio`, `proyecto.fcpxml` (1.9) y `proyecto.edl` (CMX 3600), a 30 cuadros/s y con la resolución del formato.
+- El video queda continuo: cada escena dura hasta el inicio de la siguiente, aunque la voz tenga pausas entre segmentos.
+- Texto y negro quedan como hueco para armarlos en el editor. Cada escena lleva un **marcador** con su efecto, texto en pantalla, SFX y música.
+- Avisos antes de editar: escenas sin medio, videos más cortos que su escena o proyecto sin voz.
+- En DaVinci Resolve: *Archivo → Importar → Timeline* y elige el `.otio` o el `.fcpxml`. El `LEEME.txt` del proyecto repite los pasos.
 
 ### Canales y ajustes
 
@@ -200,6 +209,7 @@ Guionaria/
     ├── guion.md · escenas.md · escenas.csv · escenas.json · creditos.txt · LEEME.txt
     ├── audio/voz.wav · audio/segments/seg_001.wav …
     ├── subs/voz.srt · subs/voz.vtt
+    ├── timeline/proyecto.otio · proyecto.fcpxml · proyecto.edl
     └── media/
         ├── approved/   001_0000_real_cecil-hotel-los-angeles.jpg   ← {escena}_{inicio}_{tipo}_{slug}
         ├── candidates/ 001_wikimedia_12345.jpg
@@ -208,7 +218,7 @@ Guionaria/
 
 ## Pruebas
 
-- **282 pruebas automáticas:** 197 del núcleo y 85 de la app.
+- **294 pruebas automáticas:** 203 del núcleo y 91 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:
@@ -216,7 +226,8 @@ Guionaria/
   - búsquedas en Wikimedia y Openverse;
   - un fragmento de YouTube con yt-dlp;
   - importación desde una página web;
-  - voz real con Piper y transcripción con Whisper, también desde el sidecar empaquetado.
+  - voz real con Piper y transcripción con Whisper, también desde el sidecar empaquetado;
+  - exportación del timeline de un proyecto con archivos reales, desde el código y desde el sidecar.
 
 ## Derechos y responsabilidad
 

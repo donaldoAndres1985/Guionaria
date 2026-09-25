@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "faster-whisper>=1.2.1",
     "httpx>=0.28.1",
+    "opentimelineio>=0.18.1",
     "pillow>=12.3.0",
     "piper-tts>=1.8.0",
     "pydantic-settings>=2.15.0",

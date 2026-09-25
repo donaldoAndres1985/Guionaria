@@ -432,3 +432,47 @@ export interface VoiceState {
   default_voice: string;
   whisper_model: string;
 }
+
+export type TimelineFormat = "otio" | "fcpxml" | "edl";
+
+export interface TimelineScene {
+  position: number;
+  kind: MediaKind;
+  start_s: number;
+  duration_s: number;
+  clip_duration_s: number | null;
+  file_name: string | null;
+  thumb_url: string | null;
+  text: string | null;
+}
+
+export interface TimelineMarker {
+  time_s: number;
+  name: string;
+  note: string;
+  color: "ORANGE" | "BLUE" | "GREEN" | "PURPLE";
+}
+
+export interface TimelineState {
+  project_id: number;
+  can_export: boolean;
+  reason: string | null;
+  fps: number;
+  width: number;
+  height: number;
+  duration_s: number;
+  has_voice: boolean;
+  voice_duration_s: number | null;
+  scenes: TimelineScene[];
+  markers: TimelineMarker[];
+  warnings: string[];
+  folder: string;
+  exports: { format: TimelineFormat; file: string; updated_at: string }[];
+}
+
+export interface TimelineExport {
+  folder: string;
+  files: string[];
+  warnings: string[];
+  state: TimelineState;
+}
