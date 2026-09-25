@@ -23,7 +23,9 @@ Node LTS, Rust (MSVC), uv, FFmpeg y Claude Code CLI. Ver [docs/setup-windows.md]
 | `npm install` | Instala las dependencias del frontend (workspaces) |
 | `npm run dev` | Arranca el núcleo con recarga (ventana minimizada aparte) y la app Tauri |
 | `npm run core:dev` | Solo el núcleo en `http://127.0.0.1:8765` |
-| `npm run core:test` | Tests (pytest) y lint (ruff) del núcleo |
+| `npm test` | Todas las pruebas: núcleo (pytest + ruff) y app (vitest) |
+| `npm run core:test` | Pruebas y lint del núcleo |
+| `npm run app:test` | Pruebas de la app (editor de guion, conversiones) |
 | `npm run typecheck` | Chequeo de tipos del frontend |
 | `npm run sidecar:build` | Empaqueta el núcleo con PyInstaller como sidecar |
 | `npm run build` | Sidecar + instalador NSIS de la app |

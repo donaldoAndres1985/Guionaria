@@ -1,6 +1,6 @@
-import { Check, FileText, Info, Sparkles, Trash2 } from "lucide-react";
+import { Check, FileText, Info, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useBlocker, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -18,6 +18,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ScriptBottomBar } from "@/features/script/ScriptBottomBar";
+import { ScriptStage } from "@/features/script/ScriptStage";
+import { useScriptEditor } from "@/features/script/useScriptEditor";
+import { useScriptGeneration } from "@/features/script/useScriptGeneration";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
 import type { Project, ProjectUpdate } from "@/lib/api";
 import {
@@ -70,6 +74,14 @@ function ProjectView({ project }: { project: Project }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const update = useUpdateProject(project.id);
   const remove = useDeleteProject();
+  const script = useScriptEditor(project);
+  const generation = useScriptGeneration(project);
+
+  // Salir del proyecto con cambios del guion sin guardar pide confirmación.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      script.dirty && currentLocation.pathname !== nextLocation.pathname,
+  );
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   const valid = draft.title.trim().length > 0 && draft.duration > 0;
@@ -92,18 +104,6 @@ function ProjectView({ project }: { project: Project }) {
   };
 
   const stage = currentStage(project.status);
-  const primary =
-    view === "resumen" ? (
-      <Button size="lg" className="min-w-36" disabled={!dirty || !valid || update.isPending} onClick={save}>
-        Guardar cambios
-      </Button>
-    ) : (
-      <Button size="lg" disabled title="Llega en la entrega 1B">
-        <Sparkles />
-        Generar guion con Claude
-      </Button>
-    );
-
   return (
     <PageLayout
       title={project.title}
@@ -114,24 +114,37 @@ function ProjectView({ project }: { project: Project }) {
         </div>
       }
       bottomBar={
-        <BottomBar
-          stats={[
-            { label: "Etapa", value: stage?.label ?? "Publicado" },
-            {
-              label: "Duración objetivo",
-              value: formatDuration(project.target_duration_s),
-              highlight: true,
-            },
-            { label: "Publicación", value: formatDate(project.target_publish_at) },
-          ]}
-        >
-          {view === "resumen" && dirty && (
-            <Button variant="ghost" onClick={() => setDraft(initial)}>
-              Descartar
-            </Button>
-          )}
-          {primary}
-        </BottomBar>
+        view === "guion" ? (
+          <ScriptBottomBar project={project} ctl={script} generation={generation} />
+        ) : (
+          <BottomBar
+            stats={[
+              { label: "Etapa", value: stage?.label ?? "Publicado" },
+              {
+                label: "Duración objetivo",
+                value: formatDuration(project.target_duration_s),
+                highlight: true,
+              },
+              { label: "Publicación", value: formatDate(project.target_publish_at) },
+            ]}
+          >
+            {view === "resumen" && dirty && (
+              <Button variant="ghost" onClick={() => setDraft(initial)}>
+                Descartar
+              </Button>
+            )}
+            {view === "resumen" && (
+              <Button
+                size="lg"
+                className="min-w-36"
+                disabled={!dirty || !valid || update.isPending}
+                onClick={save}
+              >
+                Guardar cambios
+              </Button>
+            )}
+          </BottomBar>
+        )
       }
     >
       <div className="flex min-h-0 flex-1">
@@ -154,7 +167,13 @@ function ProjectView({ project }: { project: Project }) {
                 onClick={() => setView(s.id)}
                 icon={s.icon}
                 label={s.label}
-                subtitle={STATE_TEXT[state]}
+                subtitle={
+                  s.id === "guion" && script.script
+                    ? `${STATE_TEXT[state]} · v${script.script.version} · ${formatDuration(script.estimated)}${script.dirty ? " · sin guardar" : ""}`
+                    : s.id === "guion" && generation.generating
+                      ? "Generando…"
+                      : STATE_TEXT[state]
+                }
                 indicator={
                   state === "done" ? (
                     <Check className="size-4 text-success-foreground" />
@@ -169,14 +188,16 @@ function ProjectView({ project }: { project: Project }) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center border-b px-5">
-            <span className="text-[13px] font-medium">
-              {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
-            </span>
-            <span className="ml-auto text-[12px] text-muted-foreground">
-              {STATUS_LABEL[project.status]}
-            </span>
-          </div>
+          {view !== "guion" && (
+            <div className="flex h-12 shrink-0 items-center border-b px-5">
+              <span className="text-[13px] font-medium">
+                {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
+              </span>
+              <span className="ml-auto text-[12px] text-muted-foreground">
+                {STATUS_LABEL[project.status]}
+              </span>
+            </div>
+          )}
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {view === "resumen" ? (
@@ -253,6 +274,8 @@ function ProjectView({ project }: { project: Project }) {
                   </Button>
                 </div>
               </div>
+            ) : view === "guion" ? (
+              <ScriptStage project={project} ctl={script} generation={generation} />
             ) : (
               <StagePlaceholder stageId={view} project={project} />
             )}
@@ -260,6 +283,15 @@ function ProjectView({ project }: { project: Project }) {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={blocker.state === "blocked"}
+        onOpenChange={(open) => !open && blocker.reset?.()}
+        title="Tienes cambios sin guardar en el guion"
+        description="Si sales ahora se pierden. Puedes volver y guardarlos con Ctrl+S."
+        confirmLabel="Salir sin guardar"
+        destructive
+        onConfirm={() => blocker.proceed?.()}
+      />
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -286,15 +318,6 @@ function StagePlaceholder({ stageId, project }: { stageId: StageId; project: Pro
   const state = stageState(stage, project.status);
   const previous = STAGES[STAGES.indexOf(stage) - 1];
 
-  if (stageId === "guion") {
-    return (
-      <EmptyState
-        icon={stage.icon}
-        title="Sin guion todavía"
-        description={`Claude escribirá un guion de ${formatDuration(project.target_duration_s)} a partir del tema, tus notas y el estilo del canal. Llega en la entrega 1B.`}
-      />
-    );
-  }
   return (
     <EmptyState
       icon={stage.icon}

@@ -6,24 +6,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import channels, health, projects, settings
+from .api import channels, health, jobs, projects, prompts, script, settings
 from .config import ensure_home
 from .db import run_migrations
+from .security import ALLOWED_ORIGINS
 from .services.errors import DomainError
-
-# Orígenes del webview de Tauri (Windows usa http://tauri.localhost) y del dev server de Vite.
-ALLOWED_ORIGINS = [
-    "http://localhost:1420",
-    "http://tauri.localhost",
-    "https://tauri.localhost",
-    "tauri://localhost",
-]
+from .services.jobs import fail_interrupted
+from .services.prompts import ensure_prompts
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     ensure_home()
     run_migrations()
+    ensure_prompts()
+    fail_interrupted()
     yield
 
 
@@ -35,10 +32,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    app.include_router(health.router)
-    app.include_router(settings.router)
-    app.include_router(channels.router)
-    app.include_router(projects.router)
+    for module in (health, settings, channels, projects, script, jobs, prompts):
+        app.include_router(module.router)
 
     @app.exception_handler(DomainError)
     async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:

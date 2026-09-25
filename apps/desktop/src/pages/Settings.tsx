@@ -11,6 +11,7 @@ import {
   type LucideIcon,
   RefreshCw,
   SlidersHorizontal,
+  Sparkles,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
@@ -29,8 +30,9 @@ import {
 import { useHealth, useRefreshDependencies, useSaveSettings, useSettings } from "@/hooks/useCore";
 import type { ApiKeys, AppSettings, DependencyStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ClaudeSettings } from "@/features/settings/ClaudeSettings";
 
-type CategoryId = "deps" | "folders" | "keys" | "prefs";
+type CategoryId = "deps" | "claude" | "folders" | "keys" | "prefs";
 
 const API_KEYS: { id: keyof ApiKeys; label: string; hint: string }[] = [
   { id: "pexels", label: "Pexels", hint: "Fotos y videos de stock · pexels.com/api" },
@@ -64,6 +66,12 @@ export function SettingsPage() {
       title: "Dependencias",
       subtitle: `${deps.filter((d) => d.ok).length}/${deps.length} disponibles`,
       value: missingRequired > 0 ? `${missingRequired} faltan` : deps.length ? "OK" : "…",
+    },
+    {
+      id: "claude",
+      icon: Sparkles,
+      title: "Claude",
+      subtitle: current?.claude_model ? `Modelo: ${current.claude_model}` : "Modelo y prompts",
     },
     { id: "folders", icon: FolderOpen, title: "Carpetas", subtitle: "Datos, base de datos y ajustes" },
     {
@@ -205,6 +213,10 @@ export function SettingsPage() {
                   />
                 ))}
               </div>
+            )}
+
+            {category === "claude" && current && (
+              <ClaudeSettings settings={current} onChange={update} />
             )}
 
             {category === "prefs" && current && (

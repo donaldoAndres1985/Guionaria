@@ -70,6 +70,7 @@ class ApiKeys(BaseModel):
 
 
 class AppSettings(BaseModel):
+    claude_model: str = ""  # vacío = el modelo por defecto de la CLI (alias: sonnet, opus, haiku)
     searxng_url: str = "http://127.0.0.1:8888"
     whisper_model: str = "small"
     tts_engine: str = "piper"

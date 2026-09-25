@@ -94,16 +94,23 @@ def list_projects(
     return [to_read(p, c) for p, c in rows]
 
 
-def _index_fts(session: Session, project: Project) -> None:
+def index_fts(session: Session, project: Project, script_text: str | None = None) -> None:
+    """Reindexa el proyecto. Sin script_text se conserva el texto de guion ya indexado."""
+    if script_text is None:
+        row = session.exec(
+            text("SELECT script_text FROM project_fts WHERE rowid = :id").bindparams(id=project.id)
+        ).first()
+        script_text = row[0] if row else ""
     session.exec(text("DELETE FROM project_fts WHERE rowid = :id").bindparams(id=project.id))
     session.exec(
         text(
             "INSERT INTO project_fts (rowid, title, topic, script_text, tags) "
-            "VALUES (:id, :title, :topic, '', :tags)"
+            "VALUES (:id, :title, :topic, :script, :tags)"
         ).bindparams(
             id=project.id,
             title=project.title,
             topic=project.topic or "",
+            script=script_text,
             tags=" ".join(json.loads(project.tags or "[]")),
         )
     )
@@ -149,7 +156,7 @@ def create_project(session: Session, data: ProjectCreate) -> ProjectRead:
     folder = project_dir(project)
     for sub in PROJECT_SUBDIRS:
         (folder / sub).mkdir(parents=True, exist_ok=True)
-    _index_fts(session, project)
+    index_fts(session, project)
     _write_snapshot(project, channel)
 
     log_operation(
@@ -170,7 +177,7 @@ def update_project(session: Session, project_id: int, data: ProjectUpdate) -> Pr
     project.updated_at = now_iso()
 
     channel = get_channel(session, project.channel_id)
-    _index_fts(session, project)
+    index_fts(session, project)
     _write_snapshot(project, channel)
     log_operation(session, "update", "project", project.id, {"fields": sorted(changes)})
     session.commit()
@@ -187,6 +194,9 @@ def delete_project(session: Session, project_id: int) -> None:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.move(str(folder), str(trash / f"{stamp}_{folder.name}"))
 
+    from .script import delete_script_data  # import local: script depende de este módulo
+
+    delete_script_data(session, project.id)
     session.exec(text("DELETE FROM project_fts WHERE rowid = :id").bindparams(id=project.id))
     log_operation(session, "delete", "project", project.id, {"title": project.title})
     session.delete(project)
