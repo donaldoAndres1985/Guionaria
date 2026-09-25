@@ -23,8 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "mcp":
-        print("El servidor MCP llega en la Fase 2 (sección 17 de SPEC.md).", file=sys.stderr)
-        return 2
+        return run_stdio_mcp()
 
     import uvicorn
 
@@ -47,6 +46,24 @@ def main(argv: list[str] | None = None) -> int:
         from guionaria_core.main import app
 
         uvicorn.run(app, host=DEFAULT_HOST, port=port)
+    return 0
+
+
+def run_stdio_mcp() -> int:
+    """MCP por stdio para Claude Desktop. stdout es el canal del protocolo: nada más escribe ahí."""
+    import logging
+
+    logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
+    from guionaria_core.config import ensure_home
+    from guionaria_core.db import run_migrations
+    from guionaria_core.mcp_server import build_mcp
+    from guionaria_core.services.prompts import ensure_prompts
+
+    ensure_home()
+    run_migrations()
+    ensure_prompts()
+    # No se marcan como interrumpidos los trabajos: pueden ser de la app, que sigue abierta.
+    build_mcp().run("stdio")
     return 0
 
 

@@ -34,6 +34,9 @@ try {
         --collect-data faster_whisper `
         --collect-binaries ctranslate2 `
         --collect-all opentimelineio `
+        --collect-submodules mcp.server `
+        --collect-submodules mcp.shared `
+        --exclude-module mcp.cli `
         --exclude-module piper.train `
         guionaria_core\__main__.py
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller terminó con código $LASTEXITCODE" }

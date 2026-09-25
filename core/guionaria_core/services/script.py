@@ -209,7 +209,7 @@ def save_script(
     project_id: int,
     incoming: list[SegmentIn],
     source: str = "manual",
-    actor: str = "ui",
+    actor: str | None = None,
 ) -> ScriptRead:
     project = get_project(session, project_id)
     if project.status not in EDITABLE:

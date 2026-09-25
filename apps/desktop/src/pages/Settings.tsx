@@ -8,6 +8,7 @@ import {
   EyeOff,
   FolderOpen,
   KeyRound,
+  Plug,
   type LucideIcon,
   RefreshCw,
   SlidersHorizontal,
@@ -31,9 +32,10 @@ import { useHealth, useRefreshDependencies, useSaveSettings, useSettings } from 
 import type { ApiKeys, AppSettings, DependencyStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeSettings } from "@/features/settings/ClaudeSettings";
+import { McpSettings } from "@/features/settings/McpSettings";
 import { VoiceSelect } from "@/features/voice/VoiceSelect";
 
-type CategoryId = "deps" | "claude" | "folders" | "keys" | "prefs";
+type CategoryId = "deps" | "claude" | "mcp" | "folders" | "keys" | "prefs";
 
 const API_KEYS: { id: keyof ApiKeys; label: string; hint: string }[] = [
   { id: "pexels", label: "Pexels", hint: "Fotos y videos de stock · pexels.com/api" },
@@ -74,6 +76,7 @@ export function SettingsPage() {
       title: "Claude",
       subtitle: current?.claude_model ? `Modelo: ${current.claude_model}` : "Modelo y prompts",
     },
+    { id: "mcp", icon: Plug, title: "Conexión MCP", subtitle: "Usar Guionaria desde Claude" },
     { id: "folders", icon: FolderOpen, title: "Carpetas", subtitle: "Datos, base de datos y ajustes" },
     {
       id: "keys",
@@ -219,6 +222,8 @@ export function SettingsPage() {
             {category === "claude" && current && (
               <ClaudeSettings settings={current} onChange={update} />
             )}
+
+            {category === "mcp" && <McpSettings />}
 
             {category === "prefs" && current && (
               <div className="grid max-w-xl gap-5 p-5">

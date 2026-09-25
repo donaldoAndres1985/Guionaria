@@ -858,7 +858,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] SearXNG, Wikimedia, Openverse, Unsplash; yt-dlp desde URL.
 - [x] TTS (Piper/Kokoro) + faster-whisper + tiempos reales + SRT. *(Piper; Kokoro queda opcional)*
 - [x] Export OTIO / FCPXML / EDL.
-- [ ] Servidor MCP con las herramientas de la sección 12.
+- [x] Servidor MCP con las herramientas de la sección 12.
 - [ ] Recorte/encuadre y recorte de tiempo por medio.
 
 ### Fase 3 — Organización profesional (2 semanas)
