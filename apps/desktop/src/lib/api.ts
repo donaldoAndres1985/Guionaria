@@ -78,6 +78,7 @@ export interface ApiKeys {
 }
 
 export interface AppSettings {
+  claude_model: string;
   searxng_url: string;
   whisper_model: string;
   tts_engine: string;
@@ -149,4 +150,73 @@ export interface Project extends ProjectInput {
   parent_project_id: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SegmentInput {
+  seg_key: string | null;
+  section: string | null;
+  text: string;
+  needs_fact_check: boolean;
+}
+
+export interface ScriptSegment {
+  seg_key: string;
+  position: number;
+  section: string | null;
+  text: string;
+  est_duration_s: number;
+  needs_fact_check: boolean;
+}
+
+export interface Script {
+  project_id: number;
+  version: number;
+  status: "draft" | "approved" | "superseded";
+  source: string | null;
+  created_at: string;
+  segments: ScriptSegment[];
+  word_count: number;
+  total_est_s: number;
+  target_duration_s: number | null;
+  words_per_second: number;
+  sections: string[];
+}
+
+export interface ScriptVersionSummary {
+  version: number;
+  status: Script["status"];
+  source: string | null;
+  created_at: string;
+  segment_count: number;
+  word_count: number;
+  total_est_s: number;
+}
+
+export interface RewriteResult {
+  seg_key: string;
+  fragmento: string;
+  texto: string;
+  verificar_dato: boolean;
+}
+
+export type JobStatus = "queued" | "running" | "done" | "failed";
+
+export interface Job {
+  id: number;
+  type: string;
+  project_id: number | null;
+  status: JobStatus;
+  progress: number;
+  message: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface Prompt {
+  name: string;
+  label: string;
+  content: string;
+  is_default: boolean;
 }

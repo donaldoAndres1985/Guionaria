@@ -9,8 +9,10 @@ class Job(SQLModel, table=True):
     type: str
     project_id: int | None = None
     payload: str | None = None
-    status: str | None = None
+    status: str | None = None  # queued | running | done | failed
     progress: float | None = None
+    message: str | None = None  # texto de progreso para la UI
+    result: str | None = None  # JSON con el resultado
     error: str | None = None
     created_at: str = Field(default_factory=now_iso)
     finished_at: str | None = None

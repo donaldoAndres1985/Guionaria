@@ -11,6 +11,8 @@
     "core:dev": "cd core && uv run guionaria-core serve --reload",
     "core:test": "cd core && uv run pytest -q && uv run ruff check .",
     "sidecar:build": "powershell -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
-    "typecheck": "npm run typecheck -w @guionaria/desktop"
+    "typecheck": "npm run typecheck -w @guionaria/desktop",
+    "app:test": "npm run test -w @guionaria/desktop",
+    "test": "npm run core:test && npm run app:test"
   }
 }

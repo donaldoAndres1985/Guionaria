@@ -16,6 +16,7 @@ try {
         --name guionaria-core `
         --distpath build\dist --workpath build\work --specpath build `
         --add-data "$coreDir\guionaria_core\migrations;guionaria_core\migrations" `
+        --add-data "$coreDir\guionaria_core\prompts;guionaria_core\prompts" `
         --collect-submodules uvicorn `
         --collect-submodules guionaria_core `
         guionaria_core\__main__.py

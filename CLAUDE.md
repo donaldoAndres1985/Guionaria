@@ -12,7 +12,8 @@
 ## Comandos
 
 - `npm run dev`: núcleo (uvicorn --reload, consola aparte) + app Tauri.
-- `npm run core:test`: pytest + ruff del núcleo (desde `core/`: `uv run pytest -q`).
+- `npm test`: todas las pruebas (núcleo: pytest + ruff; app: vitest). Por separado: `npm run core:test`, `npm run app:test`.
+- Las pruebas nunca llaman a la CLI real de Claude: el núcleo usa el fixture `fake_claude` (tests/conftest.py) y la app simula `fetch`.
 - `npm run typecheck`: tipos del frontend.
 - `npm run sidecar:build` / `npm run build`: PyInstaller + instalador.
 - Nueva migración: `cd core; uv run alembic revision --autogenerate -m "..."` y revisar el archivo generado.
