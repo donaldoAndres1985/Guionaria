@@ -1,6 +1,7 @@
 """Búsqueda, descarga y revisión de medios por escena (secciones 5.5, 5.6 y 5.8 de SPEC.md)."""
 
 import asyncio
+import contextlib
 import json
 import shutil
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ from ..oplog import log_operation
 from ..projects import get_project, project_dir
 from . import naming, process
 from .http import http_client
-from .providers import PROVIDERS, Candidate, Orientation, ProviderError
+from .providers import DEFAULTS, PROVIDERS, Candidate, Orientation, ProviderError
 
 PER_PAGE = 15
 CACHE_TTL = timedelta(hours=24)  # Pixabay pide cachear 24 h
@@ -45,17 +46,20 @@ MEDIA_KINDS = ("video", "image", "real")  # texto y negro se generan en el rende
 # Etapa de medios: se busca y descarga desde que las escenas están aprobadas.
 OPEN = (ProjectStatus.ESCENAS_APROBADAS, ProjectStatus.MEDIOS_EN_REVISION)
 
-_download_slots: asyncio.Semaphore | None = None
-_download_slots_size = 0
+_download_slots: tuple[asyncio.AbstractEventLoop, int, asyncio.Semaphore] | None = None
 
 
 def _slots() -> asyncio.Semaphore:
-    """Límite global de descargas simultáneas (Ajustes → descargas en paralelo)."""
-    global _download_slots, _download_slots_size
+    """Límite global de descargas simultáneas (Ajustes → descargas en paralelo).
+
+    Un Semaphore queda atado al event loop donde se usa por primera vez: se recrea si cambia
+    el loop (otro proceso de servidor, tests) o el límite configurado."""
+    global _download_slots
+    loop = asyncio.get_running_loop()
     size = load_settings().download_parallelism
-    if _download_slots is None or size != _download_slots_size:
-        _download_slots, _download_slots_size = asyncio.Semaphore(size), size
-    return _download_slots
+    if _download_slots is None or _download_slots[0] is not loop or _download_slots[1] != size:
+        _download_slots = (loop, size, asyncio.Semaphore(size))
+    return _download_slots[2]
 
 
 # --- utilidades ---
@@ -89,9 +93,32 @@ def _rel(path: Path) -> str:
     return path.relative_to(get_paths().home).as_posix()
 
 
-def configured_providers() -> list[str]:
-    keys = load_settings().api_keys
-    return [name for name in PROVIDERS if getattr(keys, name, "")]
+def configured_providers(kind: str | None = None) -> list[str]:
+    """Fuentes utilizables: las que no piden clave y las que tienen su clave en Ajustes."""
+    settings = load_settings()
+    out = []
+    for name, cls in PROVIDERS.items():
+        if kind and kind not in cls.kinds:
+            continue
+        if cls.needs_key and not getattr(settings.api_keys, name, ""):
+            continue
+        if name == "searxng" and not settings.searxng_url:
+            continue
+        out.append(name)
+    return out
+
+
+def make_provider(name: str):
+    settings = load_settings()
+    if name == "searxng":
+        return PROVIDERS[name](settings.searxng_url)
+    return PROVIDERS[name](getattr(settings.api_keys, name, ""))
+
+
+def default_providers(scene: Scene) -> list[str]:
+    kind = search_kind(scene)
+    available = configured_providers(kind) if kind else []
+    return [p for p in DEFAULTS.get(scene.media_kind, []) if p in available]
 
 
 def get_scene(session: Session, scene_id: int) -> Scene:
@@ -209,6 +236,8 @@ def scene_media(session: Session, scene_id: int) -> SceneMediaRead:
         needs_media=needs_media(scene),
         default_query=default_query(scene),
         search_kind=search_kind(scene),
+        available_providers=configured_providers(search_kind(scene)) if search_kind(scene) else [],
+        default_providers=default_providers(scene),
         approved=approved,
         candidates=[_candidate_read(session, c) for c in _candidates(session, scene_id)],
     )
@@ -296,8 +325,9 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
     if not query:
         raise DomainError("Escribe qué buscar: la escena no tiene búsqueda definida")
 
-    available = configured_providers()
-    wanted = [p for p in (req.providers or list(PROVIDERS)) if p in PROVIDERS]
+    available = configured_providers(kind)
+    wanted = [p for p in (req.providers or DEFAULTS.get(scene.media_kind, [])) if p in PROVIDERS]
+    wanted = [p for p in wanted if kind in PROVIDERS[p].kinds]  # p. ej. Unsplash no tiene video
     active = [p for p in wanted if p in available]
     warnings = [
         f"{PROVIDERS[p].label}: falta la clave de API (Ajustes → Claves de API)"
@@ -305,10 +335,12 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
         if p not in available
     ]
     if not active:
-        raise DomainError("Configura la clave de Pexels o Pixabay en Ajustes → Claves de API")
+        raise DomainError(
+            "No hay fuentes disponibles para esta escena: configura las claves en "
+            "Ajustes → Claves de API"
+        )
 
     orientation = None if req.any_orientation else orientation_for(project)
-    keys = load_settings().api_keys
     results: dict[str, list[Candidate]] = {}
     to_fetch = []
     for name in active:
@@ -322,9 +354,7 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
         async with http_client() as client:
             fetched = await asyncio.gather(
                 *(
-                    PROVIDERS[name](getattr(keys, name)).search(
-                        client, query, kind, orientation, req.page, PER_PAGE
-                    )
+                    make_provider(name).search(client, query, kind, orientation, req.page, PER_PAGE)
                     for name in to_fetch
                 ),
                 return_exceptions=True,
@@ -363,6 +393,7 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
                 kind=c.kind,
                 preview_url=c.preview_url,
                 video_preview_url=c.video_preview_url,
+                tracking_url=c.tracking_url,
                 full_url=c.full_url,
                 page_url=c.page_url,
                 width=c.width,
@@ -504,6 +535,14 @@ def create_asset(
     return asset
 
 
+async def _notify_download(client: httpx.AsyncClient, snapshot: dict) -> None:
+    """Unsplash pide avisar cada descarga en su download_location. No bloquea si falla."""
+    if not snapshot.get("tracking_url") or snapshot["provider"] != "unsplash":
+        return
+    with contextlib.suppress(httpx.HTTPError):
+        await client.get(snapshot["tracking_url"], headers=make_provider("unsplash").auth())
+
+
 def _update_candidate(session_factory, candidate_id: int, **fields) -> None:
     with session_factory() as session:
         c = session.get(SceneCandidate, candidate_id)
@@ -520,6 +559,7 @@ async def _download_one(session_factory, candidate_id: int, client: httpx.AsyncC
         project = get_project(session, scene.project_id)
         folder = project_dir(project) / "media" / "candidates"
         snapshot = dict(
+            tracking_url=c.tracking_url,
             provider=c.provider,
             provider_id=c.provider_id or str(c.id),
             kind=c.kind,
@@ -564,6 +604,7 @@ async def _download_one(session_factory, candidate_id: int, client: httpx.AsyncC
             return False
 
         processed = await process_file(dest, snapshot["kind"])
+        await _notify_download(client, snapshot)
 
     with session_factory() as session:
         c = session.get(SceneCandidate, candidate_id)

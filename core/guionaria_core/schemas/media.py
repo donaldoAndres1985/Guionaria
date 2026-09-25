@@ -68,6 +68,8 @@ class SceneMediaRead(BaseModel):
     needs_media: bool
     default_query: str | None
     search_kind: Literal["image", "video"] | None
+    available_providers: list[str]  # fuentes utilizables para este tipo de escena
+    default_providers: list[str]  # las que se usan si no eliges (sección 5.5)
     approved: list[ApprovedRead]
     candidates: list[CandidateRead]
 
@@ -97,7 +99,9 @@ class MediaOverview(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str | None = None
-    providers: list[Literal["pexels", "pixabay"]] | None = None
+    providers: (
+        list[Literal["pexels", "pixabay", "unsplash", "openverse", "wikimedia", "searxng"]] | None
+    ) = None
     page: int = Field(default=1, ge=1, le=20)
     any_orientation: bool = False
 

@@ -38,3 +38,24 @@ export function candidateAt(x: number, y: number): number | undefined {
   const target = el?.closest<HTMLElement>("[data-candidate-drop]");
   return target ? Number(target.dataset.candidateDrop) : undefined;
 }
+
+// Enlaces que se bajan con yt-dlp (igual que en el núcleo).
+const VIDEO_SITES = ["youtube.com", "youtu.be", "tiktok.com", "instagram.com", "facebook.com", "x.com",
+  "twitter.com", "vimeo.com"];
+
+export function isVideoSite(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return VIDEO_SITES.some((s) => host === s || host.endsWith(`.${s}`));
+  } catch {
+    return false;
+  }
+}
+
+/** "1:23" → 83, "45" → 45, "1:02:03" → 3723; vacío → null; inválido → NaN. */
+export function parseClock(value: string): number | null {
+  const v = value.trim();
+  if (!v) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(v)) return Number.NaN;
+  return v.split(":").reduce((total, part) => total * 60 + Number(part), 0);
+}
