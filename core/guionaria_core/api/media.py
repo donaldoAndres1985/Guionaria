@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..db import get_engine, get_session
@@ -16,6 +17,7 @@ from ..schemas.media import (
 )
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.llm.claude_cli import get_runner
+from ..services.media import framing
 from ..services.media import service as svc
 
 router = APIRouter(tags=["media"])
@@ -97,3 +99,44 @@ def asset_file(asset_id: int, session: SessionDep) -> FileResponse:
 @router.get("/api/assets/{asset_id}/thumb")
 def asset_thumb(asset_id: int, session: SessionDep) -> FileResponse:
     return FileResponse(svc.asset_file(session, asset_id, thumb=True))
+
+
+# --- encuadre y recorte de tiempo (sección 5.6) ---
+
+
+class FramingSaved(BaseModel):
+    framing: framing.FramingRead
+    job: JobRead | None  # videos con encuadre: se codifican en segundo plano
+
+
+@router.get("/api/scenes/{scene_id}/assets/{asset_id}/framing", response_model=framing.FramingRead)
+def get_framing(scene_id: int, asset_id: int, session: SessionDep) -> framing.FramingRead:
+    return framing.get_framing(session, scene_id, asset_id)
+
+
+@router.put("/api/scenes/{scene_id}/assets/{asset_id}/framing", response_model=FramingSaved)
+async def save_framing(
+    scene_id: int, asset_id: int, data: framing.FramingIn, session: SessionDep
+) -> FramingSaved:
+    state, pending = framing.save_framing(session, scene_id, asset_id, data)
+    job = None
+    if pending:
+
+        async def work(ctx: JobContext) -> dict:
+            return await framing.render_framed_video(_session_factory, scene_id, asset_id, ctx)
+
+        scene = svc.get_scene(session, scene_id)
+        job = jobs.submit(
+            "frame_media",
+            work,
+            project_id=scene.project_id,
+            payload={"scene_id": scene_id, "asset_id": asset_id},
+            exclusive=False,
+        )
+    return FramingSaved(framing=state, job=job)
+
+
+@router.get("/api/scenes/{scene_id}/assets/{asset_id}/approved-file")
+def approved_file(scene_id: int, asset_id: int, session: SessionDep) -> FileResponse:
+    """La copia aprobada (encuadrada, si tiene encuadre), no el original."""
+    return FileResponse(svc.approved_file(session, scene_id, asset_id))

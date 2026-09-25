@@ -213,11 +213,17 @@ def scene_media(session: Session, scene_id: int) -> SceneMediaRead:
     for row in _approved(session, scene_id):
         asset = session.get(Asset, row.asset_id)
         if asset:
+            info = json.loads(row.crop_json) if row.crop_json else {}
             approved.append(
                 ApprovedRead(
                     asset=asset_read(asset),
                     role=row.role,
                     file_name=Path(row.file_path or asset.file_path).name,
+                    framing_mode=info.get("mode", "none"),
+                    framing_pending=bool(info.get("pending")) and not info.get("rendered"),
+                    trim_in_s=row.trim_in_s,
+                    trim_out_s=row.trim_out_s,
+                    approved_url=f"/api/scenes/{scene_id}/assets/{row.asset_id}/approved-file",
                 )
             )
     return SceneMediaRead(
@@ -857,6 +863,13 @@ def delete_media_data(session: Session, project: Project) -> None:
     prefix = project.folder_path.rstrip("/") + "/"
     session.exec(delete(Asset).where(col(Asset.file_path).startswith(prefix)))
     session.flush()
+
+
+def approved_file(session: Session, scene_id: int, asset_id: int) -> Path:
+    row = session.get(SceneAsset, (scene_id, asset_id))
+    if not row or not row.file_path or not _abs(row.file_path).exists():
+        raise NotFound("El medio aprobado no está en disco")
+    return _abs(row.file_path)
 
 
 def asset_file(session: Session, asset_id: int, thumb: bool = False) -> Path:

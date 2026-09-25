@@ -188,14 +188,14 @@ describe("vista grande, descargar y aprobar, e importación manual", () => {
       }
       if (path.includes(":approve")) {
         const id = Number(path.split("/")[5].replace(":approve", ""));
-        scene = { ...scene, status: "approved", approved: [{ asset: asset(id), role: "main", file_name: "001.jpg" }] };
+        scene = { ...scene, status: "approved", approved: [{ asset: asset(id), role: "main", file_name: "001.jpg", framing_mode: "none" as const, framing_pending: false, trim_in_s: null, trim_out_s: null, approved_url: null }] };
         return ok(scene);
       }
       if (path.endsWith("assets:import") || path.endsWith("assets:upload")) {
         scene = {
           ...scene,
           candidates: [...scene.candidates, candidate(12, { provider: "manual", download_status: "manual", asset: asset(9) })],
-          approved: [{ asset: asset(9), role: "main", file_name: "001.png" }],
+          approved: [{ asset: asset(9), role: "main", file_name: "001.png", framing_mode: "none" as const, framing_pending: false, trim_in_s: null, trim_out_s: null, approved_url: null }],
         };
         return ok(scene);
       }

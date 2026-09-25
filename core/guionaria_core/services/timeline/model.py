@@ -7,6 +7,7 @@ Todo se expresa en cuadros enteros para que los tres formatos coincidan exactame
 - Texto, negro y escenas sin medio quedan como hueco en la pista de video, con un marcador.
 """
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -158,13 +159,24 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 warnings.append(f"Escena {scene.position}: falta el archivo {path.name}")
             else:
                 is_video = asset.kind == "video"
-                source_in = frames(row.trim_in_s) if is_video else 0
-                media_len = frames(asset.duration_s) if is_video and asset.duration_s else None
+                framing = json.loads(row.crop_json) if row.crop_json else {}
+                if is_video and framing.get("rendered"):
+                    # El archivo aprobado ya está encuadrado y recortado: se usa desde el inicio.
+                    source_in = 0
+                    rendered = framing.get("duration_s") or asset.duration_s
+                    media_len = frames(rendered) if rendered else None
+                elif is_video:
+                    source_in = frames(row.trim_in_s)
+                    end = row.trim_out_s if row.trim_out_s is not None else asset.duration_s
+                    media_len = frames(end) if end else None
+                else:
+                    source_in, media_len = 0, None
                 clip_len = duration
                 if media_len is not None and source_in + clip_len > media_len:
                     clip_len = max(media_len - source_in, 1)
                     warnings.append(
-                        f"Escena {scene.position}: el video dura {media_len / FPS:.1f} s y la "
+                        f"Escena {scene.position}: el tramo del video dura "
+                        f"{(media_len - source_in) / FPS:.1f} s y la "
                         f"escena {duration / FPS:.1f} s; queda un hueco al final"
                     )
                 clip = Clip(

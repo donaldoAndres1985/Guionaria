@@ -326,10 +326,47 @@ export interface Candidate {
   asset: Asset | null;
 }
 
+export type FramingMode = "none" | "crop" | "blur";
+
 export interface ApprovedMedia {
   asset: Asset;
   role: "main" | "alt";
   file_name: string;
+  framing_mode: FramingMode;
+  framing_pending: boolean;
+  trim_in_s: number | null;
+  trim_out_s: number | null;
+  approved_url: string | null;
+}
+
+/** Rectángulo visible en fracciones (0–1) del ancho y alto del original. */
+export interface Crop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface FramingInput {
+  mode: FramingMode;
+  crop: Crop | null;
+  trim_in_s: number | null;
+  trim_out_s: number | null;
+}
+
+export interface FramingState extends FramingInput {
+  scene_id: number;
+  asset_id: number;
+  kind: "image" | "video";
+  source_width: number | null;
+  source_height: number | null;
+  source_duration_s: number | null;
+  target_width: number;
+  target_height: number;
+  orientation_mismatch: boolean;
+  suggested_crop: Crop | null;
+  rendered: boolean;
+  approved_url: string;
 }
 
 export interface SceneMedia {
