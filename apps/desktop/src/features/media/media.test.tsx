@@ -87,6 +87,8 @@ describe("tarjeta de candidato", () => {
     onToggle: vi.fn(),
     onApprove: vi.fn(),
     onRetry: vi.fn(),
+    onOpen: vi.fn(),
+    onHover: vi.fn(),
   };
 
   it("clic elige el candidato y muestra su número de atajo", () => {

@@ -9,6 +9,8 @@ import { coreUrl, type Project } from "@/lib/api";
 import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { CandidateCard } from "./CandidateCard";
+import { MediaViewer } from "./MediaViewer";
+import { useMediaDrop } from "./useMediaDrop";
 import { STATUS_TEXT } from "./mediaMeta";
 import { type MediaController, PROVIDER_LABEL } from "./useMediaController";
 
@@ -23,6 +25,10 @@ export function MediaStage({
 }) {
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
+  const { dragging, dropProps } = useMediaDrop(
+    !!ctl.scene && ctl.editable && ctl.scene.needs_media,
+    ctl.importMedia,
+  );
 
   // Atajos (sección 15.4): ←/→ escena anterior/siguiente, 1–9 elegir candidato.
   const ctlRef = useRef(ctl);
@@ -32,7 +38,9 @@ export function MediaStage({
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, [contenteditable='true']") || e.ctrlKey || e.metaKey) return;
       const c = ctlRef.current;
-      if (e.key === "ArrowRight") c.next();
+      if (c.viewer) return; // la vista grande maneja sus teclas
+      if (e.key === " ") c.openViewer();
+      else if (e.key === "ArrowRight") c.next();
       else if (e.key === "ArrowLeft") c.prev();
       else if (/^[1-9]$/.test(e.key) && c.editable && c.scene) {
         const candidate = c.scene.candidates[Number(e.key) - 1];
@@ -123,8 +131,16 @@ export function MediaStage({
         })}
       </div>
 
-      {/* Escena seleccionada */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* Escena seleccionada (también zona para soltar archivos) */}
+      <div className="relative flex min-w-0 flex-1 flex-col" {...dropProps}>
+        {dragging && scene && (
+          <div className="pointer-events-none absolute inset-3 z-30 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-brand bg-background/85 text-center">
+            <span className="text-[15px] font-medium">Suelta para agregar a la escena {scene.position}</span>
+            <span className="text-[12px] text-muted-foreground">
+              Si lo sueltas sobre un medio que no se pudo descargar, lo reemplaza.
+            </span>
+          </div>
+        )}
         {!scene ? (
           <EmptyState icon={ImageIcon} title="Elige una escena" description="Solo las escenas de video, imagen o material real necesitan medio." />
         ) : (
@@ -213,6 +229,9 @@ export function MediaStage({
                         />
                         Incluir otras orientaciones (se recortarán)
                       </label>
+                      <span className="text-subtle">
+                        · También puedes arrastrar archivos o pegar (Ctrl+V) una imagen o dirección
+                      </span>
                       <button
                         type="button"
                         disabled={ctl.suggesting}
@@ -282,7 +301,11 @@ export function MediaStage({
 
               {scene.candidates.length === 0 ? (
                 <p className="py-10 text-center text-[13px] text-muted-foreground">
-                  {ctl.searching ? "Buscando…" : "Sin candidatos todavía. Escribe una búsqueda y pulsa Buscar."}
+                  {ctl.searching
+                    ? "Buscando…"
+                    : ctl.importing
+                      ? "Agregando…"
+                      : "Sin candidatos todavía. Busca, arrastra un archivo o pega (Ctrl+V) una imagen o dirección."}
                 </p>
               ) : (
                 <>
@@ -306,6 +329,9 @@ export function MediaStage({
                         onToggle={() => ctl.toggle(c.id)}
                         onApprove={(role) => c.asset && ctl.approve(c.asset.id, role)}
                         onRetry={() => ctl.retry(c.id)}
+                        onOpen={() => ctl.openViewer(c.id)}
+                        onHover={(h) => ctl.setHovered(h ? c.id : null)}
+                        dragging={dragging}
                       />
                     ))}
                   </div>
@@ -322,6 +348,7 @@ export function MediaStage({
           </>
         )}
       </div>
+      <MediaViewer ctl={ctl} />
     </div>
   );
 }

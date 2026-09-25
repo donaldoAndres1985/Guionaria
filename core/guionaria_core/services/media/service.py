@@ -3,6 +3,7 @@
 import asyncio
 import json
 import shutil
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from ...schemas.media import (
     SearchResult,
     SuggestResult,
 )
+from ...util.paths import check_path_length
 from .. import prompts
 from ..channels import get_channel
 from ..errors import Conflict, DomainError, NotFound
@@ -445,6 +447,63 @@ async def fetch_to(client: httpx.AsyncClient, url: str, dest: Path) -> tuple[int
     raise DownloadError(last)
 
 
+@dataclass
+class ProcessedFile:
+    path: Path
+    kind: str
+    info: process.MediaInfo
+    thumb: Path | None
+    frame_hash: str | None
+
+
+async def process_file(dest: Path, kind: str) -> ProcessedFile:
+    """Medidas, duración, miniatura y hash de un archivo ya guardado en el proyecto."""
+    info = await asyncio.to_thread(
+        process.image_info if kind == "image" else process.video_info, dest
+    )
+    thumb = dest.parent / ".thumbs" / f"{dest.stem}.jpg"
+    frame_hash = await asyncio.to_thread(process.make_thumbnail, dest, thumb, kind, info.duration_s)
+    return ProcessedFile(dest, kind, info, thumb if thumb.exists() else None, frame_hash)
+
+
+def create_asset(
+    session: Session,
+    f: ProcessedFile,
+    *,
+    provider: str,
+    provider_id: str | None,
+    page_url: str | None,
+    file_url: str | None,
+    author: str | None,
+    license: str | None,
+    low_res: bool = False,
+    fallback: tuple[int | None, int | None, float | None] = (None, None, None),
+) -> Asset:
+    width = f.info.width or fallback[0]
+    height = f.info.height or fallback[1]
+    asset = Asset(
+        kind=f.kind,
+        file_path=_rel(f.path),
+        thumb_path=_rel(f.thumb) if f.thumb else None,
+        provider=provider,
+        provider_id=provider_id,
+        source_page_url=page_url,
+        source_file_url=file_url,
+        author=author,
+        license=license,
+        width=width,
+        height=height,
+        duration_s=f.info.duration_s or fallback[2],
+        orientation=process.orientation(width, height),
+        size_bytes=f.path.stat().st_size,
+        phash=f.info.phash or f.frame_hash,
+        low_res=int(low_res),
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
 def _update_candidate(session_factory, candidate_id: int, **fields) -> None:
     with session_factory() as session:
         c = session.get(SceneCandidate, candidate_id)
@@ -479,6 +538,10 @@ async def _download_one(session_factory, candidate_id: int, client: httpx.AsyncC
             ext = process.extension_for(snapshot["full_url"] or "", None, snapshot["kind"])
             dest = folder / f"{base_name}{ext}"
             try:
+                check_path_length(dest)
+            except DomainError as exc:
+                raise DownloadError(exc.message) from exc
+            try:
                 size, _ = await fetch_to(client, snapshot["full_url"], dest)
             except DownloadError as first:
                 # Si falla el original, se intenta la miniatura grande (solo imágenes).
@@ -500,36 +563,22 @@ async def _download_one(session_factory, candidate_id: int, client: httpx.AsyncC
             )
             return False
 
-        info = await asyncio.to_thread(
-            process.image_info if snapshot["kind"] == "image" else process.video_info, dest
-        )
-        thumb = folder / ".thumbs" / f"{dest.stem}.jpg"
-        frame_hash = await asyncio.to_thread(
-            process.make_thumbnail, dest, thumb, snapshot["kind"], info.duration_s
-        )
+        processed = await process_file(dest, snapshot["kind"])
 
     with session_factory() as session:
         c = session.get(SceneCandidate, candidate_id)
-        asset = Asset(
-            kind=snapshot["kind"],
-            file_path=_rel(dest),
-            thumb_path=_rel(thumb) if thumb.exists() else None,
+        asset = create_asset(
+            session,
+            processed,
             provider=snapshot["provider"],
             provider_id=snapshot["provider_id"],
-            source_page_url=snapshot["page_url"],
-            source_file_url=snapshot["full_url"],
+            page_url=snapshot["page_url"],
+            file_url=snapshot["full_url"],
             author=snapshot["author"],
             license=snapshot["license"],
-            width=info.width or c.width,
-            height=info.height or c.height,
-            duration_s=info.duration_s or c.duration_s,
-            orientation=process.orientation(info.width or c.width, info.height or c.height),
-            size_bytes=size,
-            phash=info.phash or frame_hash,
-            low_res=int(low_res),
+            low_res=low_res,
+            fallback=(c.width, c.height, c.duration_s),
         )
-        session.add(asset)
-        session.flush()
         c.asset_id = asset.id
         c.download_status = "done"
         c.error = None
@@ -624,6 +673,7 @@ def approve_asset(session: Session, scene_id: int, asset_id: int, role: str) -> 
     session.add(row)
     session.flush()
     target = approved_dir / _expected_name(session, scene, row, source.suffix)
+    check_path_length(target)
     shutil.copy2(source, target)
     row.file_path = _rel(target)
 

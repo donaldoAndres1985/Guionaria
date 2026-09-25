@@ -1,4 +1,4 @@
-import { Check, LoaderCircle, RotateCw, Star, TriangleAlert } from "lucide-react";
+import { Check, Expand, LoaderCircle, RotateCw, Star, TriangleAlert, Upload } from "lucide-react";
 import { useRef } from "react";
 import { coreUrl, type Candidate } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,9 @@ interface CandidateCardProps {
   onToggle: () => void;
   onApprove: (role: "main" | "alt") => void;
   onRetry: () => void;
+  onOpen: () => void;
+  onHover: (hovered: boolean) => void;
+  dragging?: boolean;
 }
 
 /** Tarjeta de un candidato (referencia 03): miniatura, datos y estado de descarga. */
@@ -28,6 +31,9 @@ export function CandidateCard({
   onToggle,
   onApprove,
   onRetry,
+  onOpen,
+  onHover,
+  dragging,
 }: CandidateCardProps) {
   const video = useRef<HTMLVideoElement>(null);
   const thumb = coreUrl(c.asset?.thumb_url) ?? c.preview_url ?? undefined;
@@ -36,16 +42,24 @@ export function CandidateCard({
   const selectable = editable && canSelect(c);
   const resolution = formatResolution(c.asset?.width ?? c.width, c.asset?.height ?? c.height);
   const clip = formatClip(c.asset?.duration_s ?? c.duration_s);
+  const failed = c.download_status === "failed";
 
   return (
     <div
+      // Soltar un archivo sobre un candidato que falló se lo asigna (conserva autor y licencia).
+      data-candidate-drop={failed && editable ? c.id : undefined}
       className={cn(
         "group relative overflow-hidden rounded-md border bg-background transition-colors",
         selected && "border-brand ring-1 ring-brand",
         approvedRole === "main" && "border-success-foreground ring-1 ring-success-foreground",
+        dragging && failed && editable && "border-dashed border-warning ring-1 ring-warning",
       )}
-      onMouseEnter={() => void video.current?.play().catch(() => {})}
+      onMouseEnter={() => {
+        onHover(true);
+        void video.current?.play().catch(() => {});
+      }}
       onMouseLeave={() => {
+        onHover(false);
         if (video.current) {
           video.current.pause();
           video.current.currentTime = 0;
@@ -100,6 +114,12 @@ export function CandidateCard({
             {clip}
           </span>
         )}
+        {dragging && failed && editable && (
+          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60 p-2 text-center text-[12px] text-white">
+            <Upload className="size-5" />
+            Suelta aquí el archivo que bajaste
+          </span>
+        )}
         {busy && (
           <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-[12px] text-white">
             <LoaderCircle className="size-5 animate-spin" />
@@ -107,10 +127,21 @@ export function CandidateCard({
           </span>
         )}
       </button>
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Ver candidato ${index + 1} en grande`}
+        title="Ver en grande (Espacio)"
+        className="absolute top-2 right-2 rounded bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <Expand className="size-3.5" />
+      </button>
 
       <div className="space-y-1 p-2">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="font-medium text-foreground">{PROVIDER_LABEL[c.provider] ?? c.provider}</span>
+          <span className="font-medium text-foreground">
+            {PROVIDER_LABEL[c.provider] ?? (c.provider === "manual" ? "Manual" : c.provider)}
+          </span>
           {resolution && <span className="font-mono">{resolution}</span>}
           {orientationMismatch(c, orientation) && (
             <span title="Otra orientación: se recortará" className="text-warning">
@@ -145,7 +176,10 @@ export function CandidateCard({
           </div>
         )}
 
-        {done && editable && approvedRole !== "main" && (
+        {c.download_status === "manual" && !approvedRole && (
+          <div className="text-[11px] text-muted-foreground">Agregado a mano</div>
+        )}
+        {(done || (c.download_status === "manual" && c.asset)) && editable && approvedRole !== "main" && (
           <div className="flex gap-1 pt-0.5">
             <button
               type="button"

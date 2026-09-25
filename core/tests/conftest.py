@@ -83,3 +83,7 @@ def project(client, channel):
             "research_notes": "Ocurrió en 2008 en CDMX.",
         },
     ).json()
+
+
+# Fixtures de medios (web simulada y proyecto con escenas aprobadas).
+from tests.media_support import media_project, web  # noqa: E402, F401

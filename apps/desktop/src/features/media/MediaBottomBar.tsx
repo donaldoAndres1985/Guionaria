@@ -1,10 +1,11 @@
-import { Download, Unlock } from "lucide-react";
+import { Download, FolderOpen, Package, Unlock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { Button } from "@/components/ui/button";
 import { useApproveMedia, useUnlockMedia } from "@/hooks/useMedia";
+import { useExportPackage, useRevealProject } from "@/hooks/useManualMedia";
 import type { Project } from "@/lib/api";
 import type { MediaController } from "./useMediaController";
 
@@ -13,6 +14,34 @@ export function MediaBottomBar({ project, ctl }: { project: Project; ctl: MediaC
   const unlock = useUnlockMedia(project.id);
   const [confirmUnlock, setConfirmUnlock] = useState(false);
   const overview = ctl.overview;
+  const exportPackage = useExportPackage(project.id);
+  const revealProject = useRevealProject();
+
+  const packageButton = (
+    <Button
+      variant="ghost"
+      disabled={exportPackage.isPending}
+      title="Guion, escenas, créditos y LEEME en la carpeta del proyecto"
+      onClick={() =>
+        exportPackage.mutate(undefined, {
+          onSuccess: (r) =>
+            toast.success("Paquete exportado", {
+              description: r.missing_media.length
+                ? `Faltan medios en las escenas ${r.missing_media.join(", ")}`
+                : r.files.join(" · "),
+              action: { label: "Abrir carpeta", onClick: () => revealProject.mutate(project.id) },
+            }),
+        })
+      }
+    >
+      <Package /> Exportar paquete
+    </Button>
+  );
+  const folderButton = (
+    <Button variant="ghost" size="icon" title="Abrir la carpeta del proyecto" onClick={() => revealProject.mutate(project.id)}>
+      <FolderOpen />
+    </Button>
+  );
 
   if (!overview || overview.needing_media === 0) {
     return <BottomBar stats={[{ label: "Etapa", value: "Medios" }]} />;
@@ -31,6 +60,8 @@ export function MediaBottomBar({ project, ctl }: { project: Project; ctl: MediaC
   if (overview.approved) {
     return (
       <BottomBar stats={stats}>
+        {folderButton}
+        {packageButton}
         <Button variant="outline" onClick={() => setConfirmUnlock(true)}>
           <Unlock /> Desbloquear
         </Button>
@@ -54,6 +85,8 @@ export function MediaBottomBar({ project, ctl }: { project: Project; ctl: MediaC
 
   return (
     <BottomBar stats={stats}>
+      {folderButton}
+      {packageButton}
       <Button
         variant="outline"
         disabled={!ctl.editable || ctl.selected.length === 0 || ctl.downloading}

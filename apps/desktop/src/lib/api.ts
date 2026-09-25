@@ -12,9 +12,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Con FormData el navegador pone el Content-Type multipart con su "boundary".
+  const isForm = init?.body instanceof FormData;
   const resp = await fetch(`${CORE_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: isForm ? init?.headers : { "Content-Type": "application/json", ...init?.headers },
   });
   if (!resp.ok) {
     throw new ApiError(resp.status, await errorMessage(resp));
@@ -49,6 +51,7 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>(path, json("PUT", body)),
   patch: <T>(path: string, body: unknown) => request<T>(path, json("PATCH", body)),
   del: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form }),
 };
 
 export interface DependencyStatus {
@@ -382,3 +385,9 @@ export interface SearchResult {
 /** Las URLs de archivos del núcleo son relativas (/api/assets/…). */
 export const coreUrl = (path: string | null | undefined) =>
   path ? (path.startsWith("/") ? `${CORE_URL}${path}` : path) : undefined;
+
+export interface PackageResult {
+  folder: string;
+  files: string[];
+  missing_media: number[];
+}
