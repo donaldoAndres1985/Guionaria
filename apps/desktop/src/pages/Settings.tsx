@@ -31,6 +31,7 @@ import { useHealth, useRefreshDependencies, useSaveSettings, useSettings } from 
 import type { ApiKeys, AppSettings, DependencyStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ClaudeSettings } from "@/features/settings/ClaudeSettings";
+import { VoiceSelect } from "@/features/voice/VoiceSelect";
 
 type CategoryId = "deps" | "claude" | "folders" | "keys" | "prefs";
 
@@ -84,7 +85,7 @@ export function SettingsPage() {
       id: "prefs",
       icon: SlidersHorizontal,
       title: "Preferencias",
-      subtitle: "Búsqueda, transcripción, descargas y tema",
+      subtitle: "Voz, búsqueda, transcripción, descargas y tema",
     },
   ];
   const active = categories.find((c) => c.id === category)!;
@@ -225,6 +226,16 @@ export function SettingsPage() {
                   <Input
                     value={current.searxng_url}
                     onChange={(e) => update({ searxng_url: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label="Voz por defecto"
+                  hint="Voz de Piper para los canales sin voz propia. Se descarga la primera vez que se usa."
+                >
+                  <VoiceSelect
+                    value={current.tts_voice || null}
+                    onChange={(v) => update({ tts_voice: v })}
+                    placeholder="es_MX-claude-high (recomendada)"
                   />
                 </Field>
                 <Field label="Modelo de Whisper" hint="small es rápido en CPU; medium es más preciso.">

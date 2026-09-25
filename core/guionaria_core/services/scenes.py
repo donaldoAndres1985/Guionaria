@@ -135,7 +135,24 @@ def recompute_timings(session: Session, project_id: int) -> None:
         if segment:
             scene.narration = segment.text
 
-    from .media.service import sync_approved_names  # import local: media depende de scenes
+    # Con voz vigente (generada o transcrita), cada segmento toma su tiempo real y lo reparte
+    # entre sus escenas (sección 5.9). Imports locales: voice y media dependen de scenes.
+    from .voice.service import real_segment_timings
+
+    real = real_segment_timings(session, project_id)
+    if real:
+        by_segment: dict[str, list[Scene]] = {}
+        for scene in scenes:
+            by_segment.setdefault(scene.seg_key, []).append(scene)
+        for seg_key, (start, end, source) in real.items():
+            group = by_segment.get(seg_key, [])
+            step = (end - start) / len(group) if group else 0
+            for i, scene in enumerate(group):
+                scene.start_s = round(start + step * i, 2)
+                scene.end_s = round(start + step * (i + 1), 2)
+                scene.timing_source = source
+
+    from .media.service import sync_approved_names
 
     session.flush()
     sync_approved_names(session, project_id)  # los nombres llevan número de escena e inicio

@@ -807,7 +807,14 @@ def approve_media(session: Session, project_id: int) -> MediaOverview:
     ]
     if missing:
         raise Conflict(f"Faltan medios en las escenas {', '.join(map(str, missing))}")
-    project.status = ProjectStatus.MEDIOS_APROBADOS
+    from ..voice.service import real_segment_timings  # import local: voice depende de media
+
+    # Si la voz ya estaba lista (tiempos reales vigentes), el proyecto pasa directo a VOZ_LISTA.
+    project.status = (
+        ProjectStatus.VOZ_LISTA
+        if real_segment_timings(session, project_id)
+        else ProjectStatus.MEDIOS_APROBADOS
+    )
     project.updated_at = now_iso()
     log_operation(session, "approve", "media", project_id, {"scenes": overview.with_media})
     session.commit()

@@ -9,6 +9,15 @@ $binDir = Join-Path $root 'apps\desktop\src-tauri\binaries'
 $triple = ((rustc -vV) | Select-String '^host: (.+)$').Matches[0].Groups[1].Value
 if (-not $triple) { throw 'No se pudo obtener el target triple con rustc -vV' }
 
+# Piper: solo los datos de espeak-ng (los de hebreo y árabe no se usan y pesan 26 MB).
+$piperData = Join-Path $coreDir '.venv\Lib\site-packages\piper\espeak-ng-data'
+
+# PyInstaller copia el runtime de C++ (msvcp140.dll) que encuentra primero en el PATH. Si es
+# una versión vieja (p. ej. la de un JDK), onnxruntime se cae al cargar: se usa solo la de Windows.
+$env:Path = ($env:Path -split ';' | Where-Object {
+    $_ -and ($_ -like "$env:SystemRoot*" -or -not (Test-Path (Join-Path $_ 'msvcp140.dll')))
+}) -join ';'
+
 Push-Location $coreDir
 try {
     uv run pyinstaller `
@@ -20,6 +29,11 @@ try {
         --collect-submodules uvicorn `
         --collect-submodules guionaria_core `
         --collect-submodules yt_dlp `
+        --add-data "$piperData;piper\espeak-ng-data" `
+        --collect-binaries onnxruntime `
+        --collect-data faster_whisper `
+        --collect-binaries ctranslate2 `
+        --exclude-module piper.train `
         guionaria_core\__main__.py
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller terminó con código $LASTEXITCODE" }
 } finally {
