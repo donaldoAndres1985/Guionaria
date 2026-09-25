@@ -12,6 +12,7 @@ from .api import (
     ideas,
     integrations,
     jobs,
+    library,
     manual,
     media,
     projects,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         timeline,
         integrations,
         ideas,
+        library,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

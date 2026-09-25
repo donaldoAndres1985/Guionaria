@@ -862,9 +862,9 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] Recorte/encuadre y recorte de tiempo por medio.
 
 ### Fase 3 — Organización profesional (2 semanas)
-- [ ] Biblioteca global, deduplicado por hash, reutilización.
+- [x] Biblioteca global, deduplicado por hash, reutilización.
 - [ ] Almacenamiento con treemap y limpieza.
-- [ ] Calendario, kanban, banco de ideas.
+- [x] Calendario, kanban, banco de ideas.
 - [ ] Créditos automáticos, historial y papelera.
 - [ ] SFX (Freesound) y música.
 

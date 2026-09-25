@@ -543,3 +543,54 @@ export interface IdeaInput {
   notes?: string | null;
   priority?: number;
 }
+
+export interface LibraryItem {
+  asset: Asset;
+  project_id: number | null;
+  project_title: string | null;
+  project_format: ProjectFormat | null;
+  channel_id: number | null;
+  channel_name: string | null;
+  used_in: { scene_id: number; position: number; role: "main" | "alt" }[];
+  duplicates: number;
+  reused_from_id: number | null;
+  created_at: string;
+}
+
+export interface Facet {
+  value: string;
+  count: number;
+}
+
+export interface LibraryPage {
+  items: LibraryItem[];
+  total: number;
+  total_bytes: number;
+  page: number;
+  page_size: number;
+  kinds: Facet[];
+  providers: Facet[];
+  orientations: Facet[];
+}
+
+export interface LibraryStats {
+  assets: number;
+  bytes: number;
+  unique_bytes: number;
+  saved_bytes: number;
+  duplicate_groups: number;
+}
+
+export interface LibraryFilters {
+  kind?: "image" | "video" | null;
+  channel?: number | null;
+  project?: number | null;
+  provider?: string | null;
+  orientation?: string | null;
+  usage?: "approved" | "unused" | null;
+  duplicates?: boolean;
+  q?: string;
+  sort?: "recent" | "size" | "name";
+  page?: number;
+  page_size?: number;
+}

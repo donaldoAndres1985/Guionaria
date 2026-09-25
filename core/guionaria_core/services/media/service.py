@@ -3,7 +3,6 @@
 import asyncio
 import contextlib
 import json
-import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,7 +33,7 @@ from ..jobs import JobContext
 from ..llm.claude_cli import ClaudeRunner, generate_structured
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
-from . import naming, process
+from . import dedup, naming, process
 from .http import http_client
 from .providers import DEFAULTS, PROVIDERS, Candidate, Orientation, ProviderError
 
@@ -491,6 +490,7 @@ class ProcessedFile:
     info: process.MediaInfo
     thumb: Path | None
     frame_hash: str | None
+    sha256: str | None = None
 
 
 async def process_file(dest: Path, kind: str) -> ProcessedFile:
@@ -500,7 +500,8 @@ async def process_file(dest: Path, kind: str) -> ProcessedFile:
     )
     thumb = dest.parent / ".thumbs" / f"{dest.stem}.jpg"
     frame_hash = await asyncio.to_thread(process.make_thumbnail, dest, thumb, kind, info.duration_s)
-    return ProcessedFile(dest, kind, info, thumb if thumb.exists() else None, frame_hash)
+    sha256 = await asyncio.to_thread(dedup.file_sha256, dest)
+    return ProcessedFile(dest, kind, info, thumb if thumb.exists() else None, frame_hash, sha256)
 
 
 def create_asset(
@@ -535,7 +536,10 @@ def create_asset(
         size_bytes=f.path.stat().st_size,
         phash=f.info.phash or f.frame_hash,
         low_res=int(low_res),
+        sha256=f.sha256,
     )
+    if f.sha256:
+        dedup.dedupe(session, f.path, f.sha256)  # mismo contenido ya en la biblioteca: hardlink
     session.add(asset)
     session.flush()
     return asset
@@ -721,7 +725,7 @@ def approve_asset(session: Session, scene_id: int, asset_id: int, role: str) -> 
     session.flush()
     target = approved_dir / _expected_name(session, scene, row, source.suffix)
     check_path_length(target)
-    shutil.copy2(source, target)
+    dedup.link_or_copy(source, target)  # la copia aprobada no ocupa espacio de nuevo
     row.file_path = _rel(target)
 
     if role == "main":
