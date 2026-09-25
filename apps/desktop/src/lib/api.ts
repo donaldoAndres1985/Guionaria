@@ -476,3 +476,11 @@ export interface TimelineExport {
   warnings: string[];
   state: TimelineState;
 }
+
+export interface McpInfo {
+  http_url: string;
+  claude_code_command: string;
+  desktop_config: string;
+  claude_code_available: boolean;
+  claude_code_registered: boolean | null;
+}

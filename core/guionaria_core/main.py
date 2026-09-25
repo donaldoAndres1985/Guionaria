@@ -9,6 +9,7 @@ from . import __version__
 from .api import (
     channels,
     health,
+    integrations,
     jobs,
     manual,
     media,
@@ -22,22 +23,33 @@ from .api import (
 )
 from .config import ensure_home
 from .db import run_migrations
+from .mcp_server import build_mcp, transport_security
 from .security import ALLOWED_ORIGINS
 from .services.errors import DomainError
 from .services.jobs import fail_interrupted
 from .services.prompts import ensure_prompts
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    ensure_home()
-    run_migrations()
-    ensure_prompts()
-    fail_interrupted()
-    yield
-
-
 def create_app() -> FastAPI:
+    # Servidor MCP por HTTP en /mcp (sección 4.2): sin estado y con respuestas JSON, que es lo
+    # más simple para clientes locales como Claude Code.
+    mcp = build_mcp()
+    mcp_app = mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        transport_security=transport_security(),
+    )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        ensure_home()
+        run_migrations()
+        ensure_prompts()
+        fail_interrupted()
+        async with mcp.session_manager.run():
+            yield
+
     app = FastAPI(title="Guionaria Core", version=__version__, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
@@ -58,8 +70,10 @@ def create_app() -> FastAPI:
         prompts,
         voice,
         timeline,
+        integrations,
     ):
         app.include_router(module.router)
+    app.router.routes.extend(mcp_app.routes)
 
     @app.exception_handler(DomainError)
     async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:

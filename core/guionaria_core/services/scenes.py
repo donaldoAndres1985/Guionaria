@@ -282,33 +282,7 @@ async def generate_scenes(
     with session_factory() as session:
         project = _editable_project(session, project_id)
         script = _approved_script(session, project)
-        target_set = set(targets)
-        current_keys = {s.seg_key for s in script.segments}
-        keep: dict[str, list[Scene]] = {}
-        drop: list[Scene] = []
-        for scene in _scenes(session, project_id):
-            if mode == "all" or scene.seg_key in target_set or scene.seg_key not in current_keys:
-                drop.append(scene)  # regenerada o su segmento ya no existe
-            else:
-                keep.setdefault(scene.seg_key, []).append(scene)
-        _drop_scenes(session, drop)
-
-        fresh: dict[str, list[Scene]] = {}
-        for e in new:
-            fresh.setdefault(e.seg_key, []).append(_new_scene(project_id, e))
-
-        # Orden final: el del guion; dentro de cada segmento, el de Claude o el existente.
-        position = 1
-        for segment in script.segments:
-            for scene in fresh.get(segment.seg_key) or keep.get(segment.seg_key, []):
-                scene.position = position
-                position += 1
-                session.add(scene)
-        session.flush()
-        recompute_timings(session, project_id)
-
-        project.status = ProjectStatus.ESCENAS_BORRADOR
-        project.updated_at = now_iso()
+        total = _store_scenes(session, project, script, mode, targets, new)
         log_operation(
             session,
             "generate",
@@ -318,7 +292,68 @@ async def generate_scenes(
             actor="system",
         )
         session.commit()
-        return {"created": len(new), "total": position - 1}
+        return {"created": len(new), "total": total}
+
+
+def _store_scenes(
+    session: Session,
+    project: Project,
+    script: ScriptRead,
+    mode: str,
+    targets: list[str],
+    new: list[EscenaClaude],
+) -> int:
+    """Reemplaza las escenas de los segmentos pedidos (o todas) y recalcula los tiempos."""
+    target_set = set(targets)
+    current_keys = {s.seg_key for s in script.segments}
+    keep: dict[str, list[Scene]] = {}
+    drop: list[Scene] = []
+    for scene in _scenes(session, project.id):
+        if mode == "all" or scene.seg_key in target_set or scene.seg_key not in current_keys:
+            drop.append(scene)  # regenerada o su segmento ya no existe
+        else:
+            keep.setdefault(scene.seg_key, []).append(scene)
+    _drop_scenes(session, drop)
+
+    fresh: dict[str, list[Scene]] = {}
+    for e in new:
+        fresh.setdefault(e.seg_key, []).append(_new_scene(project.id, e))
+
+    # Orden final: el del guion; dentro de cada segmento, el recibido o el existente.
+    position = 1
+    for segment in script.segments:
+        for scene in fresh.get(segment.seg_key) or keep.get(segment.seg_key, []):
+            scene.position = position
+            position += 1
+            session.add(scene)
+    session.flush()
+    recompute_timings(session, project.id)
+    project.status = ProjectStatus.ESCENAS_BORRADOR
+    project.updated_at = now_iso()
+    return position - 1
+
+
+def save_scenes(
+    session: Session, project_id: int, escenas: list[EscenaClaude], mode: str = "all"
+) -> ScenesRead:
+    """Escenas redactadas fuera de la app (Claude por MCP): mismas reglas que las generadas."""
+    project = _editable_project(session, project_id)
+    script = _approved_script(session, project)
+    existing = _scenes(session, project_id)
+    if mode == "pending" and existing:
+        targets = _pending_targets(existing, script.segments)
+    else:
+        targets = [s.seg_key for s in script.segments]
+    if not escenas:
+        raise DomainError("Envía al menos una escena")
+    try:
+        _validate(EscenasClaude(escenas=escenas), targets)
+    except ValueError as exc:
+        raise DomainError(f"Escenas no válidas: {exc}") from exc
+    _store_scenes(session, project, script, mode, targets, escenas)
+    log_operation(session, "save", "scenes", project_id, {"mode": mode, "created": len(escenas)})
+    session.commit()
+    return list_scenes(session, project_id)
 
 
 # --- edición ---

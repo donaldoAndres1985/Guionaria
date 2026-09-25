@@ -36,8 +36,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **2A — Material real** | SearXNG, Wikimedia Commons, Openverse, Unsplash · video desde URL con yt-dlp (con fragmento) | ✅ Completa |
 | **2B — Voz y tiempos** | TTS local (Piper) o voz grabada · Whisper para tiempos reales · SRT/VTT | ✅ Completa |
 | **2C — Timeline** | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ✅ Completa |
-| 2D — MCP | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ⏳ Siguiente |
-| 2E — Encuadre | Zona visible en 16:9 o 9:16 y tramo del clip | ⏳ |
+| **2D — MCP** | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ✅ Completa |
+| 2E — Encuadre | Zona visible en 16:9 o 9:16 y tramo del clip | ⏳ Siguiente |
 | 3 — Organización | Biblioteca global, almacenamiento, calendario, ideas, historial | ⏳ |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
@@ -124,6 +124,21 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 - Los errores llegan con mensajes claros: CLI no instalada, sesión no iniciada o límite del plan.
 - Los prompts (`guion`, `reescribir_segmento`, `escenas`, `busquedas_alternativas`) se pueden editar desde Ajustes.
 - Solo Claude: no se usan LLM locales.
+
+### Desde Claude Code o Claude Desktop (MCP)
+
+- El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
+- **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
+- Herramientas para todo el flujo:
+  - canales y proyectos;
+  - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
+  - medios (`search_media`, `select_candidates`, `approve_media`, `list_pending`, `add_media_from_url`);
+  - voz (`generate_voice`, `import_voice`, `transcribe_voice`);
+  - salida (`export_timeline`, `get_credits`) y `job_status`.
+- Recursos de solo lectura: el guion y las escenas de un proyecto, y el estilo de un canal.
+- **Sin doble consumo:** Claude redacta el guion y las escenas con tu plan y los guarda. Las herramientas nunca vuelven a llamar a la CLI, y las escenas se validan con las mismas reglas que las generadas en la app.
+- Los cambios quedan en el historial con `actor = mcp`. Solo acepta conexiones a `127.0.0.1` o `localhost`, para protegerse del DNS rebinding.
+- Ejemplo: *«Crea un reel para el canal Casos Reales sobre el faro de Alejandría, escribe el guion y las escenas y busca medios»*.
 
 ## Fuentes de medios
 
@@ -218,7 +233,7 @@ Guionaria/
 
 ## Pruebas
 
-- **294 pruebas automáticas:** 203 del núcleo y 91 de la app.
+- **307 pruebas automáticas:** 213 del núcleo y 94 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:
@@ -227,7 +242,8 @@ Guionaria/
   - un fragmento de YouTube con yt-dlp;
   - importación desde una página web;
   - voz real con Piper y transcripción con Whisper, también desde el sidecar empaquetado;
-  - exportación del timeline de un proyecto con archivos reales, desde el código y desde el sidecar.
+  - exportación del timeline de un proyecto con archivos reales, desde el código y desde el sidecar;
+  - Claude Code como cliente MCP: creó un proyecto, redactó y aprobó el guion y guardó las escenas; el sidecar respondió por HTTP y por stdio.
 
 ## Derechos y responsabilidad
 
