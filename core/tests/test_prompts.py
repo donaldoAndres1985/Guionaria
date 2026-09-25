@@ -65,6 +65,15 @@ def test_default_prompts_use_only_supported_placeholders():
             "fragmento",
             "instruccion",
         },
+        "escenas": {
+            "canal",
+            "estilo",
+            "formato",
+            "relacion",
+            "max_escena_s",
+            "lista_efectos",
+            "guion",
+        },
     }
     for name, keys in supported.items():
         used = set(re.findall(r"\{(\w+)\}", prompts.default_content(name)))

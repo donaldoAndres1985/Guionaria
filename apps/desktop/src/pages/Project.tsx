@@ -18,11 +18,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ScenesBottomBar } from "@/features/scenes/ScenesBottomBar";
+import { ScenesStage } from "@/features/scenes/ScenesStage";
+import { useScenesGeneration } from "@/features/scenes/useScenesGeneration";
 import { ScriptBottomBar } from "@/features/script/ScriptBottomBar";
 import { ScriptStage } from "@/features/script/ScriptStage";
 import { useScriptEditor } from "@/features/script/useScriptEditor";
 import { useScriptGeneration } from "@/features/script/useScriptGeneration";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useScenes } from "@/hooks/useScenes";
 import type { Project, ProjectUpdate } from "@/lib/api";
 import {
   currentStage,
@@ -76,6 +80,8 @@ function ProjectView({ project }: { project: Project }) {
   const remove = useDeleteProject();
   const script = useScriptEditor(project);
   const generation = useScriptGeneration(project);
+  const scenesGeneration = useScenesGeneration(project);
+  const { data: scenesState } = useScenes(project.id);
 
   // Salir del proyecto con cambios del guion sin guardar pide confirmación.
   const blocker = useBlocker(
@@ -104,6 +110,7 @@ function ProjectView({ project }: { project: Project }) {
   };
 
   const stage = currentStage(project.status);
+  const compactStages = view === "escenas";
   return (
     <PageLayout
       title={project.title}
@@ -116,6 +123,8 @@ function ProjectView({ project }: { project: Project }) {
       bottomBar={
         view === "guion" ? (
           <ScriptBottomBar project={project} ctl={script} generation={generation} />
+        ) : view === "escenas" ? (
+          <ScenesBottomBar project={project} generation={scenesGeneration} />
         ) : (
           <BottomBar
             stats={[
@@ -149,8 +158,14 @@ function ProjectView({ project }: { project: Project }) {
     >
       <div className="flex min-h-0 flex-1">
         {/* Etapas del proyecto (referencia 03, columna central) */}
-        <div className="w-72 shrink-0 overflow-y-auto border-r p-2">
+        <div
+          className={cn(
+            "shrink-0 overflow-y-auto border-r p-2 transition-[width] duration-200",
+            compactStages ? "w-14" : "w-72",
+          )}
+        >
           <StageButton
+            compact={compactStages}
             active={view === "resumen"}
             onClick={() => setView("resumen")}
             icon={Info}
@@ -162,6 +177,7 @@ function ProjectView({ project }: { project: Project }) {
             const state = stageState(s, project.status);
             return (
               <StageButton
+                compact={compactStages}
                 key={s.id}
                 active={view === s.id}
                 onClick={() => setView(s.id)}
@@ -172,7 +188,11 @@ function ProjectView({ project }: { project: Project }) {
                     ? `${STATE_TEXT[state]} · v${script.script.version} · ${formatDuration(script.estimated)}${script.dirty ? " · sin guardar" : ""}`
                     : s.id === "guion" && generation.generating
                       ? "Generando…"
-                      : STATE_TEXT[state]
+                      : s.id === "escenas" && scenesGeneration.running
+                        ? "Generando…"
+                        : s.id === "escenas" && scenesState?.scenes.length
+                          ? `${STATE_TEXT[state]} · ${scenesState.scenes.length} escenas${scenesState.review_count ? ` · ${scenesState.review_count} por revisar` : ""}`
+                          : STATE_TEXT[state]
                 }
                 indicator={
                   state === "done" ? (
@@ -188,7 +208,7 @@ function ProjectView({ project }: { project: Project }) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {view !== "guion" && (
+          {view !== "guion" && view !== "escenas" && (
             <div className="flex h-12 shrink-0 items-center border-b px-5">
               <span className="text-[13px] font-medium">
                 {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
@@ -276,6 +296,12 @@ function ProjectView({ project }: { project: Project }) {
               </div>
             ) : view === "guion" ? (
               <ScriptStage project={project} ctl={script} generation={generation} />
+            ) : view === "escenas" ? (
+              <ScenesStage
+                project={project}
+                generation={scenesGeneration}
+                onGoToScript={() => setView("guion")}
+              />
             ) : (
               <StagePlaceholder stageId={view} project={project} />
             )}
@@ -339,6 +365,7 @@ function StageButton({
   subtitle,
   indicator,
   muted,
+  compact,
 }: {
   active: boolean;
   onClick: () => void;
@@ -347,13 +374,16 @@ function StageButton({
   subtitle: string;
   indicator?: React.ReactNode;
   muted?: boolean;
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      title={compact ? `${label} · ${subtitle}` : undefined}
       className={cn(
         "relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
+        compact && "justify-center px-0",
         active
           ? "bg-panel-2 before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-full before:bg-brand"
           : "hover:bg-panel-2/60",
@@ -363,13 +393,17 @@ function StageButton({
         className={cn("size-[18px] shrink-0", muted ? "text-subtle" : "text-muted-foreground")}
         strokeWidth={1.6}
       />
-      <span className="min-w-0 flex-1">
-        <span className={cn("block text-[13px] font-medium", muted && "text-muted-foreground")}>
-          {label}
-        </span>
-        <span className="block truncate text-[12px] text-muted-foreground">{subtitle}</span>
-      </span>
-      {indicator}
+      {!compact && (
+        <>
+          <span className="min-w-0 flex-1">
+            <span className={cn("block text-[13px] font-medium", muted && "text-muted-foreground")}>
+              {label}
+            </span>
+            <span className="block truncate text-[12px] text-muted-foreground">{subtitle}</span>
+          </span>
+          {indicator}
+        </>
+      )}
     </button>
   );
 }

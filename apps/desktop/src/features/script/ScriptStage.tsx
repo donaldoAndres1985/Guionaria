@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorBanner, JobProgress } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -62,14 +63,25 @@ export function ScriptStage({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  if (generation.generating) return <GenerationProgress generation={generation} />;
+  if (generation.generating) {
+    return (
+      <JobProgress
+        job={generation.job}
+        fallback="Enviando a Claude…"
+        hint="Suele tardar entre 20 y 90 segundos. Puedes seguir usando la app: el guion aparecerá aquí al terminar."
+      />
+    );
+  }
   if (ctl.isPending) return null;
 
   if (!ctl.script && !manual && !ctl.dirty) {
     return (
       <div className="flex flex-1 flex-col">
         {generation.error && (
-          <ErrorBanner message={generation.error} onClose={generation.dismissError} />
+          <ErrorBanner
+            message={`No se pudo generar el guion: ${generation.error}`}
+            onClose={generation.dismissError}
+          />
         )}
         <EmptyState
           icon={PenLine}
@@ -95,7 +107,10 @@ export function ScriptStage({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      {generation.error && <ErrorBanner message={generation.error} onClose={generation.dismissError} />}
+      {generation.error && <ErrorBanner
+            message={`No se pudo generar el guion: ${generation.error}`}
+            onClose={generation.dismissError}
+          />}
 
       {/* Barra de herramientas del guion (hace de cabecera del panel) */}
       <div className="flex h-12 shrink-0 items-center gap-1 border-b pr-3 pl-5 text-[12px] whitespace-nowrap">
@@ -317,44 +332,6 @@ function RewritePanel({ ctl }: { ctl: ScriptEditorController }) {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function GenerationProgress({ generation }: { generation: ScriptGeneration }) {
-  const started = generation.job ? Date.parse(generation.job.created_at) : Date.now();
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  const seconds = Math.max(0, Math.round((now - started) / 1000));
-
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
-      <div className="flex size-14 items-center justify-center rounded-lg bg-active text-brand">
-        <LoaderCircle className="size-6 animate-spin" />
-      </div>
-      <div className="text-[15px] font-medium">
-        {generation.job?.message ?? "Enviando a Claude…"}
-      </div>
-      <div className="font-mono text-[13px] text-brand">{formatDuration(seconds)}</div>
-      <p className="max-w-sm text-[13px] text-muted-foreground">
-        Suele tardar entre 20 y 90 segundos. Puedes seguir usando la app: el guion aparecerá aquí al
-        terminar.
-      </p>
-    </div>
-  );
-}
-
-function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
-  return (
-    <div className="flex items-start gap-2.5 border-b border-danger/30 bg-danger/10 px-5 py-2.5 text-[13px]">
-      <TriangleAlert className="mt-0.5 size-4 shrink-0 text-danger" />
-      <span className="selectable flex-1">No se pudo generar el guion: {message}</span>
-      <button type="button" onClick={onClose} aria-label="Cerrar" className="text-muted-foreground">
-        <X className="size-4" />
-      </button>
     </div>
   );
 }
