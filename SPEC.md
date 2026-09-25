@@ -1,6 +1,6 @@
-# ClipForge — Especificación de la aplicación de escritorio para producción de videos
+# Guionaria — Especificación de la aplicación de escritorio para producción de videos
 
-> Nombre provisional. Documento pensado para dárselo a **Claude Code** como contexto inicial del proyecto.
+> Nombre definitivo: **Guionaria**. Documento pensado para dárselo a **Claude Code** como contexto inicial del proyecto.
 > Las capturas de referencia visual están en `docs/ui-reference/` (ver sección 15).
 
 ---
@@ -81,7 +81,6 @@ flowchart TB
     end
     subgraph Tools["Herramientas locales gratis"]
         CC[Claude Code CLI<br/>headless con tu plan]
-        OL[Ollama<br/>respaldo LLM local]
         FF[FFmpeg]
         YT[yt-dlp]
         WH[faster-whisper]
@@ -103,7 +102,7 @@ flowchart TB
     MCP --- SVC
     SVC --- Q --- DB
     SVC --- FS
-    SVC --> CC & OL & FF & YT & WH & TTS & SX
+    SVC --> CC & FF & YT & WH & TTS & SX
     SVC --> PX & PB & UN & OV & WM & FS2 & YTA
 ```
 
@@ -128,7 +127,7 @@ flowchart TB
 | Medios | **FFmpeg, Pillow, imagehash, yt-dlp** | Miniaturas, recortes, conversión, deduplicado, descarga de video. |
 | Transcripción | **faster-whisper** (modelo `small`/`medium`, CPU o GPU) | Timestamps por palabra, gratis y local. |
 | Voz (TTS) | **Piper** o **Kokoro** (local) | Voces en español gratis y offline. |
-| LLM | **Claude Code CLI** (tu plan actual) + **Ollama** como respaldo 100 % gratis | Sin API key. |
+| LLM | **Claude Code CLI** (tu plan actual) | Sin API key. Único proveedor de IA (Ollama descartado). |
 | Empaquetado núcleo | **PyInstaller** → sidecar de Tauri | Un solo instalador para el usuario final. |
 | Búsqueda web | **SearXNG** autoalojado (Docker) | Metabuscador gratis con salida JSON, incluye imágenes. |
 
@@ -136,9 +135,9 @@ flowchart TB
 
 ### Procesos en ejecución
 
-1. Tauri inicia y lanza el sidecar `clipforge-core` (FastAPI en `127.0.0.1:8765`, solo localhost).
+1. Tauri inicia y lanza el sidecar `guionaria-core` (FastAPI en `127.0.0.1:8765`, solo localhost).
 2. La UI consume `http://127.0.0.1:8765/api/*` y recibe progreso por **WebSocket** (`/ws/jobs`).
-3. El mismo proceso expone MCP por HTTP en `http://127.0.0.1:8765/mcp` y existe un entrypoint stdio `clipforge-core mcp` para Claude Desktop.
+3. El mismo proceso expone MCP por HTTP en `http://127.0.0.1:8765/mcp` y existe un entrypoint stdio `guionaria-core mcp` para Claude Desktop.
 4. SearXNG corre aparte en Docker (`http://127.0.0.1:8888`); la app detecta si no está y lo indica en Ajustes.
 
 ---
@@ -156,7 +155,7 @@ claude -p "<prompt>" --output-format json --max-turns 1
 - Se ejecuta con `cwd` = carpeta del proyecto, para que Claude pueda leer `guion.md` y `escenas.json` si hace falta.
 - La salida JSON trae el texto en el campo `result`; el núcleo lo valida con **Pydantic** contra el esquema esperado (sección 11). Si no valida, reintenta una vez con el error adjunto.
 - Todos los prompts viven en `prompts/*.md` versionados y editables desde Ajustes.
-- Proveedor configurable: `claude-cli` (por defecto) | `ollama` (modelo local, p. ej. `qwen2.5:14b` o `llama3.1:8b`) para funcionar sin conexión o si se agotan los límites.
+- Proveedor único: `claude-cli`. Ollama u otros LLM locales quedan descartados por decisión del proyecto.
 
 > Revisar en docs.claude.com los términos vigentes para uso automatizado de la suscripción antes de producción.
 
@@ -167,7 +166,7 @@ Permite pedirle a Claude, desde Claude Desktop o Claude Code: *"Crea un proyecto
 Registro en Claude Code:
 
 ```bash
-claude mcp add --transport http clipforge http://127.0.0.1:8765/mcp
+claude mcp add --transport http guionaria http://127.0.0.1:8765/mcp
 ```
 
 Registro en Claude Desktop (`claude_desktop_config.json`):
@@ -175,8 +174,8 @@ Registro en Claude Desktop (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "clipforge": {
-      "command": "C:\\Program Files\\ClipForge\\clipforge-core.exe",
+    "guionaria": {
+      "command": "C:\\Program Files\\Guionaria\\guionaria-core.exe",
       "args": ["mcp"]
     }
   }
@@ -322,8 +321,8 @@ Pantalla clave. Layout de lista + detalle (referencia 03):
 - Registro de derechos: por proyecto, lista exportable de fuentes y créditos para la descripción del video.
 
 ### 5.16 Ajustes
-- Rutas (carpeta raíz de proyectos), proveedor LLM (Claude CLI / Ollama), claves gratuitas (Pexels, Pixabay, Unsplash, Freesound), URL de SearXNG, modelo Whisper, voces TTS, paralelismo, idioma de UI, tema.
-- Estado de dependencias con verificación (`ffmpeg`, `yt-dlp`, `claude`, `ollama`, Docker/SearXNG) y botón "Cómo instalar".
+- Rutas (carpeta raíz de proyectos), proveedor LLM (Claude CLI), claves gratuitas (Pexels, Pixabay, Unsplash, Freesound), URL de SearXNG, modelo Whisper, voces TTS, paralelismo, idioma de UI, tema.
+- Estado de dependencias con verificación (`ffmpeg`, `yt-dlp`, `claude`, Docker/SearXNG) y botón "Cómo instalar".
 - Editor de prompts.
 - Copia de seguridad / restauración (BD + configuración).
 
@@ -367,8 +366,8 @@ Pantalla clave. Layout de lista + detalle (referencia 03):
 ## 8. Estructura de carpetas en disco
 
 ```
-ClipForge/
-├── clipforge.db
+Guionaria/
+├── guionaria.db
 ├── config/
 │   ├── settings.json
 │   └── prompts/
@@ -466,7 +465,7 @@ CREATE TABLE script_version (
   project_id INTEGER NOT NULL REFERENCES project(id),
   version INTEGER NOT NULL,
   status TEXT NOT NULL,               -- draft | approved | superseded
-  source TEXT,                        -- claude | ollama | manual
+  source TEXT,                        -- claude | manual
   created_at TEXT
 );
 
@@ -673,7 +672,7 @@ Reglas de validación: `tipo` ∈ enum; `busqueda_en` obligatoria si `tipo` ∈ 
 | `get_credits` | project_id | texto de créditos |
 | `job_status` | job_id | progreso |
 
-Recursos MCP (solo lectura): `clipforge://project/{id}/script`, `clipforge://project/{id}/scenes`, `clipforge://channel/{slug}/style`.
+Recursos MCP (solo lectura): `guionaria://project/{id}/script`, `guionaria://project/{id}/scenes`, `guionaria://channel/{slug}/style`.
 
 **Importante:** cuando Claude trabaja por MCP, él mismo redacta guion y escenas y los guarda con `save_script`/`save_scenes`; la app no llama a la CLI en ese caso (evita doble consumo).
 
@@ -776,7 +775,7 @@ Tipografía: títulos de página 22–24 px regular; números clave (duración, 
 
 ### 15.2 Patrones de layout y dónde usarlos
 
-| Referencia | Patrón | Pantalla de ClipForge |
+| Referencia | Patrón | Pantalla de Guionaria |
 |---|---|---|
 | `01`, `03` | Sidebar + lista de categorías + panel de detalle con checkboxes + barra inferior con resumen y botón naranja | **Proyecto**: etapas a la izquierda (Guion, Escenas, Medios, Voz, Timeline, Publicación) y detalle a la derecha. **Revisión de medios**: escenas a la izquierda, candidatos a la derecha. |
 | `02` | Filas comparativas con barras de progreso | **Cola de descargas/trabajos** y comparación de duración estimada vs real por sección del guion. |
@@ -848,7 +847,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 
 ### Fase 1 — MVP de producción (3–4 semanas)
 - [ ] Canales y proyectos (video/reel).
-- [ ] Generación de guion con Claude CLI (+ Ollama), editor por segmentos, versiones, aprobación.
+- [ ] Generación de guion con Claude CLI, editor por segmentos, versiones, aprobación.
 - [ ] Tabla de escenas generada, editable, aprobación y propagación de cambios.
 - [ ] Búsqueda Pexels + Pixabay con orientación; galería de candidatos con selección múltiple.
 - [ ] Cola de descargas, renombrado, miniaturas.
@@ -884,7 +883,6 @@ winget install Python.Python.3.12
 winget install Rustlang.Rustup          # requerido por Tauri
 winget install Gyan.FFmpeg
 winget install Docker.DockerDesktop     # para SearXNG
-winget install Ollama.Ollama            # opcional, LLM local de respaldo
 npm install -g @anthropic-ai/claude-code   # verificar método de instalación vigente en docs.claude.com
 
 # Python
@@ -921,20 +919,20 @@ Claves gratuitas a crear: Pexels, Pixabay, Unsplash, Freesound (y más adelante 
 
 | Tema | Riesgo | Mitigación |
 |---|---|---|
-| Límites del plan de Claude | Generaciones grandes consumen cuota | Ollama de respaldo; MCP evita doble consumo; cachear resultados. |
+| Límites del plan de Claude | Generaciones grandes consumen cuota | MCP evita doble consumo; cachear resultados. |
 | Bloqueo de descargas web | 403, hotlink, marcas de agua | Estado "Manual" + abrir en navegador + drag & drop. |
 | Cuotas de APIs de stock | Límites por hora | Cache SQLite, paginación bajo demanda. |
 | Whisper en CPU | Lento en videos largos | Modelo `small` por defecto, `medium` opcional, GPU si existe. |
 | Publicación en plataformas | Auditorías y apps aprobadas | Empezar con YouTube; Postiz como capa multicanal. |
 | Tamaño en disco | Candidatos acumulados | Limpieza automática de candidatos no usados tras aprobar. |
 
-Decisiones por confirmar: nombre final, soporte macOS/Linux desde el inicio, voz propia vs TTS por canal.
+Decisiones por confirmar: soporte macOS/Linux desde el inicio, voz propia vs TTS por canal.
 
 ---
 
 ## 21. Cómo usar este paquete con Claude Code
 
-1. Descomprime `clipforge-spec.zip` en la carpeta raíz de tu nuevo repo.
+1. Descomprime `guionaria-spec.zip` en la carpeta raíz de tu nuevo repo.
 2. Abre una terminal ahí y ejecuta `claude`.
 3. Primer mensaje sugerido:
 
