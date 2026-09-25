@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/versi%C3%B3n-0.1.0-0a7bbd" alt="versión 0.1.0">
-  <img src="https://img.shields.io/badge/Windows-soportado-2b63d9" alt="Windows soportado">
+  <img src="https://img.shields.io/badge/Windows-soportado-2b63d9?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0zIDUuNSAxMC41IDQuNHY3LjFIM3ptOC41LTEuMkwyMSAzdjguNWgtOS41ek0zIDEyLjVoNy41djcuMUwzIDE4LjV6bTguNSAwSDIxVjIxbC05LjUtMS4zeiIvPjwvc3ZnPg%3D%3D" alt="Windows soportado">
   <img src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white" alt="Tauri 2">
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
