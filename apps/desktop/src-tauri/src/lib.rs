@@ -38,6 +38,7 @@ fn spawn_core(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if should_spawn_core() {
                 // Si falla, la UI muestra "núcleo no disponible" y sigue funcionando.

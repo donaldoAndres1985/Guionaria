@@ -9,6 +9,7 @@ from . import __version__
 from .api import (
     channels,
     health,
+    ideas,
     integrations,
     jobs,
     manual,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
         voice,
         timeline,
         integrations,
+        ideas,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

@@ -14,7 +14,7 @@ from ..models._base import now_iso
 from ..schemas.project import DEFAULT_DURATION_S, ProjectCreate, ProjectRead, ProjectUpdate
 from ..util.slug import slugify
 from .channels import get_channel
-from .errors import NotFound
+from .errors import Conflict, NotFound
 from .oplog import log_operation
 
 # Subcarpetas de cada proyecto (sección 8). render/ se crea en la fase de render.
@@ -195,11 +195,13 @@ def delete_project(session: Session, project_id: int) -> None:
         shutil.move(str(folder), str(trash / f"{stamp}_{folder.name}"))
 
     # imports locales: script, scenes y media dependen de este módulo
+    from .ideas import release_project
     from .media.service import delete_media_data
     from .scenes import delete_scene_data
     from .script import delete_script_data
     from .voice.service import delete_voice_data
 
+    release_project(session, project.id)
     delete_media_data(session, project)
     delete_scene_data(session, project.id)
     delete_script_data(session, project.id)
@@ -208,3 +210,31 @@ def delete_project(session: Session, project_id: int) -> None:
     log_operation(session, "delete", "project", project.id, {"title": project.title})
     session.delete(project)
     session.commit()
+
+
+# Etapas finales que todavía se hacen fuera de la app (render y publicación): se marcan a mano,
+# por ejemplo arrastrando la tarjeta en el tablero. Las anteriores solo avanzan aprobando.
+MANUAL_STATUSES = (
+    ProjectStatus.TIMELINE_LISTO,
+    ProjectStatus.RENDERIZADO,
+    ProjectStatus.PROGRAMADO,
+    ProjectStatus.PUBLICADO,
+)
+
+
+def set_manual_status(session: Session, project_id: int, status: ProjectStatus) -> ProjectRead:
+    project = get_project(session, project_id)
+    if project.status not in MANUAL_STATUSES:
+        raise Conflict("El proyecto avanza aprobando cada etapa hasta tener el timeline")
+    if status not in MANUAL_STATUSES:
+        raise Conflict(
+            "Solo se puede mover entre Timeline listo, Renderizado, Programado y Publicado"
+        )
+    if status != project.status:
+        log_operation(
+            session, "status", "project", project.id, {"from": project.status, "to": status}
+        )
+        project.status = status
+        project.updated_at = now_iso()
+        session.commit()
+    return read_project(session, project_id)

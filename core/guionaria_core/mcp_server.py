@@ -28,7 +28,7 @@ from .models import Channel, Scene
 from .schemas.project import ProjectCreate
 from .schemas.scene import EFFECTS, EscenaClaude, SceneUpdate
 from .schemas.script import SegmentIn
-from .services import channels, jobs, projects, script
+from .services import channels, ideas, jobs, projects, script
 from .services import scenes as scene_svc
 from .services.errors import DomainError, NotFound
 from .services.jobs import JobContext, JobRead
@@ -163,6 +163,12 @@ class SegmentInput(BaseModel):
     needs_fact_check: bool = Field(default=False, description="Dato que conviene verificar")
 
 
+class IdeaItem(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    notes: str | None = None
+    priority: int = Field(default=2, ge=1, le=3, description="1 alta · 2 media · 3 baja")
+
+
 def build_mcp() -> MCPServer:
     server = MCPServer(name="guionaria", version=__version__, instructions=INSTRUCTIONS)
 
@@ -273,6 +279,50 @@ def build_mcp() -> MCPServer:
                 project.status, "Listo para editar: abre el timeline en DaVinci Resolve."
             )
             return summary
+
+    # --- ideas ---
+
+    @tool
+    def list_ideas(
+        channel: str | None = None,
+        status: Literal["open", "converted", "discarded"] | None = "open",
+    ) -> dict[str, Any]:
+        """Banco de ideas (por defecto, las abiertas), de mayor a menor prioridad."""
+        with _session() as s:
+            channel_id = _channel(s, channel).id if channel else None
+            return {"ideas": [i.model_dump() for i in ideas.list_ideas(s, channel_id, status)]}
+
+    @tool
+    def add_ideas(channel: str, items: list[IdeaItem]) -> dict[str, Any]:
+        """Guarda varias ideas en el banco del canal. Cada una: title, notes (opcional) y
+        priority (1 alta, 2 media, 3 baja)."""
+        with _session() as s:
+            ch = _channel(s, channel)
+            created = []
+            for item in items:
+                data = ideas.IdeaCreate(channel_id=ch.id, **item.model_dump())
+                created.append(ideas.create_idea(s, data).id)
+            return {"idea_ids": created}
+
+    @tool
+    def convert_idea(
+        idea_id: int,
+        format: Literal["video", "reel"],
+        target_duration_s: int | None = None,
+        target_publish_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Convierte una idea en proyecto (título y notas pasan al proyecto)."""
+        with _session() as s:
+            p = ideas.convert_idea(
+                s,
+                idea_id,
+                ideas.ConvertRequest(
+                    format=format,
+                    target_duration_s=target_duration_s,
+                    target_publish_at=target_publish_at,
+                ),
+            )
+            return {"project_id": p.id, "folder": p.folder_path, "status": p.status}
 
     # --- guion ---
 

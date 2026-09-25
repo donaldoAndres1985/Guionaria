@@ -59,3 +59,29 @@ export function useDeleteProject() {
     },
   });
 }
+
+/** Cambia la fecha de publicación (arrastrar en el calendario) de cualquier proyecto. */
+export function useRescheduleProject() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, date }: { id: number; date: string | null }) =>
+      api.patch<Project>(`/api/projects/${id}`, { target_publish_at: date }),
+    onSuccess: (project) => {
+      client.setQueryData(["project", project.id], project);
+      void client.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+/** Etapas finales hechas fuera de la app (arrastrar en el tablero). */
+export function useSetProjectStatus() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: Project["status"] }) =>
+      api.post<Project>(`/api/projects/${id}:set-status`, { status }),
+    onSuccess: (project) => {
+      client.setQueryData(["project", project.id], project);
+      void client.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
