@@ -198,10 +198,12 @@ def delete_project(session: Session, project_id: int) -> None:
     from .media.service import delete_media_data
     from .scenes import delete_scene_data
     from .script import delete_script_data
+    from .voice.service import delete_voice_data
 
     delete_media_data(session, project)
     delete_scene_data(session, project.id)
     delete_script_data(session, project.id)
+    delete_voice_data(session, project.id)
     session.exec(text("DELETE FROM project_fts WHERE rowid = :id").bindparams(id=project.id))
     log_operation(session, "delete", "project", project.id, {"title": project.title})
     session.delete(project)

@@ -393,3 +393,42 @@ export interface PackageResult {
   files: string[];
   missing_media: number[];
 }
+
+export interface VoiceInfo {
+  id: string;
+  label: string;
+  country: string;
+  quality: string;
+  speakers: number;
+  size_mb: number;
+  path: string;
+  installed: boolean;
+}
+
+export type TimingSource = "voice" | "whisper";
+
+export interface SegmentVoice {
+  seg_key: string;
+  text: string;
+  start_s: number | null;
+  end_s: number | null;
+  audio_url: string | null;
+}
+
+export interface VoiceState {
+  project_id: number;
+  can_edit: boolean;
+  reason: string | null;
+  source: "piper" | "recorded" | null;
+  voice_id: string | null;
+  speed: number | null;
+  duration_s: number | null;
+  audio_url: string | null;
+  timing_source: TimingSource | null;
+  stale: boolean;
+  segments: SegmentVoice[];
+  word_count: number;
+  subtitles: string[];
+  default_voice: string;
+  whisper_model: string;
+}

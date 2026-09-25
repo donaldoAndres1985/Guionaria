@@ -9,7 +9,7 @@ const isActive = (job: Job | null | undefined) =>
 function onJobFinished(client: QueryClient, job: Job) {
   if (job.project_id == null) return;
   const pid = job.project_id;
-  const keys = [["script", pid], ["script-versions", pid], ["scenes", pid], ["project", pid], ["projects"]];
+  const keys = [["script", pid], ["script-versions", pid], ["scenes", pid], ["voice", pid], ["project", pid], ["projects"]];
   for (const key of keys) {
     void client.invalidateQueries({ queryKey: key });
   }

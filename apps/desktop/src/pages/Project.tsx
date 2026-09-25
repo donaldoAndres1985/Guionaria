@@ -28,6 +28,9 @@ import { ScriptBottomBar } from "@/features/script/ScriptBottomBar";
 import { ScriptStage } from "@/features/script/ScriptStage";
 import { useScriptEditor } from "@/features/script/useScriptEditor";
 import { useScriptGeneration } from "@/features/script/useScriptGeneration";
+import { useVoiceController } from "@/features/voice/useVoiceController";
+import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
+import { VoiceStage } from "@/features/voice/VoiceStage";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { useScenes } from "@/hooks/useScenes";
@@ -87,6 +90,7 @@ function ProjectView({ project }: { project: Project }) {
   const scenesGeneration = useScenesGeneration(project);
   const { data: scenesState } = useScenes(project.id);
   const media = useMediaController(project);
+  const voice = useVoiceController(project);
   const revealProject = useRevealProject();
 
   // Salir del proyecto con cambios del guion sin guardar pide confirmación.
@@ -133,6 +137,8 @@ function ProjectView({ project }: { project: Project }) {
           <ScenesBottomBar project={project} generation={scenesGeneration} />
         ) : view === "medios" ? (
           <MediaBottomBar project={project} ctl={media} />
+        ) : view === "voz" ? (
+          <VoiceBottomBar ctl={voice} />
         ) : (
           <BottomBar
             stats={[
@@ -196,6 +202,10 @@ function ProjectView({ project }: { project: Project }) {
                     ? `${STATE_TEXT[state]} · v${script.script.version} · ${formatDuration(script.estimated)}${script.dirty ? " · sin guardar" : ""}`
                     : s.id === "guion" && generation.generating
                       ? "Generando…"
+                      : s.id === "voz" && voice.running
+                        ? "Trabajando la voz…"
+                        : s.id === "voz" && voice.state?.duration_s
+                          ? `${STATE_TEXT[state]} · ${formatDuration(voice.state.duration_s)}${voice.state.stale ? " · desactualizada" : ""}`
                       : s.id === "escenas" && scenesGeneration.running
                         ? "Generando…"
                         : s.id === "medios" && media.overview?.needing_media
@@ -218,7 +228,7 @@ function ProjectView({ project }: { project: Project }) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {view !== "guion" && view !== "escenas" && view !== "medios" && (
+          {view !== "guion" && view !== "escenas" && view !== "medios" && view !== "voz" && (
             <div className="flex h-12 shrink-0 items-center border-b px-5">
               <span className="text-[13px] font-medium">
                 {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
@@ -315,6 +325,8 @@ function ProjectView({ project }: { project: Project }) {
               <ScriptStage project={project} ctl={script} generation={generation} />
             ) : view === "medios" ? (
               <MediaStage project={project} ctl={media} onGoToScenes={() => setView("escenas")} />
+            ) : view === "voz" ? (
+              <VoiceStage ctl={voice} onGoToScript={() => setView("guion")} />
             ) : view === "escenas" ? (
               <ScenesStage
                 project={project}

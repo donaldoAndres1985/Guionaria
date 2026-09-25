@@ -34,8 +34,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **0 — Base** | Tauri + React, núcleo Python como sidecar, tema y layout, SQLite + migraciones, verificación de dependencias | ✅ Completa |
 | **1 — MVP de producción** | Canales y proyectos · guion con Claude y editor TipTap · tabla de escenas · Pexels y Pixabay · descargas, miniaturas y renombrado · vista grande, arrastrar y soltar, Ctrl+V · paquete del proyecto | ✅ Completa |
 | **2A — Material real** | SearXNG, Wikimedia Commons, Openverse, Unsplash · video desde URL con yt-dlp (con fragmento) | ✅ Completa |
-| 2B — Voz y tiempos | TTS local (Piper) o voz grabada · Whisper para tiempos reales · SRT/VTT | ⏳ Siguiente |
-| 2C — Timeline | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ⏳ |
+| **2B — Voz y tiempos** | TTS local (Piper) o voz grabada · Whisper para tiempos reales · SRT/VTT | ✅ Completa |
+| 2C — Timeline | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ⏳ Siguiente |
 | 2D — MCP | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ⏳ |
 | 2E — Encuadre | Zona visible en 16:9 o 9:16 y tramo del clip | ⏳ |
 | 3 — Organización | Biblioteca global, almacenamiento, calendario, ideas, historial | ⏳ |
@@ -88,6 +88,15 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - **Video desde URL** (YouTube, noticias, redes) con yt-dlp, con opción de bajar solo un fragmento.
 - El material sin licencia conocida queda marcado **Derechos: revisar**.
 - **Exportar paquete** deja `guion.md`, `escenas.md` y `.csv`, `creditos.txt` y `LEEME.txt` en la carpeta del proyecto.
+
+### Voz
+
+- **Voz generada con Piper**, gratis y sin conexión: eliges la voz en español, la velocidad y la pausa entre segmentos. Cada voz se descarga solo la primera vez.
+- Se genera segmento por segmento, así que los **tiempos reales** salen al instante y puedes **regenerar un solo segmento**.
+- **Voz grabada:** subes tu audio (WAV, MP3, M4A…) y **Whisper** lo transcribe con tiempos por palabra y lo alinea con el guion, aunque cambies alguna palabra al leer.
+- Los tiempos reales reemplazan a los estimados en la tabla de escenas y en los nombres de los archivos aprobados. Se escriben `subs/voz.srt` y `subs/voz.vtt`.
+- Forma de onda con los segmentos marcados; clic en un segmento para escucharlo.
+- Si cambias el guion después, la voz queda **desactualizada** y las escenas vuelven a los tiempos estimados hasta que la generes o transcribas de nuevo.
 
 ### Canales y ajustes
 
@@ -186,8 +195,11 @@ Guionaria/
 ├── guionaria.db                 base de datos (proyectos, versiones, escenas, medios)
 ├── config/settings.json         ajustes y claves de API (solo en tu equipo)
 ├── config/prompts/*.md          prompts editables
+├── models/piper · models/whisper   voces y modelo de Whisper (se descargan la primera vez)
 └── channels/<canal>/projects/2026-09-30_el-crimen-del-hotel-cecil_reel/
     ├── guion.md · escenas.md · escenas.csv · escenas.json · creditos.txt · LEEME.txt
+    ├── audio/voz.wav · audio/segments/seg_001.wav …
+    ├── subs/voz.srt · subs/voz.vtt
     └── media/
         ├── approved/   001_0000_real_cecil-hotel-los-angeles.jpg   ← {escena}_{inicio}_{tipo}_{slug}
         ├── candidates/ 001_wikimedia_12345.jpg
@@ -196,14 +208,15 @@ Guionaria/
 
 ## Pruebas
 
-- **250 pruebas automáticas:** 175 del núcleo y 75 de la app.
-- Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs y las descargas se simulan.
+- **282 pruebas automáticas:** 197 del núcleo y 85 de la app.
+- Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:
   - guiones y escenas con Claude;
   - búsquedas en Wikimedia y Openverse;
   - un fragmento de YouTube con yt-dlp;
-  - importación desde una página web.
+  - importación desde una página web;
+  - voz real con Piper y transcripción con Whisper, también desde el sidecar empaquetado.
 
 ## Derechos y responsabilidad
 
