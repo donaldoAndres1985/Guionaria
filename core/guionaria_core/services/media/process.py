@@ -92,6 +92,9 @@ def video_info(path: Path) -> MediaInfo:
 def make_thumbnail(src: Path, dest: Path, kind: str, duration_s: float | None = None) -> str | None:
     """Miniatura JPG de 480 px. Devuelve el hash perceptual del fotograma si es un video."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # Si ya existía, puede ser un enlace duro compartido con otro proyecto: se quita la entrada
+    # para escribir un archivo nuevo en vez de sobrescribir el compartido.
+    dest.unlink(missing_ok=True)
     if kind == "image":
         try:
             with Image.open(src) as img:

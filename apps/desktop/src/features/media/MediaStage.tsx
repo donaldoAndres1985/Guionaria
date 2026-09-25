@@ -1,4 +1,4 @@
-import { Crop as CropIcon, Film, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
+import { Crop as CropIcon, Film, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,6 +10,7 @@ import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { CandidateCard } from "./CandidateCard";
 import { FramingDialog, type FramingTarget } from "./FramingDialog";
+import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
 import { VideoUrlDialog } from "./VideoUrlDialog";
@@ -27,6 +28,7 @@ export function MediaStage({
   onGoToScenes: () => void;
 }) {
   const [framing, setFraming] = useState<FramingTarget | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
   const { dragging, dropProps } = useMediaDrop(
@@ -245,8 +247,15 @@ export function MediaStage({
                       </span>
                       <button
                         type="button"
-                        onClick={() => ctl.openVideoDialog()}
+                        onClick={() => setPickerOpen(true)}
                         className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <Library className="size-3.5" /> Biblioteca
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => ctl.openVideoDialog()}
+                        className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
                       >
                         <Film className="size-3.5" /> Video desde URL
                       </button>
@@ -391,6 +400,14 @@ export function MediaStage({
       <MediaViewer ctl={ctl} />
       <VideoUrlDialog ctl={ctl} />
       <FramingDialog projectId={project.id} target={framing} onClose={() => setFraming(null)} />
+      {ctl.scene && (
+        <LibraryPickerDialog
+          scene={ctl.scene}
+          orientation={ctl.overview?.orientation ?? (project.format === "video" ? "landscape" : "portrait")}
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

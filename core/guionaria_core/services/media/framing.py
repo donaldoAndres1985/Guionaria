@@ -11,7 +11,7 @@ encuadre, no vuelve a codificar: lo aplica el timeline.
 """
 
 import json
-import shutil
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +29,7 @@ from ..errors import Conflict, DomainError, NotFound
 from ..jobs import JobContext
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
-from . import process
+from . import dedup, process
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 MIN_CLIP_S = 0.5
@@ -260,9 +260,13 @@ def _replace_approved(session: Session, scene: Scene, row: SceneAsset, produced:
     target = old.parent if old else project_dir(session.get(Project, scene.project_id))
     wanted = target / _expected_name(session, scene, row, produced.suffix)
     check_path_length(wanted)
-    if old and old != wanted:
+    # El aprobado puede ser un enlace duro al original: se quita la entrada y se reemplaza con
+    # os.replace. Copiar encima (como hace shutil.move en Windows si el destino existe)
+    # escribiría a través del enlace y cambiaría el archivo original.
+    if old:
         old.unlink(missing_ok=True)
-    shutil.move(str(produced), wanted)
+    wanted.unlink(missing_ok=True)
+    os.replace(produced, wanted)
     row.file_path = _rel(wanted)
 
 
@@ -289,7 +293,7 @@ def save_framing(
         # Sin encuadre: el aprobado vuelve a ser una copia del original.
         if load(row).get("rendered"):
             tmp = source.with_name(f".copia-{row.scene_id}-{row.asset_id}{source.suffix}")
-            shutil.copy2(source, tmp)
+            dedup.link_or_copy(source, tmp)
             _replace_approved(session, scene, row, tmp)
     elif asset.kind == "image":
         tmp = source.with_name(f".encuadre-{row.scene_id}-{row.asset_id}.jpg")

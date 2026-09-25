@@ -21,4 +21,6 @@ class Asset(SQLModel, table=True):
     size_bytes: int | None = None
     phash: str | None = None
     low_res: int = 0
+    sha256: str | None = Field(default=None, index=True)  # deduplicado exacto
+    reused_from_id: int | None = None  # medio de otro proyecto reutilizado aquí
     created_at: str = Field(default_factory=now_iso)

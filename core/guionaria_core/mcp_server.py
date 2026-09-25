@@ -28,7 +28,7 @@ from .models import Channel, Scene
 from .schemas.project import ProjectCreate
 from .schemas.scene import EFFECTS, EscenaClaude, SceneUpdate
 from .schemas.script import SegmentIn
-from .services import channels, ideas, jobs, projects, script
+from .services import channels, ideas, jobs, library, projects, script
 from .services import scenes as scene_svc
 from .services.errors import DomainError, NotFound
 from .services.jobs import JobContext, JobRead
@@ -459,6 +459,49 @@ def build_mcp() -> MCPServer:
             exclusive=False,
         )
         return _job_summary(job)
+
+    @tool
+    def search_library(
+        query: str | None = None,
+        kind: Literal["image", "video"] | None = None,
+        channel: str | None = None,
+        orientation: Literal["landscape", "portrait", "square"] | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Busca en la biblioteca global (medios ya descargados en cualquier proyecto) por nombre,
+        autor u origen. Úsalo antes de buscar en internet: reuse_media no ocupa espacio extra."""
+        with _session() as s:
+            channel_id = _channel(s, channel).id if channel else None
+            page = library.list_library(
+                s, kind=kind, channel_id=channel_id, orientation=orientation, q=query,
+                page_size=max(1, min(limit, 100)),
+            )  # fmt: skip
+            return {
+                "total": page.total,
+                "items": [
+                    {
+                        "asset_id": i.asset.id,
+                        "file_name": i.asset.file_name,
+                        "kind": i.asset.kind,
+                        "provider": i.asset.provider,
+                        "author": i.asset.author,
+                        "license": i.asset.license,
+                        "width": i.asset.width,
+                        "height": i.asset.height,
+                        "duration_s": i.asset.duration_s,
+                        "project": i.project_title,
+                        "used": bool(i.used_in),
+                    }
+                    for i in page.items
+                ],
+            }
+
+    @tool
+    def reuse_media(asset_id: int, scene_id: int) -> dict[str, Any]:
+        """Usa un medio de la biblioteca en una escena (queda como candidato descargado; después
+        apruébalo con approve_media)."""
+        with _session() as s:
+            return _scene_media(library.reuse_asset(s, asset_id, scene_id))
 
     @tool
     def approve_media(

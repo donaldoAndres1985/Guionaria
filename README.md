@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
   <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
-  <img src="https://img.shields.io/badge/pruebas-337-2ea44f" alt="337 pruebas">
+  <img src="https://img.shields.io/badge/pruebas-349-2ea44f" alt="349 pruebas">
 </p>
 
 <p align="center">
@@ -80,7 +80,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **2D — MCP** | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ✅ Completa |
 | **2E — Encuadre** | Zona visible en 16:9 o 9:16 y tramo del clip | ✅ Completa |
 | **3A — Planificación** | Banco de ideas · calendario mensual y semanal · tablero kanban · recordatorios | ✅ Completa |
-| 3B–3E — Organización | Biblioteca global · almacenamiento · historial y papelera · SFX y música | ⏳ Siguiente |
+| **3B — Biblioteca** | Biblioteca global de medios · deduplicado por hash · reutilización sin duplicar archivos | ✅ Completa |
+| 3C–3E — Organización | Almacenamiento · historial y papelera · SFX y música | ⏳ Siguiente |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -152,6 +153,13 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - Avisos antes de editar: escenas sin medio, videos más cortos que su escena o proyecto sin voz.
 - En DaVinci Resolve: *Archivo → Importar → Timeline* y elige el `.otio` o el `.fcpxml`. El `LEEME.txt` del proyecto repite los pasos.
 
+### Biblioteca de medios
+
+- Todo lo descargado o agregado en todos los proyectos, en **tabla o cuadrícula**, con pestañas por tipo y filtros por canal, proyecto, fuente, orientación y uso (aprobados o sin usar). También se puede ver solo lo duplicado.
+- Panel de detalle con vista previa, autor, licencia, en qué escenas se usa, **Mostrar en carpeta** y enlace al origen.
+- **Reutilizar en…** otro proyecto, o **Biblioteca** desde la escena en la pantalla de medios: el medio queda como candidato sin volver a descargarse.
+- **Deduplicado por hash (SHA-256):** los archivos idénticos, las copias aprobadas y los medios reutilizados son enlaces duros al mismo archivo, así que no ocupan espacio de nuevo. La barra inferior muestra cuánto se ahorró.
+
 ### Ideas y calendario
 
 - **Banco de ideas** por canal, con prioridad y notas: se escribe la idea y se pulsa Enter. Se descarta, se reabre o se **convierte en proyecto** con un clic (el título y las notas pasan al proyecto). Si se borra el proyecto, la idea vuelve a quedar abierta.
@@ -181,10 +189,10 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 
 - El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
 - **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
-- Herramientas para todo el flujo (27):
+- Herramientas para todo el flujo (29):
   - canales, proyectos e ideas (`list_ideas`, `add_ideas`, `convert_idea`);
   - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
-  - medios (`search_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
+  - medios (`search_media`, `search_library`, `reuse_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
   - voz (`generate_voice`, `import_voice`, `transcribe_voice`);
   - salida (`export_timeline`, `get_credits`) y `job_status`.
 - Recursos de solo lectura: el guion y las escenas de un proyecto, y el estilo de un canal.
@@ -289,7 +297,7 @@ Guionaria/
 
 ## Pruebas
 
-- **337 pruebas automáticas:** 227 del núcleo y 110 de la app.
+- **349 pruebas automáticas:** 234 del núcleo y 115 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:
