@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import httpx
@@ -135,9 +136,12 @@ def test_video_framing_job(client, media_project, web, home, monkeypatch):
     asset = approve(client, scene, providers=["pexels"])
     set_asset(asset["id"], duration_s=10.0, width=1920, height=1080)
     calls = []
+    # La codificación simulada espera a que la prueba vea el estado «pendiente» (sin carrera).
+    release = threading.Event()
 
     def fake_render(src, dst, mode, crop, trim_in, trim_out, tw, th):
         calls.append((mode, crop, trim_in, trim_out, tw, th))
+        release.wait(10)
         Path(dst).write_bytes(b"encuadrado")
 
     monkeypatch.setattr(framing, "render_video", fake_render)
@@ -150,6 +154,7 @@ def test_video_framing_job(client, media_project, web, home, monkeypatch):
     assert saved["framing"]["rendered"] is False
     media = client.get(f"/api/scenes/{scene}/media").json()
     assert media["approved"][0]["framing_pending"] is True
+    release.set()
     job = wait_job(client, saved["job"]["id"])
     assert job["status"] == "done", job["error"]
     assert job["type"] == "frame_media"
