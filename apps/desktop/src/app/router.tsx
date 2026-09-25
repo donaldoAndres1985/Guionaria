@@ -6,6 +6,7 @@ import { HistoryPage } from "@/pages/History";
 import { HomePage } from "@/pages/Home";
 import { IdeasPage } from "@/pages/Ideas";
 import { MediaPage } from "@/pages/Media";
+import { ProjectPage } from "@/pages/Project";
 import { ProjectsPage } from "@/pages/Projects";
 import { PublishingPage } from "@/pages/Publishing";
 import { SettingsPage } from "@/pages/Settings";
@@ -19,6 +20,7 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: "proyectos", element: <ProjectsPage /> },
+      { path: "proyectos/:id", element: <ProjectPage /> },
       { path: "ideas", element: <IdeasPage /> },
       { path: "calendario", element: <CalendarPage /> },
       { path: "medios", element: <MediaPage /> },

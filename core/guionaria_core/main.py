@@ -1,13 +1,15 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from . import __version__
-from .api import health, settings
+from .api import channels, health, projects, settings
 from .config import ensure_home
 from .db import run_migrations
+from .services.errors import DomainError
 
 # Orígenes del webview de Tauri (Windows usa http://tauri.localhost) y del dev server de Vite.
 ALLOWED_ORIGINS = [
@@ -35,6 +37,13 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(settings.router)
+    app.include_router(channels.router)
+    app.include_router(projects.router)
+
+    @app.exception_handler(DomainError)
+    async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
     return app
 
 

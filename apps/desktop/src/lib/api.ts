@@ -17,15 +17,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (!resp.ok) {
-    throw new ApiError(resp.status, `${resp.status} ${resp.statusText}`);
+    throw new ApiError(resp.status, await errorMessage(resp));
   }
+  if (resp.status === 204) return undefined as T;
   return resp.json() as Promise<T>;
 }
 
+/** FastAPI devuelve {"detail": "..."} o, en validaciones, {"detail": [{msg, loc}]}. */
+async function errorMessage(resp: Response): Promise<string> {
+  try {
+    const body = await resp.json();
+    if (typeof body.detail === "string") return body.detail;
+    if (Array.isArray(body.detail) && body.detail[0]?.msg) {
+      const field = body.detail[0].loc?.at(-1);
+      return field ? `${field}: ${body.detail[0].msg}` : body.detail[0].msg;
+    }
+  } catch {
+    // respuesta sin JSON
+  }
+  return `${resp.status} ${resp.statusText}`;
+}
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  body: JSON.stringify(body),
+});
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  put: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  post: <T>(path: string, body: unknown) => request<T>(path, json("POST", body)),
+  put: <T>(path: string, body: unknown) => request<T>(path, json("PUT", body)),
+  patch: <T>(path: string, body: unknown) => request<T>(path, json("PATCH", body)),
+  del: (path: string) => request<void>(path, { method: "DELETE" }),
 };
 
 export interface DependencyStatus {
@@ -63,4 +86,67 @@ export interface AppSettings {
   ui_language: string;
   theme: "dark" | "light";
   api_keys: ApiKeys;
+}
+
+export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
+
+export interface ChannelInput {
+  name: string;
+  platforms: Platform[];
+  language: string;
+  niche: string | null;
+  style_prompt: string | null;
+  script_template: string | null;
+  words_per_second: number;
+  default_voice: string | null;
+}
+
+export interface Channel extends ChannelInput {
+  id: number;
+  slug: string;
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProjectStatus =
+  | "IDEA"
+  | "GUION_BORRADOR"
+  | "GUION_APROBADO"
+  | "ESCENAS_BORRADOR"
+  | "ESCENAS_APROBADAS"
+  | "MEDIOS_EN_REVISION"
+  | "MEDIOS_APROBADOS"
+  | "VOZ_LISTA"
+  | "TIMELINE_LISTO"
+  | "RENDERIZADO"
+  | "PROGRAMADO"
+  | "PUBLICADO";
+
+export type ProjectFormat = "video" | "reel";
+
+export interface ProjectInput {
+  channel_id: number;
+  title: string;
+  format: ProjectFormat;
+  topic: string | null;
+  research_notes: string | null;
+  target_duration_s: number | null;
+  target_publish_at: string | null;
+  priority: number;
+  tags: string[];
+}
+
+export type ProjectUpdate = Partial<Omit<ProjectInput, "channel_id" | "format">>;
+
+export interface Project extends ProjectInput {
+  id: number;
+  channel_name: string;
+  channel_slug: string;
+  slug: string;
+  status: ProjectStatus;
+  folder_path: string;
+  parent_project_id: number | null;
+  created_at: string;
+  updated_at: string;
 }
