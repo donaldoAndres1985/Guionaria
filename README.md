@@ -38,7 +38,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **2C — Timeline** | Exportar a OTIO, FCPXML (DaVinci Resolve) y EDL | ✅ Completa |
 | **2D — MCP** | Servidor MCP para usar Guionaria desde Claude Desktop y Claude Code | ✅ Completa |
 | **2E — Encuadre** | Zona visible en 16:9 o 9:16 y tramo del clip | ✅ Completa |
-| 3 — Organización | Biblioteca global, almacenamiento, calendario, ideas, historial | ⏳ Siguiente |
+| **3A — Planificación** | Banco de ideas · calendario mensual y semanal · tablero kanban · recordatorios | ✅ Completa |
+| 3B–3E — Organización | Biblioteca global · almacenamiento · historial y papelera · SFX y música | ⏳ Siguiente |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -110,6 +111,13 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - Avisos antes de editar: escenas sin medio, videos más cortos que su escena o proyecto sin voz.
 - En DaVinci Resolve: *Archivo → Importar → Timeline* y elige el `.otio` o el `.fcpxml`. El `LEEME.txt` del proyecto repite los pasos.
 
+### Ideas y calendario
+
+- **Banco de ideas** por canal, con prioridad y notas: se escribe la idea y se pulsa Enter. Se descarta, se reabre o se **convierte en proyecto** con un clic (el título y las notas pasan al proyecto). Si se borra el proyecto, la idea vuelve a quedar abierta.
+- **Calendario** mensual y semanal con los proyectos en su fecha de publicación: se arrastran a otro día o a «Sin fecha».
+- **Tablero** por etapa. Las etapas de producción avanzan aprobando dentro del proyecto; las finales (*Para editar → Renderizado → Programado → Publicado*) se mueven arrastrando, porque el render y la publicación todavía se hacen fuera de la app.
+- **Recordatorios:** notificación del sistema para las publicaciones de hoy y de mañana, una vez al día.
+
 ### Canales y ajustes
 
 ![Canales](docs/screenshots/07-canales.png)
@@ -132,8 +140,8 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 
 - El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
 - **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
-- Herramientas para todo el flujo (24):
-  - canales y proyectos;
+- Herramientas para todo el flujo (27):
+  - canales, proyectos e ideas (`list_ideas`, `add_ideas`, `convert_idea`);
   - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
   - medios (`search_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
   - voz (`generate_voice`, `import_voice`, `transcribe_voice`);
@@ -236,7 +244,7 @@ Guionaria/
 
 ## Pruebas
 
-- **324 pruebas automáticas:** 222 del núcleo y 102 de la app.
+- **337 pruebas automáticas:** 227 del núcleo y 110 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:

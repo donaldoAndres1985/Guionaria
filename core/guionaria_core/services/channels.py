@@ -109,6 +109,9 @@ def delete_channel(session: Session, channel_id: int) -> None:
             raise Conflict("La carpeta del canal tiene archivos (marca, logos...): muévelos antes")
         shutil.rmtree(channel_dir)
 
+    from .ideas import delete_channel_ideas  # import local: ideas depende de proyectos
+
+    delete_channel_ideas(session, channel.id)
     log_operation(session, "delete", "channel", channel.id, {"name": channel.name})
     session.delete(channel)
     session.commit()

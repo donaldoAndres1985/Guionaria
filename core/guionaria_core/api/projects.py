@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..db import get_session
@@ -40,3 +41,13 @@ def update_project(project_id: int, data: ProjectUpdate, session: SessionDep) ->
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(project_id: int, session: SessionDep) -> None:
     svc.delete_project(session, project_id)
+
+
+class StatusRequest(BaseModel):
+    status: ProjectStatus
+
+
+@router.post("/{project_id}:set-status", response_model=ProjectRead)
+def set_status(project_id: int, data: StatusRequest, session: SessionDep) -> ProjectRead:
+    """Etapas finales que se hacen fuera de la app (render, programación, publicación)."""
+    return svc.set_manual_status(session, project_id, data.status)

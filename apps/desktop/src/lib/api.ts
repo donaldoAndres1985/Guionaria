@@ -521,3 +521,25 @@ export interface McpInfo {
   claude_code_available: boolean;
   claude_code_registered: boolean | null;
 }
+
+export type IdeaStatus = "open" | "converted" | "discarded";
+
+export interface Idea {
+  id: number;
+  channel_id: number;
+  channel_name: string;
+  title: string;
+  notes: string | null;
+  priority: number;
+  status: IdeaStatus;
+  project_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IdeaInput {
+  channel_id: number;
+  title: string;
+  notes?: string | null;
+  priority?: number;
+}
