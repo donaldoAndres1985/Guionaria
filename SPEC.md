@@ -839,11 +839,11 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 ## 17. Plan de desarrollo por fases
 
 ### Fase 0 — Base (1 semana)
-- [ ] Repo monorepo: `apps/desktop` (Tauri+React), `core/` (Python), `docs/`.
-- [ ] Tauri lanza sidecar Python; `/api/health`.
-- [ ] Tema, tokens y layout (sidebar + encabezado + barra inferior).
-- [ ] SQLite + Alembic + modelos.
-- [ ] Ajustes con verificación de dependencias.
+- [x] Repo monorepo: `apps/desktop` (Tauri+React), `core/` (Python), `docs/`.
+- [x] Tauri lanza sidecar Python; `/api/health`.
+- [x] Tema, tokens y layout (sidebar + encabezado + barra inferior).
+- [x] SQLite + Alembic + modelos.
+- [x] Ajustes con verificación de dependencias.
 
 ### Fase 1 — MVP de producción (3–4 semanas)
 - [ ] Canales y proyectos (video/reel).

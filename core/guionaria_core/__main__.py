@@ -27,7 +27,14 @@ def main(argv: list[str] | None = None) -> int:
 
     port = getattr(args, "port", DEFAULT_PORT)
     if getattr(args, "reload", False):
-        uvicorn.run("guionaria_core.main:app", host=DEFAULT_HOST, port=port, reload=True)
+        # Sin límite, la recarga se traba esperando las conexiones keep-alive de la UI.
+        uvicorn.run(
+            "guionaria_core.main:app",
+            host=DEFAULT_HOST,
+            port=port,
+            reload=True,
+            timeout_graceful_shutdown=2,
+        )
     else:
         from guionaria_core.main import app
 

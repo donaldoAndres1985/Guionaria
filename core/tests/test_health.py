@@ -32,3 +32,17 @@ def test_settings_rejects_invalid_parallelism(client):
     settings = client.get("/api/settings").json()
     settings["download_parallelism"] = 0
     assert client.put("/api/settings", json=settings).status_code == 422
+
+
+def test_dependency_check_works_on_selector_loop(home):
+    # uvicorn --reload usa SelectorEventLoop en Windows (sin soporte de subprocesos asyncio).
+    import asyncio
+
+    from guionaria_core.services.dependencies import check_dependencies
+
+    loop = asyncio.SelectorEventLoop()
+    try:
+        deps = loop.run_until_complete(check_dependencies(refresh=True))
+    finally:
+        loop.close()
+    assert any(d.name == "claude" for d in deps)

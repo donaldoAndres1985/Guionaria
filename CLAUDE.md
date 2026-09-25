@@ -8,3 +8,20 @@
 - Stack: Tauri 2 + React/TypeScript (apps/desktop), Python 3.12 + FastAPI + FastMCP + SQLite (core/).
 - Trabajar por fases (sección 17). Mostrar plan antes de crear archivos.
 - Nunca guardar API keys en el código: van en config/settings.json fuera del repo.
+
+## Comandos
+
+- `npm run dev`: núcleo (uvicorn --reload, consola aparte) + app Tauri.
+- `npm run core:test`: pytest + ruff del núcleo (desde `core/`: `uv run pytest -q`).
+- `npm run typecheck`: tipos del frontend.
+- `npm run sidecar:build` / `npm run build`: PyInstaller + instalador.
+- Nueva migración: `cd core; uv run alembic revision --autogenerate -m "..."` y revisar el archivo generado.
+
+## Convenciones
+
+- Datos del usuario en `GUIONARIA_HOME` (por defecto `%USERPROFILE%\Guionaria`).
+- El núcleo escucha solo en `127.0.0.1:8765`; CORS limitado al webview de Tauri y a Vite.
+- UI: tokens de diseño en `apps/desktop/src/styles/globals.css`. El naranja de marca es `primary`/`brand`;
+  en shadcn `accent` es el fondo de hover.
+- Cada pantalla usa `PageLayout` (el encabezado es también la barra de título de la ventana).
+- Componentes shadcn: `npx shadcn@latest add <componente>` desde `apps/desktop` y revisar que el import de `cn` sea `@/lib/utils`.

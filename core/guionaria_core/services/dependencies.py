@@ -2,6 +2,8 @@
 
 import asyncio
 import shutil
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 
@@ -10,6 +12,8 @@ from pydantic import BaseModel
 
 from ..config import load_settings
 
+# Evita que se abra una consola por cada verificación en Windows.
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 _CACHE_TTL_S = 30.0
 _cache: tuple[float, list["DependencyStatus"]] | None = None
 
@@ -63,17 +67,20 @@ async def _check_tool(tool: _Tool) -> DependencyStatus:
         return status
     status.path = path
     try:
-        proc = await asyncio.create_subprocess_exec(
-            path,
-            *tool.args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+        # subprocess.run en un hilo: con `--reload` uvicorn usa en Windows un SelectorEventLoop,
+        # que no soporta asyncio.create_subprocess_exec.
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [path, *tool.args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+            creationflags=_NO_WINDOW,
         )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-    except (OSError, TimeoutError) as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
         status.detail = f"No se pudo ejecutar: {exc}"
         return status
-    first_line = out.decode("utf-8", errors="replace").strip().splitlines()[:1]
+    first_line = proc.stdout.decode("utf-8", errors="replace").strip().splitlines()[:1]
     status.version = first_line[0] if first_line else None
     status.ok = proc.returncode == 0
     if not status.ok:
