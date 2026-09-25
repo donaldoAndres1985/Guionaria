@@ -28,6 +28,8 @@ import { ScriptBottomBar } from "@/features/script/ScriptBottomBar";
 import { ScriptStage } from "@/features/script/ScriptStage";
 import { useScriptEditor } from "@/features/script/useScriptEditor";
 import { useScriptGeneration } from "@/features/script/useScriptGeneration";
+import { TimelineBottomBar } from "@/features/timeline/TimelineBottomBar";
+import { TimelineStage } from "@/features/timeline/TimelineStage";
 import { useVoiceController } from "@/features/voice/useVoiceController";
 import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
 import { VoiceStage } from "@/features/voice/VoiceStage";
@@ -139,6 +141,8 @@ function ProjectView({ project }: { project: Project }) {
           <MediaBottomBar project={project} ctl={media} />
         ) : view === "voz" ? (
           <VoiceBottomBar ctl={voice} />
+        ) : view === "timeline" ? (
+          <TimelineBottomBar project={project} />
         ) : (
           <BottomBar
             stats={[
@@ -228,7 +232,7 @@ function ProjectView({ project }: { project: Project }) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {view !== "guion" && view !== "escenas" && view !== "medios" && view !== "voz" && (
+          {view !== "guion" && view !== "escenas" && view !== "medios" && view !== "voz" && view !== "timeline" && (
             <div className="flex h-12 shrink-0 items-center border-b px-5">
               <span className="text-[13px] font-medium">
                 {view === "resumen" ? "Resumen" : STAGES.find((s) => s.id === view)?.label}
@@ -325,6 +329,8 @@ function ProjectView({ project }: { project: Project }) {
               <ScriptStage project={project} ctl={script} generation={generation} />
             ) : view === "medios" ? (
               <MediaStage project={project} ctl={media} onGoToScenes={() => setView("escenas")} />
+            ) : view === "timeline" ? (
+              <TimelineStage project={project} onGoToMedia={() => setView("medios")} />
             ) : view === "voz" ? (
               <VoiceStage ctl={voice} onGoToScript={() => setView("guion")} />
             ) : view === "escenas" ? (

@@ -17,6 +17,7 @@ from .api import (
     scenes,
     script,
     settings,
+    timeline,
     voice,
 )
 from .config import ensure_home
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
         jobs,
         prompts,
         voice,
+        timeline,
     ):
         app.include_router(module.router)
 

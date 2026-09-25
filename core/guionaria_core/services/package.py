@@ -93,6 +93,13 @@ def credits_text(title: str, scenes, approved) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _timing_text(state) -> str:
+    sources = {s.timing_source for s in state.scenes}
+    if sources and sources <= {"voice", "whisper"}:
+        return "tiempos reales de la voz"
+    return "tiempos estimados; se ajustan al generar o transcribir la voz"
+
+
 def readme_text(project, state, approved) -> str:
     fmt = "Video 16:9 (1920×1080)" if project.format == "video" else "Reel 9:16 (1080×1920)"
     lines = [
@@ -103,8 +110,16 @@ def readme_text(project, state, approved) -> str:
         "  media/approved/  medios elegidos, nombrados {escena}_{inicio mmss}_{tipo}_{descripción}",
         "  media/candidates/, media/manual/  el resto de lo descargado o agregado",
         "  guion.md, escenas.md/.csv  guion y tabla de escenas · creditos.txt  fuentes y licencias",
+        "  audio/voz.wav  voz · subs/voz.srt y .vtt  subtítulos",
+        "  timeline/proyecto.otio, .fcpxml, .edl  timeline para el editor",
         "",
-        "Escenas (tiempos estimados; se ajustan con la voz en la siguiente fase):",
+        "Para abrirlo en DaVinci Resolve:",
+        "  1. Crea un proyecto de 30 cuadros/s con la resolución del formato.",
+        "  2. Archivo → Importar → Timeline → timeline/proyecto.otio (o proyecto.fcpxml).",
+        "  3. Cada escena tiene un marcador con su efecto, texto en pantalla, SFX y música.",
+        "  4. Subtítulos: importa subs/voz.srt en el Media Pool y arrástralo al timeline.",
+        "",
+        f"Escenas ({_timing_text(state)}):",
         "",
     ]
     header = f"{'#':>3}  {'Inicio–Fin':<11}  {'Tipo':<7}  Archivo / notas"
