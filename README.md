@@ -1,27 +1,68 @@
-# Guionaria
+<h1 align="center">
+  <img src="docs/brand/logo.svg" width="46" alt="" align="top">&nbsp;Guionaria
+</h1>
 
-**De la idea al video listo para editar.** Guionaria es una aplicación de escritorio local y 100 % gratuita para producir videos y reels. Claude escribe el guion y arma la tabla de escenas, y la app busca, descarga, nombra y organiza los medios de cada escena. Todo queda en carpetas listas para editar en DaVinci Resolve o cualquier editor.
+<p align="center">
+  Producción de videos y reels, de la idea al timeline, para <b>YouTube</b>, <b>TikTok</b>, <b>Instagram</b> y <b>Facebook</b>
+</p>
 
-![Revisión de medios con material real de Wikimedia y Openverse](docs/screenshots/06-medios.png)
+<p align="center">
+  <a href="#características">Características</a> ·
+  <a href="#pantallas">Pantallas</a> ·
+  <a href="#claude-sin-api-key">Claude y MCP</a> ·
+  <a href="#instalación">Instalación</a> ·
+  <a href="#arquitectura">Arquitectura</a> ·
+  <a href="SPEC.md">Especificación</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/versi%C3%B3n-0.1.0-0a7bbd" alt="versión 0.1.0">
+  <img src="https://img.shields.io/badge/Windows-soportado-2b63d9" alt="Windows soportado">
+  <img src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white" alt="Tauri 2">
+  <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
+  <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
+  <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
+  <img src="https://img.shields.io/badge/pruebas-337-2ea44f" alt="337 pruebas">
+</p>
+
+<p align="center">
+  <img src="docs/brand/banner.png" alt="Guionaria: revisión de medios por escena" width="100%">
+</p>
+
+**Guionaria** es una aplicación de escritorio local y 100 % gratuita. Claude escribe el guion y arma la tabla de escenas; la app busca, descarga, nombra y encuadra los medios de cada escena, genera la voz, calcula los tiempos reales y exporta el timeline para DaVinci Resolve o cualquier editor.
 
 > Todas las capturas son de la app real, con datos de demostración. Las fotos de la pantalla de medios son resultados reales de Wikimedia Commons y Openverse, con sus licencias.
+
+## Características
+
+| | |
+|---|---|
+| ✍️ **Guion con Claude** | Escrito con tus notas y el estilo del canal, en un editor por segmentos con versiones y reescritura asistida. |
+| 🎬 **Tabla de escenas** | Tipo de medio, descripción visual, búsquedas, efectos, texto en pantalla, SFX y música por escena. |
+| 🖼️ **Medios por escena** | Pexels, Pixabay, Unsplash, Openverse, Wikimedia, SearXNG y video desde URL, con autor y licencia. |
+| 🎙️ **Voz y tiempos reales** | Voz local con Piper o tu grabación transcrita con Whisper, más subtítulos SRT y VTT. |
+| 🎞️ **Timeline exportable** | OTIO, FCPXML y EDL con un marcador por escena, listos para DaVinci Resolve. |
+| 🤖 **Claude sin API key** | Usa tu plan de Claude Code; también se controla desde Claude por MCP. |
+| 🗓️ **Planificación** | Banco de ideas, calendario, tablero por etapa y recordatorios. |
+| 🔒 **Todo en tu equipo** | Núcleo solo en localhost, datos en tu carpeta y solo herramientas gratuitas. |
 
 ---
 
 ## Cómo funciona
 
 ```
-Idea ─▶ Guion (Claude) ─▶ Escenas (Claude) ─▶ Medios por escena ─▶ Voz ─▶ Timeline ─▶ Publicación
-          aprobar            aprobar           buscar · descargar
-                                               aprobar
+Idea ─▶ Guion (Claude) ─▶ Escenas (Claude) ─▶ Medios por escena ─▶ Voz ─────────▶ Timeline ─▶ Editor
+          aprobar            aprobar           buscar · descargar    Piper o         OTIO · FCPXML
+                                               encuadrar · aprobar   grabación       EDL
 ```
 
 1. **Canal:** tono, plataformas, estructura del guion y velocidad de narración.
 2. **Proyecto:** Video 16:9 o Reel 9:16. El formato define la orientación de todos los medios.
 3. **Guion:** Claude lo escribe con tus notas y el estilo del canal; tú lo corriges en el editor y lo apruebas.
 4. **Escenas:** Claude convierte el guion en una tabla (tipo de medio, descripción visual, búsquedas, efecto, texto en pantalla, SFX, música). Los tiempos los calcula la app.
-5. **Medios:** búsqueda por escena en bancos gratuitos y material real, descarga, aprobación y nombres automáticos.
-6. **Paquete:** guion, tabla de escenas, créditos y un LEEME con qué va en cada escena.
+5. **Medios:** búsqueda por escena en bancos gratuitos y material real, descarga, aprobación, encuadre y nombres automáticos.
+6. **Voz:** generada con Piper o grabada por ti; los tiempos reales reemplazan a los estimados.
+7. **Timeline:** OTIO, FCPXML y EDL para el editor, junto con guion, escenas, créditos, subtítulos y un LEEME.
 
 Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un segmento del guion, solo sus escenas quedan para revisar; el resto se conserva.
 
@@ -187,19 +228,21 @@ npm run dev
 | `npm test` | Todas las pruebas: núcleo (pytest + ruff) y app (vitest) |
 | `npm run core:test` · `npm run app:test` | Pruebas por separado |
 | `npm run typecheck` | Tipos del frontend |
-| `npm run sidecar:build` | Empaqueta el núcleo con PyInstaller (~35 MB) |
+| `npm run sidecar:build` | Empaqueta el núcleo con PyInstaller (~130 MB, incluye Piper y Whisper) |
 | `npm run build` | Sidecar + instalador NSIS |
 
 ## Estructura
 
 ```
 apps/desktop/        App de escritorio: Tauri 2 + React 19 + TypeScript + Tailwind v4 + shadcn/ui
-  src/features/      script (TipTap), scenes (TanStack Table + dnd-kit), media (galería, visor, arrastre)
+  src/features/      script (TipTap), scenes (TanStack Table + dnd-kit), media (galería, visor, encuadre),
+                     voice (wavesurfer.js), timeline, planning (ideas, calendario, tablero)
   src-tauri/         Ventana sin bordes, lanza el sidecar y lo cierra al salir
 core/                Núcleo: Python 3.12 + FastAPI + SQLModel/SQLite + Alembic (guionaria-core)
   guionaria_core/
     api/             Endpoints REST y WebSocket /ws/jobs
-    services/        guion, escenas, medios (proveedores, descargas, yt-dlp), paquete, Claude CLI
+    services/        guion, escenas, medios, voz, timeline, ideas, paquete, Claude CLI
+    mcp_server.py    Servidor MCP (herramientas y recursos)
     prompts/         Prompts por defecto (se copian a tu carpeta para editarlos)
     migrations/      Esquema de la base de datos
   tests/             Pruebas con Claude y APIs simuladas
@@ -212,8 +255,10 @@ docs/                Guía de instalación, capturas y referencias de estilo
 ```
 ┌────────────── Tauri (ventana) ──────────────┐        ┌──────── Núcleo local (sidecar) ────────┐
 │ React · TanStack Query · TipTap · dnd-kit   │  HTTP  │ FastAPI 127.0.0.1:8765  ·  /ws/jobs     │
-│                                             │◀──────▶│ Cola de trabajos (asyncio) · SQLite     │
+│ wavesurfer.js                               │◀──────▶│ Cola de trabajos (asyncio) · SQLite     │
 └─────────────────────────────────────────────┘   WS   │ Claude CLI · httpx · yt-dlp · FFmpeg    │
+                                                       │ Piper · faster-whisper · OTIO           │
+  Claude Code / Claude Desktop ─── MCP (/mcp o stdio) ▶│ Servidor MCP con los mismos servicios   │
                                                        └─────────────────────────────────────────┘
 ```
 
