@@ -307,6 +307,10 @@ def approve_script(session: Session, project_id: int) -> ScriptRead:
     project.status = ProjectStatus.GUION_APROBADO
     project.updated_at = now_iso()
     _write_script_md(project, _segments(session, version))
+
+    from .scenes import recompute_timings  # import local: scenes depende de este módulo
+
+    recompute_timings(session, project_id)  # duraciones nuevas si el guion cambió
     log_operation(session, "approve", "script", project_id, {"version": version.version})
     session.commit()
     return _to_read(session, project, version)

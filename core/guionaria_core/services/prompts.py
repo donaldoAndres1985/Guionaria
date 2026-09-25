@@ -13,6 +13,7 @@ from .errors import NotFound
 PROMPTS: dict[str, str] = {
     "guion": "Generar guion",
     "reescribir_segmento": "Reescribir fragmento",
+    "escenas": "Generar escenas",
 }
 
 

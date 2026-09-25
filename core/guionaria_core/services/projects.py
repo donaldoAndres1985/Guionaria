@@ -194,8 +194,11 @@ def delete_project(session: Session, project_id: int) -> None:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.move(str(folder), str(trash / f"{stamp}_{folder.name}"))
 
-    from .script import delete_script_data  # import local: script depende de este módulo
+    # imports locales: script y scenes dependen de este módulo
+    from .scenes import delete_scene_data
+    from .script import delete_script_data
 
+    delete_scene_data(session, project.id)
     delete_script_data(session, project.id)
     session.exec(text("DELETE FROM project_fts WHERE rowid = :id").bindparams(id=project.id))
     log_operation(session, "delete", "project", project.id, {"title": project.title})

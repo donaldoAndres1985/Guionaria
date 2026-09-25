@@ -48,7 +48,7 @@ export const api = {
   post: <T>(path: string, body: unknown) => request<T>(path, json("POST", body)),
   put: <T>(path: string, body: unknown) => request<T>(path, json("PUT", body)),
   patch: <T>(path: string, body: unknown) => request<T>(path, json("PATCH", body)),
-  del: (path: string) => request<void>(path, { method: "DELETE" }),
+  del: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 export interface DependencyStatus {
@@ -219,4 +219,63 @@ export interface Prompt {
   label: string;
   content: string;
   is_default: boolean;
+}
+
+export type MediaKind = "video" | "image" | "real" | "text" | "black";
+export type SceneEffect =
+  | "zoom_lento_in"
+  | "zoom_lento_out"
+  | "ken_burns"
+  | "estatica"
+  | "fundido_negro"
+  | "glitch"
+  | "camara_rapida"
+  | "ninguno";
+export type SceneStatus = "pending" | "candidates" | "approved" | "manual" | "review";
+
+export interface Scene {
+  id: number;
+  seg_key: string;
+  position: number;
+  start_s: number | null;
+  end_s: number | null;
+  timing_source: string;
+  narration: string | null;
+  media_kind: MediaKind;
+  visual_description: string | null;
+  query_en: string | null;
+  query_alt: string | null;
+  query_real: string | null;
+  effect: SceneEffect | null;
+  on_screen_text: string | null;
+  sfx: string | null;
+  music_cue: string | null;
+  status: SceneStatus;
+  approved_asset_id: number | null;
+  segment_missing: boolean;
+}
+
+export type SceneUpdate = Partial<
+  Pick<
+    Scene,
+    | "media_kind"
+    | "visual_description"
+    | "query_en"
+    | "query_alt"
+    | "query_real"
+    | "effect"
+    | "on_screen_text"
+    | "sfx"
+    | "music_cue"
+  >
+>;
+
+export interface ScenesState {
+  project_id: number;
+  editable: boolean;
+  approved: boolean;
+  scenes: Scene[];
+  total_s: number;
+  review_count: number;
+  segments_without_scenes: string[];
 }

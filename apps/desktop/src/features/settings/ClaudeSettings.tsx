@@ -25,6 +25,7 @@ const PLACEHOLDERS: Record<string, string> = {
   guion:
     "{canal} {estilo} {formato} {relacion} {duracion} {duracion_s} {palabras_objetivo} {estructura} {idioma} {titulo} {tema} {notas} {fecha}",
   reescribir_segmento: "{canal} {estilo} {idioma} {guion} {notas} {fragmento} {instruccion}",
+  escenas: "{canal} {estilo} {formato} {relacion} {max_escena_s} {lista_efectos} {guion}",
 };
 
 export function ClaudeSettings({
