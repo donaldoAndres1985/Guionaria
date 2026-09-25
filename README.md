@@ -35,7 +35,7 @@
 
 ## Características
 
-| | |
+| Función | Qué hace |
 |---|---|
 | ✍️ **Guion con Claude** | Escrito con tus notas y el estilo del canal, en un editor por segmentos con versiones y reescritura asistida. |
 | 🎬 **Tabla de escenas** | Tipo de medio, descripción visual, búsquedas, efectos, texto en pantalla, SFX y música por escena. |
