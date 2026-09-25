@@ -9,10 +9,19 @@ import {
   useSuggestQueries,
   useUnapproveAsset,
 } from "@/hooks/useMedia";
-import { type ImportSource, useImportMedia } from "@/hooks/useManualMedia";
+import { type ImportSource, useImportMedia, useVideoFromUrl } from "@/hooks/useManualMedia";
+import { isVideoSite } from "./dropUtils";
 import type { Project } from "@/lib/api";
 
-export const PROVIDER_LABEL: Record<string, string> = { pexels: "Pexels", pixabay: "Pixabay" };
+export const PROVIDER_LABEL: Record<string, string> = {
+  pexels: "Pexels",
+  pixabay: "Pixabay",
+  unsplash: "Unsplash",
+  openverse: "Openverse",
+  wikimedia: "Wikimedia",
+  searxng: "Web (SearXNG)",
+  manual: "Manual",
+};
 
 interface SceneSearchState {
   query: string;
@@ -38,7 +47,8 @@ export function useMediaController(project: Project) {
 
   const [selection, setSelection] = useState<Record<number, number[]>>({});
   const [searchState, setSearchState] = useState<Record<number, SceneSearchState>>({});
-  const [providers, setProviders] = useState<string[]>(["pexels", "pixabay"]);
+  // Fuentes elegidas por escena; sin elección, las de su tipo (sección 5.5).
+  const [providersByScene, setProvidersByScene] = useState<Record<number, string[]>>({});
   const [anyOrientation, setAnyOrientation] = useState(false);
 
   const searchMutation = useSearchMedia(project.id);
@@ -47,12 +57,18 @@ export function useMediaController(project: Project) {
   const approveMutation = useApproveAsset(project.id);
   const unapproveMutation = useUnapproveAsset(project.id);
   const importMutation = useImportMedia(project.id);
+  const videoMutation = useVideoFromUrl();
+  const [videoDialogUrl, setVideoDialogUrl] = useState<string | null>(null);
   const [viewerId, setViewerId] = useState<number | null>(null);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [approveWhenReady, setApproveWhenReady] = useState<number[]>([]);
 
   const configured = overview?.configured_providers ?? [];
-  const activeProviders = providers.filter((p) => configured.includes(p));
+  const available = scene?.available_providers ?? [];
+  const providers = (sceneId != null && providersByScene[sceneId]) || scene?.default_providers || [];
+  const activeProviders = providers.filter((p) => available.includes(p));
+  const setProviders = (list: string[]) =>
+    sceneId != null && setProvidersByScene((all) => ({ ...all, [sceneId]: list }));
   const editable = overview?.editable ?? false;
 
   const state: SceneSearchState = (sceneId != null && searchState[sceneId]) || {
@@ -156,6 +172,11 @@ export function useMediaController(project: Project) {
 
   async function importMedia(source: ImportSource, candidateId?: number) {
     if (sceneId == null) return;
+    // Un enlace de YouTube o redes se baja con yt-dlp: se pregunta si solo un fragmento.
+    if (source.kind === "url" && isVideoSite(source.url)) {
+      setVideoDialogUrl(source.url);
+      return;
+    }
     const media = await importMutation.mutateAsync({ sceneId, source, candidateId });
     const main = media.approved.find((a) => a.role === "main");
     toast.success(
@@ -165,6 +186,13 @@ export function useMediaController(project: Project) {
           ? `Agregado y aprobado en la escena ${media.position}`
           : `Agregado a la escena ${media.position}`,
     );
+  }
+
+  async function downloadVideo(url: string, startS: number | null, endS: number | null) {
+    if (sceneId == null) return;
+    await videoMutation.mutateAsync({ sceneId, url, startS, endS });
+    setVideoDialogUrl(null);
+    toast.success("Descargando el video…", { description: "Aparecerá en la escena al terminar." });
   }
 
   function openViewer(candidateId?: number) {
@@ -241,6 +269,12 @@ export function useMediaController(project: Project) {
     downloading: downloadMutation.isPending,
     importMedia,
     importing: importMutation.isPending,
+    available,
+    videoDialogUrl,
+    openVideoDialog: (url = "") => setVideoDialogUrl(url),
+    closeVideoDialog: () => setVideoDialogUrl(null),
+    downloadVideo,
+    downloadingVideo: videoMutation.isPending,
     viewer: scene?.candidates.find((c) => c.id === viewerId) ?? null,
     openViewer,
     closeViewer: () => setViewerId(null),

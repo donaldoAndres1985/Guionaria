@@ -147,6 +147,104 @@ def pixabay_image(i):
     }
 
 
+UNSPLASH = {
+    "results": [
+        {
+            "id": "us1",
+            "width": 3000,
+            "height": 4500,
+            "urls": {
+                "raw": "https://images.unsplash.com/us1?ixid=x",
+                "small": "https://images.unsplash.com/us1-s.jpg",
+            },
+            "links": {
+                "html": "https://unsplash.com/photos/us1",
+                "download_location": "https://api.unsplash.com/photos/us1/download?ixid=x",
+            },
+            "user": {"name": "Lucía Foto"},
+        }
+    ]
+}
+OPENVERSE = {
+    "results": [
+        {
+            "id": "ov1",
+            "url": "https://live.staticflickr.com/ov1.jpg",
+            "thumbnail": "https://api.openverse.org/v1/images/ov1/thumb/",
+            "foreign_landing_url": "https://www.flickr.com/photos/ov1",
+            "width": 800,
+            "height": 1200,
+            "creator": "Usuario Flickr",
+            "license": "by",
+            "license_version": "2.0",
+        },
+        {
+            "id": "ov2",
+            "url": "https://live.staticflickr.com/ov2.jpg",
+            "width": 900,
+            "height": 1300,
+            "creator": None,
+            "license": "cc0",
+            "license_version": "1.0",
+        },
+    ]
+}
+WIKIMEDIA = {
+    "query": {
+        "pages": {
+            "124": {
+                "pageid": 124,
+                "index": 2,
+                "imageinfo": [
+                    {  # horizontal: se filtra en un reel
+                        "url": "https://upload.wikimedia.org/h.jpg",
+                        "width": 1400,
+                        "height": 900,
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:H.jpg",
+                        "extmetadata": {},
+                    }
+                ],
+            },
+            "123": {
+                "pageid": 123,
+                "index": 1,
+                "imageinfo": [
+                    {
+                        "url": "https://upload.wikimedia.org/a.jpg",
+                        "thumburl": "https://upload.wikimedia.org/a-640.jpg",
+                        "width": 900,
+                        "height": 1400,
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:A.jpg",
+                        "extmetadata": {
+                            "Artist": {"value": '<a href="//x">Ana P&eacute;rez</a>'},
+                            "LicenseShortName": {"value": "CC BY-SA 4.0"},
+                        },
+                    }
+                ],
+            },
+        }
+    }
+}
+SEARXNG = {
+    "results": [
+        {
+            "img_src": "https://noticias.example/foto.jpg",
+            "thumbnail_src": "https://noticias.example/t.jpg",
+            "url": "https://noticias.example/nota",
+            "resolution": "800x1200",
+            "source": "noticias.example",
+            "engine": "bing images",
+        },
+        {
+            "img_src": "https://otro.example/h.jpg",
+            "resolution": "1920 x 1080",
+            "engine": "google images",
+        },
+        {"url": "https://sin-imagen.example"},
+    ]
+}
+
+
 class FakeWeb:
     """Transporte HTTP simulado: APIs de Pexels/Pixabay y descarga de archivos."""
 
@@ -163,6 +261,8 @@ class FakeWeb:
         for prefix, queue in self.overrides.items():
             if url.startswith(prefix) and queue:
                 r = queue.pop(0)
+                if isinstance(r, Exception):
+                    raise r  # p. ej. httpx.ConnectError: servidor caído
                 return r if isinstance(r, httpx.Response) else httpx.Response(r)
         host, path = request.url.host, request.url.path
         if host == "api.pexels.com" and path == "/v1/search":
@@ -176,6 +276,16 @@ class FakeWeb:
             )
         if host == "pixabay.com" and path == "/api/":
             return httpx.Response(200, json={"hits": [pixabay_image(30)]})
+        if host == "api.unsplash.com" and path == "/search/photos":
+            return httpx.Response(200, json=UNSPLASH)
+        if host == "api.unsplash.com" and path.startswith("/photos/"):
+            return httpx.Response(200, json={"url": "ok"})  # aviso de descarga
+        if host == "api.openverse.org":
+            return httpx.Response(200, json=OPENVERSE)
+        if host == "commons.wikimedia.org" and path == "/w/api.php":
+            return httpx.Response(200, json=WIKIMEDIA)
+        if host == "127.0.0.1" and request.url.port == 8888 and path == "/search":
+            return httpx.Response(200, json=SEARXNG)
         if path.endswith((".jpg", ".jpeg")):
             return httpx.Response(200, content=jpeg_bytes(), headers={"content-type": "image/jpeg"})
         if path.endswith(".mp4"):
@@ -242,8 +352,9 @@ def download(client, scene_id, candidate_ids):
     return wait_job(client, job.json()["id"])
 
 
-def downloaded(client, scene):
-    candidates = search(client, scene).json()["scene"]["candidates"]
+def downloaded(client, scene, providers=None):
+    body = {"providers": providers} if providers else {}
+    candidates = search(client, scene, **body).json()["scene"]["candidates"]
     download(client, scene, [c["id"] for c in candidates])
     return [c["asset"] for c in client.get(f"/api/scenes/{scene}/media").json()["candidates"]]
 

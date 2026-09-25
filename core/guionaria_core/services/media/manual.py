@@ -80,6 +80,8 @@ async def import_file(
     url: str | None = None,
     candidate_id: int | None = None,
     move: bool = False,
+    author: str | None = None,
+    license: str | None = None,
 ) -> SceneMediaRead:
     scene = get_scene(session, scene_id)
     project = _open_project(session, scene.project_id)
@@ -132,8 +134,8 @@ async def import_file(
             provider_id=None,
             page_url=url,
             file_url=url,
-            author=None,
-            license=None,
+            author=author,
+            license=license,
         )
         session.add(
             SceneCandidate(
@@ -180,8 +182,8 @@ async def import_url(
     host = parsed.netloc.lower().removeprefix("www.")
     if any(host == s or host.endswith("." + s) for s in VIDEO_SITES):
         raise DomainError(
-            "Descargar video de YouTube o redes sociales llega en la Fase 2. Por ahora descárgalo "
-            "y arrastra el archivo."
+            "Es un enlace de video: se descarga con yt-dlp desde «Descargar video» "
+            "(puedes elegir solo un fragmento)."
         )
     scene = get_scene(session, scene_id)
     _open_project(session, scene.project_id)

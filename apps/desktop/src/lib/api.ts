@@ -348,6 +348,8 @@ export interface SceneMedia {
   needs_media: boolean;
   default_query: string | null;
   search_kind: "image" | "video" | null;
+  available_providers: string[];
+  default_providers: string[];
   approved: ApprovedMedia[];
   candidates: Candidate[];
 }

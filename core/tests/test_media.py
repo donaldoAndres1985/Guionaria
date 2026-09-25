@@ -78,10 +78,10 @@ def test_search_image_and_real_scenes_use_image_endpoints(client, media_project,
 
     body = search(client, real_scene).json()
     assert body["scene"]["default_query"] == "priscila loera foto"
-    assert (
-        web.api_calls()[-1].url.params.get("query", web.api_calls()[-1].url.params.get("q"))
-        == "priscila loera foto"
-    )
+    # Material real: SearXNG, Wikimedia y Openverse (sección 5.5), no los bancos de stock.
+    assert body["scene"]["default_providers"] == ["searxng", "wikimedia", "openverse"]
+    searx = [r for r in web.requests if r.url.port == 8888][-1]
+    assert searx.url.params["q"] == "priscila loera foto"
 
 
 def test_any_orientation_and_custom_query_and_provider_subset(client, media_project, web):
@@ -124,15 +124,15 @@ def test_provider_errors_become_warnings(client, media_project, web, status, mes
 
 def test_search_cache_and_paging(client, media_project, web):
     scene = media_project["scenes"][1]
-    search(client, scene)
+    search(client, scene, providers=["pexels", "pixabay"])
     calls = len(web.api_calls())
-    search(client, scene)  # misma búsqueda: sale de la caché
+    search(client, scene, providers=["pexels", "pixabay"])  # misma búsqueda: sale de la caché
     assert len(web.api_calls()) == calls
 
     web.respond(
         "https://api.pexels.com/v1/search", httpx.Response(200, json={"photos": [pexels_photo(3)]})
     )
-    body = search(client, scene, page=2).json()
+    body = search(client, scene, page=2, providers=["pexels", "pixabay"]).json()
     assert len(web.api_calls()) == calls + 2
     ids = [c["provider_id"] for c in body["scene"]["candidates"]]
     assert ids == ["1", "30", "2", "3"]  # la página 2 se agrega
@@ -154,7 +154,9 @@ def test_new_search_keeps_selected_and_downloaded(client, media_project, web):
 
 def test_download_creates_asset_thumbnail_and_hash(client, media_project, web, home):
     scene = media_project["scenes"][1]
-    candidates = search(client, scene).json()["scene"]["candidates"]
+    candidates = search(client, scene, providers=["pexels", "pixabay"]).json()["scene"][
+        "candidates"
+    ]
     job = download(client, scene, [c["id"] for c in candidates])
     assert job["status"] == "done"
     assert job["result"] == {"requested": 3, "downloaded": 3, "failed": 0}
@@ -261,7 +263,7 @@ def test_real_video_is_probed_and_thumbnailed(client, media_project, web, tmp_pa
 
 def test_approve_main_and_alternates_with_naming(client, media_project, web, home):
     scene = media_project["scenes"][1]
-    a1, a2, a3 = downloaded(client, scene)
+    a1, a2, a3 = downloaded(client, scene, providers=["pexels", "pixabay"])
     media = client.post(f"/api/scenes/{scene}/assets/{a1['id']}:approve").json()
     assert media["status"] == "approved"
     assert [(x["role"], x["file_name"]) for x in media["approved"]] == [
@@ -331,7 +333,14 @@ def test_approve_media_requires_every_scene_with_media(client, media_project, we
 
     overview = client.get(f"/api/projects/{pid}/media").json()
     assert (overview["needing_media"], overview["with_media"]) == (3, 2)
-    assert overview["configured_providers"] == ["pexels", "pixabay"]
+    # Unsplash sin clave no aparece; las fuentes sin clave siempre están.
+    assert overview["configured_providers"] == [
+        "pexels",
+        "pixabay",
+        "openverse",
+        "wikimedia",
+        "searxng",
+    ]
     assert overview["orientation"] == "portrait"
     assert [s["needs_media"] for s in overview["scenes"]] == [True, True, True, False]
     resp = client.post(f"/api/projects/{pid}/media:approve")

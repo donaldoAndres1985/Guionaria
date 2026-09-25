@@ -8,11 +8,12 @@ from fastapi import APIRouter, Depends, Form, UploadFile, status
 from pydantic import BaseModel, model_validator
 from sqlmodel import Session
 
-from ..db import get_session
+from ..db import get_engine, get_session
 from ..schemas.media import SceneMediaRead
 from ..services import system
 from ..services.errors import DomainError
-from ..services.media import manual
+from ..services.jobs import JobContext, JobRead, jobs
+from ..services.media import manual, video_url
 from ..services.media import service as media
 from ..services.package import PackageResult, export_package
 from ..services.projects import get_project, project_dir
@@ -36,6 +37,12 @@ class ImportRequest(BaseModel):
 
 class OpenUrlRequest(BaseModel):
     url: str
+
+
+class VideoUrlRequest(BaseModel):
+    url: str
+    start_s: float | None = None  # fragmento opcional (sección 19: tramos cortos)
+    end_s: float | None = None
 
 
 @router.post("/api/scenes/{scene_id}/assets:import", response_model=SceneMediaRead)
@@ -89,3 +96,27 @@ def reveal_asset(asset_id: int, session: SessionDep) -> None:
 @router.post("/api/system/open-url", status_code=status.HTTP_204_NO_CONTENT)
 def open_url(data: OpenUrlRequest) -> None:
     system.open_url(data.url)
+
+
+@router.post(
+    "/api/scenes/{scene_id}/assets:video-url",
+    response_model=JobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def video_from_url(scene_id: int, data: VideoUrlRequest, session: SessionDep) -> JobRead:
+    """Video de YouTube, noticias o redes con yt-dlp (en segundo plano, con progreso)."""
+    video_url.validate(data.url, data.start_s, data.end_s)
+    scene = media.get_scene(session, scene_id)
+
+    async def work(ctx: JobContext) -> dict:
+        return await video_url.download_video_url(
+            lambda: Session(get_engine()), scene_id, data.url, data.start_s, data.end_s, ctx
+        )
+
+    return jobs.submit(
+        "download_url",
+        work,
+        project_id=scene.project_id,
+        payload={"scene_id": scene_id, "url": data.url},
+        exclusive=False,
+    )

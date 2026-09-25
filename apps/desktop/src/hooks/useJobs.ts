@@ -1,5 +1,6 @@
 import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { toast } from "sonner";
 import { api, CORE_URL, type Job } from "@/lib/api";
 
 const isActive = (job: Job | null | undefined) =>
@@ -34,7 +35,11 @@ export function useJobEvents() {
           });
         }
         // Cada paso de una descarga actualiza la galería (candidato descargado, fallido…).
-        if (job.type === "download_media") {
+        if (job.type === "download_url" && !isActive(job)) {
+          if (job.status === "done") toast.success(`Video agregado: ${String(job.result?.title ?? "")}`);
+          else toast.error(job.error ?? "No se pudo descargar el video");
+        }
+        if (job.type === "download_media" || job.type === "download_url") {
           void client.invalidateQueries({ queryKey: ["scene-media"] });
           if (job.project_id != null) void client.invalidateQueries({ queryKey: ["media", job.project_id] });
         }

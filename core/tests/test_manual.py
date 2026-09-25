@@ -192,8 +192,8 @@ def test_import_page_uses_og_image(client, media_project, web):
     ("url", "status", "message"),
     [
         ("ftp://x.example/a.jpg", 400, "http"),
-        ("https://www.youtube.com/watch?v=abc", 400, "Fase 2"),
-        ("https://youtu.be/abc", 400, "Fase 2"),
+        ("https://www.youtube.com/watch?v=abc", 400, "Descargar video"),
+        ("https://youtu.be/abc", 400, "Descargar video"),
     ],
 )
 def test_import_url_rejections(client, media_project, web, url, status, message):

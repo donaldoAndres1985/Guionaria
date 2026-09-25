@@ -159,7 +159,8 @@ describe("controlador de medios", () => {
     scene_id: id, position: id, seg_key: `seg_00${id}`, media_kind: "image", narration: "N",
     visual_description: "Calle", query_en: "street night", query_alt: null, query_real: null,
     start_s: 0, end_s: 2, status: "pending", needs_media: true, default_query: "street night",
-    search_kind: "image", approved: [], candidates: [], ...over,
+    search_kind: "image", available_providers: ["pexels"], default_providers: ["pexels"],
+    approved: [], candidates: [], ...over,
   });
 
   beforeEach(() => {

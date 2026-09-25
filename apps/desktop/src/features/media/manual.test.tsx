@@ -163,7 +163,7 @@ describe("vista grande, descargar y aprobar, e importación manual", () => {
       scene_id: 1, position: 1, seg_key: "seg_001", media_kind: "image", narration: "N",
       visual_description: "Calle", query_en: "street", query_alt: null, query_real: null,
       start_s: 0, end_s: 2, status: "candidates", needs_media: true, default_query: "street",
-      search_kind: "image", approved: [],
+      search_kind: "image", available_providers: ["pexels"], default_providers: ["pexels"], approved: [],
       candidates: [candidate(10), candidate(11, { download_status: "done", asset: asset(7) })],
     };
     const overview: MediaOverview = {

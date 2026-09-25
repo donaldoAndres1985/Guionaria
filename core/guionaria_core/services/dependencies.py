@@ -41,7 +41,6 @@ class _Tool:
 _TOOLS = (
     _Tool("ffmpeg", "FFmpeg", ("-version",), True, "winget install Gyan.FFmpeg"),
     _Tool("ffprobe", "FFprobe", ("-version",), True, "Se instala junto con FFmpeg"),
-    _Tool("yt-dlp", "yt-dlp", ("--version",), False, "winget install yt-dlp.yt-dlp"),
     _Tool(
         "claude",
         "Claude Code CLI",
@@ -117,13 +116,32 @@ async def _check_searxng(base_url: str) -> DependencyStatus:
     return status
 
 
+def _check_ytdlp() -> DependencyStatus:
+    """yt-dlp va incluido en el núcleo (librería de Python), no hace falta instalarlo."""
+    status = DependencyStatus(
+        name="yt-dlp",
+        label="yt-dlp",
+        ok=False,
+        required=False,
+        install_hint="Incluido en Guionaria (reinstala la app si falta)",
+    )
+    try:
+        from yt_dlp.version import __version__
+    except ImportError:
+        status.detail = "No está incluido en esta instalación"
+        return status
+    status.ok, status.version, status.path = True, __version__, "incluido en el núcleo"
+    return status
+
+
 async def check_dependencies(refresh: bool = False) -> list[DependencyStatus]:
     global _cache
     if not refresh and _cache and time.monotonic() - _cache[0] < _CACHE_TTL_S:
         return _cache[1]
     settings = load_settings()
-    results = await asyncio.gather(
-        *(_check_tool(t) for t in _TOOLS), _check_searxng(settings.searxng_url)
-    )
-    _cache = (time.monotonic(), list(results))
+    tools = await asyncio.gather(*(_check_tool(t) for t in _TOOLS))
+    searx = await _check_searxng(settings.searxng_url)
+    # Mismo orden que antes: herramientas, yt-dlp y SearXNG.
+    results = [*tools[:2], _check_ytdlp(), *tools[2:], searx]
+    _cache = (time.monotonic(), results)
     return _cache[1]

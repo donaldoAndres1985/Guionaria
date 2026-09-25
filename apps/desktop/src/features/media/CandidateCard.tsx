@@ -155,6 +155,14 @@ export function CandidateCard({
           )}
         </div>
         {c.author && <div className="truncate text-[11px] text-subtle">{c.author}</div>}
+        {(c.asset?.license ?? c.license)?.startsWith("Derechos") && (
+          <div
+            className="inline-block rounded bg-warning/15 px-1 text-[10px] font-medium text-warning"
+            title="Material sin licencia conocida: úsalo en fragmentos, con comentario y crédito (sección 19)"
+          >
+            Derechos: revisar
+          </div>
+        )}
 
         {c.download_status === "failed" && (
           <div className="space-y-1">

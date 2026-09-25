@@ -33,6 +33,7 @@ class SceneCandidate(SQLModel, table=True):
     kind: str = "image"  # image | video
     preview_url: str | None = None
     video_preview_url: str | None = None  # clip liviano para previsualizar
+    tracking_url: str | None = None  # Unsplash: avisar cada descarga
     full_url: str | None = None
     page_url: str | None = None
     width: int | None = None

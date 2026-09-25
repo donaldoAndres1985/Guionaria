@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, type PackageResult, type SceneMedia } from "@/lib/api";
+import { api, type Job, type PackageResult, type SceneMedia } from "@/lib/api";
 import { mediaKeys } from "./useMedia";
 
 function useOnSceneMedia(projectId: number) {
@@ -50,5 +50,15 @@ export function useRevealProject() {
 export function useExportPackage(projectId: number) {
   return useMutation({
     mutationFn: () => api.post<PackageResult>(`/api/projects/${projectId}:export-package`, {}),
+  });
+}
+
+/** Video de YouTube, noticias o redes con yt-dlp (en segundo plano). */
+export function useVideoFromUrl() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneId, url, startS, endS }: { sceneId: number; url: string; startS: number | null; endS: number | null }) =>
+      api.post<Job>(`/api/scenes/${sceneId}/assets:video-url`, { url, start_s: startS, end_s: endS }),
+    onSuccess: (job) => client.setQueryData(["job", job.id], job),
   });
 }

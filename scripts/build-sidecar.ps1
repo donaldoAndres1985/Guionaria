@@ -19,6 +19,7 @@ try {
         --add-data "$coreDir\guionaria_core\prompts;guionaria_core\prompts" `
         --collect-submodules uvicorn `
         --collect-submodules guionaria_core `
+        --collect-submodules yt_dlp `
         guionaria_core\__main__.py
     if ($LASTEXITCODE -ne 0) { throw "PyInstaller terminó con código $LASTEXITCODE" }
 } finally {

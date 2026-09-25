@@ -10,6 +10,7 @@ import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { CandidateCard } from "./CandidateCard";
 import { MediaViewer } from "./MediaViewer";
+import { VideoUrlDialog } from "./VideoUrlDialog";
 import { useMediaDrop } from "./useMediaDrop";
 import { STATUS_TEXT } from "./mediaMeta";
 import { type MediaController, PROVIDER_LABEL } from "./useMediaController";
@@ -162,17 +163,26 @@ export function MediaStage({
                 {scene.narration && <> · “{scene.narration}”</>}
               </p>
 
-              {ctl.configured.length === 0 ? (
+              {ctl.available.length === 0 ? (
                 <NoticeBanner
                   action={
-                    <Button asChild size="sm" variant="ghost">
-                      <Link to="/ajustes">
-                        <KeyRound /> Ir a Ajustes
-                      </Link>
-                    </Button>
+                    <div className="flex gap-1">
+                      {/* Video desde URL no necesita claves: sigue disponible. */}
+                      {ctl.editable && (
+                        <Button size="sm" variant="ghost" onClick={() => ctl.openVideoDialog()}>
+                          <Film /> Video desde URL
+                        </Button>
+                      )}
+                      <Button asChild size="sm" variant="ghost">
+                        <Link to="/ajustes">
+                          <KeyRound /> Ir a Ajustes
+                        </Link>
+                      </Button>
+                    </div>
                   }
                 >
-                  Para buscar necesitas la clave gratuita de Pexels o Pixabay.
+                  Para buscar {scene.media_kind === "video" ? "video" : "imágenes"} de stock necesitas
+                  la clave gratuita de Pexels o Pixabay.
                 </NoticeBanner>
               ) : (
                 ctl.editable && (
@@ -193,15 +203,13 @@ export function MediaStage({
                           className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
                         />
                       </label>
-                      {(["pexels", "pixabay"] as const).map((p) => {
-                        const available = ctl.configured.includes(p);
-                        const on = available && ctl.providers.includes(p);
+                      {ctl.available.map((p) => {
+                        const on = ctl.providers.includes(p);
                         return (
                           <button
                             key={p}
                             type="button"
-                            disabled={!available}
-                            title={available ? undefined : "Falta la clave en Ajustes"}
+                            aria-pressed={on}
                             onClick={() =>
                               ctl.setProviders(on ? ctl.providers.filter((x) => x !== p) : [...ctl.providers, p])
                             }
@@ -210,7 +218,7 @@ export function MediaStage({
                               on ? "border-brand bg-active text-active-foreground" : "text-muted-foreground hover:bg-panel-2",
                             )}
                           >
-                            {PROVIDER_LABEL[p]}
+                            {PROVIDER_LABEL[p] ?? p}
                           </button>
                         );
                       })}
@@ -234,9 +242,16 @@ export function MediaStage({
                       </span>
                       <button
                         type="button"
+                        onClick={() => ctl.openVideoDialog()}
+                        className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                      >
+                        <Film className="size-3.5" /> Video desde URL
+                      </button>
+                      <button
+                        type="button"
                         disabled={ctl.suggesting}
                         onClick={() => void ctl.suggest()}
-                        className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
                       >
                         {ctl.suggesting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5 text-brand" />}
                         Sugerir búsquedas con Claude
@@ -349,6 +364,7 @@ export function MediaStage({
         )}
       </div>
       <MediaViewer ctl={ctl} />
+      <VideoUrlDialog ctl={ctl} />
     </div>
   );
 }
