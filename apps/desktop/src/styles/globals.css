@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+/* Tokens de diseño (sección 15.1 de SPEC.md). Modo oscuro por defecto. */
+:root {
+  --bg-app: #15110f; /* fondo ventana */
+  --bg-sidebar: #1a1512;
+  --bg-panel: #1d1815; /* tarjetas / paneles */
+  --bg-panel-2: #241d19; /* hover / fila activa */
+  --bg-active: #3a2415; /* ítem de menú activo (marrón anaranjado) */
+  --border: #2e2621;
+  --text: #efe8e3;
+  --text-muted: #a39890;
+  --text-subtle: #7d726b;
+  --text-active: #ffa566; /* texto del ítem activo */
+  --accent: #ff7a1a; /* naranja principal */
+  --accent-hover: #ff8c3a;
+  --accent-fg: #1a0f08;
+  --success-bg: #1f3a2a; /* badge "bajo riesgo" */
+  --success-fg: #7ddc9a;
+  --warning: #f5b53d;
+  --danger: #ef5a4c;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --font-ui: "Inter Variable", system-ui, sans-serif;
+  --font-num: "JetBrains Mono Variable", monospace; /* cifras destacadas */
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg-app: #f7f3f0;
+  --bg-sidebar: #efe9e4;
+  --bg-panel: #ffffff;
+  --bg-panel-2: #f4ede7;
+  --bg-active: #fde3cf;
+  --border: #e4d9d0;
+  --text: #221a15;
+  --text-muted: #6f635b;
+  --text-subtle: #978a81;
+  --text-active: #c2530a;
+  --accent: #f26b0a;
+  --accent-hover: #ff7a1a;
+  --accent-fg: #ffffff;
+  --success-bg: #dcf3e4;
+  --success-fg: #1d7a3e;
+  --warning: #b7790f;
+  --danger: #d63a2c;
+
+  color-scheme: light;
+}
+
+/*
+ * Mapeo a utilidades de Tailwind. Ojo: en shadcn `accent` es el fondo de hover,
+ * por eso el naranja de la marca se expone como `primary` / `brand`.
+ */
+@theme inline {
+  --color-background: var(--bg-app);
+  --color-foreground: var(--text);
+  --color-sidebar: var(--bg-sidebar);
+  --color-panel: var(--bg-panel);
+  --color-panel-2: var(--bg-panel-2);
+  --color-active: var(--bg-active);
+  --color-active-foreground: var(--text-active);
+
+  --color-card: var(--bg-panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--bg-panel-2);
+  --color-popover-foreground: var(--text);
+
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-fg);
+  --color-brand: var(--accent);
+  --color-brand-hover: var(--accent-hover);
+
+  --color-secondary: var(--bg-panel-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--bg-panel-2);
+  --color-muted-foreground: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-accent: var(--bg-panel-2);
+  --color-accent-foreground: var(--text);
+
+  --color-success: var(--success-bg);
+  --color-success-foreground: var(--success-fg);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-destructive: var(--danger);
+
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+
+  /* --radius-sm/md/lg: los de :root (sin capa) ya pisan los de Tailwind. */
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-num);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* App de escritorio: el texto de la interfaz no se selecciona, salvo campos y .selectable */
+    user-select: none;
+    overflow: hidden;
+  }
+
+  input,
+  textarea,
+  [contenteditable="true"],
+  .selectable {
+    user-select: text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-subtle);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
