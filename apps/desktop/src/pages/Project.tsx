@@ -1,4 +1,4 @@
-import { Check, FileText, Info, Trash2 } from "lucide-react";
+import { Check, FileText, FolderOpen, Info, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useBlocker, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ import { ScriptStage } from "@/features/script/ScriptStage";
 import { useScriptEditor } from "@/features/script/useScriptEditor";
 import { useScriptGeneration } from "@/features/script/useScriptGeneration";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useRevealProject } from "@/hooks/useManualMedia";
 import { useScenes } from "@/hooks/useScenes";
 import type { Project, ProjectUpdate } from "@/lib/api";
 import {
@@ -86,6 +87,7 @@ function ProjectView({ project }: { project: Project }) {
   const scenesGeneration = useScenesGeneration(project);
   const { data: scenesState } = useScenes(project.id);
   const media = useMediaController(project);
+  const revealProject = useRevealProject();
 
   // Salir del proyecto con cambios del guion sin guardar pide confirmación.
   const blocker = useBlocker(
@@ -287,7 +289,14 @@ function ProjectView({ project }: { project: Project }) {
                 <div className="grid gap-2 rounded-md border p-4 text-[12px]">
                   <InfoRow label="Canal" value={project.channel_name} />
                   <InfoRow label="Formato" value={FORMAT_LABEL[project.format]} />
-                  <InfoRow label="Carpeta" value={project.folder_path} mono />
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <InfoRow label="Carpeta" value={project.folder_path} mono />
+                    </div>
+                    <Button size="xs" variant="ghost" onClick={() => revealProject.mutate(project.id)}>
+                      <FolderOpen /> Abrir
+                    </Button>
+                  </div>
                   <InfoRow label="Creado" value={formatDate(project.created_at)} />
                 </div>
 

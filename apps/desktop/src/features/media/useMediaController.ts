@@ -9,6 +9,7 @@ import {
   useSuggestQueries,
   useUnapproveAsset,
 } from "@/hooks/useMedia";
+import { type ImportSource, useImportMedia } from "@/hooks/useManualMedia";
 import type { Project } from "@/lib/api";
 
 export const PROVIDER_LABEL: Record<string, string> = { pexels: "Pexels", pixabay: "Pixabay" };
@@ -45,6 +46,10 @@ export function useMediaController(project: Project) {
   const downloadMutation = useDownloadCandidates(project.id);
   const approveMutation = useApproveAsset(project.id);
   const unapproveMutation = useUnapproveAsset(project.id);
+  const importMutation = useImportMedia(project.id);
+  const [viewerId, setViewerId] = useState<number | null>(null);
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [approveWhenReady, setApproveWhenReady] = useState<number[]>([]);
 
   const configured = overview?.configured_providers ?? [];
   const activeProviders = providers.filter((p) => configured.includes(p));
@@ -116,16 +121,63 @@ export function useMediaController(project: Project) {
     }
   }
 
-  async function download() {
-    if (sceneId == null || !selected.length) return;
-    const ids = selected;
-    setSelection((all) => ({ ...all, [sceneId]: [] }));
+  async function download(explicit?: number[]) {
+    if (sceneId == null) return;
+    const ids = explicit ?? selected;
+    if (!ids.length) return;
+    setSelection((all) => ({ ...all, [sceneId]: (all[sceneId] ?? []).filter((id) => !ids.includes(id)) }));
     try {
       await downloadMutation.mutateAsync({ sceneId, ids });
       toast.success(`Descargando ${ids.length} ${ids.length === 1 ? "medio" : "medios"}…`);
     } catch {
       setSelection((all) => ({ ...all, [sceneId]: ids }));
     }
+  }
+
+  /** «Descargar y aprobar» (vista grande): se aprueba como principal al terminar la descarga. */
+  function downloadAndApprove(candidateId: number) {
+    setApproveWhenReady((ids) => [...ids, candidateId]);
+    void download([candidateId]);
+  }
+
+  useEffect(() => {
+    if (!scene || !approveWhenReady.length) return;
+    for (const id of approveWhenReady) {
+      const c = scene.candidates.find((x) => x.id === id);
+      if (!c) continue;
+      if (c.asset && (c.download_status === "done" || c.download_status === "manual")) {
+        setApproveWhenReady((ids) => ids.filter((x) => x !== id));
+        approveMutation.mutate({ sceneId: scene.scene_id, assetId: c.asset.id, role: "main" });
+      } else if (c.download_status === "failed") {
+        setApproveWhenReady((ids) => ids.filter((x) => x !== id));
+      }
+    }
+  }, [scene, approveWhenReady]); // approveMutation.mutate es estable
+
+  async function importMedia(source: ImportSource, candidateId?: number) {
+    if (sceneId == null) return;
+    const media = await importMutation.mutateAsync({ sceneId, source, candidateId });
+    const main = media.approved.find((a) => a.role === "main");
+    toast.success(
+      candidateId != null
+        ? "Archivo asignado al medio que no se pudo descargar"
+        : main && media.candidates.at(-1)?.asset?.id === main.asset.id
+          ? `Agregado y aprobado en la escena ${media.position}`
+          : `Agregado a la escena ${media.position}`,
+    );
+  }
+
+  function openViewer(candidateId?: number) {
+    const candidates = scene?.candidates ?? [];
+    const id = candidateId ?? hoveredId ?? selected[0] ?? candidates[0]?.id ?? null;
+    if (id != null && candidates.some((c) => c.id === id)) setViewerId(id);
+  }
+
+  function moveViewer(delta: 1 | -1) {
+    const candidates = scene?.candidates ?? [];
+    const index = candidates.findIndex((c) => c.id === viewerId);
+    if (index < 0 || !candidates.length) return;
+    setViewerId(candidates[(index + delta + candidates.length) % candidates.length].id);
   }
 
   function retry(candidateId: number) {
@@ -185,7 +237,16 @@ export function useMediaController(project: Project) {
     selected,
     toggle,
     download,
+    downloadAndApprove,
     downloading: downloadMutation.isPending,
+    importMedia,
+    importing: importMutation.isPending,
+    viewer: scene?.candidates.find((c) => c.id === viewerId) ?? null,
+    openViewer,
+    closeViewer: () => setViewerId(null),
+    viewerNext: () => moveViewer(1),
+    viewerPrev: () => moveViewer(-1),
+    setHovered: setHoveredId,
     retry,
     approve,
     unapprove,

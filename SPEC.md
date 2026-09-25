@@ -846,13 +846,13 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] Ajustes con verificación de dependencias.
 
 ### Fase 1 — MVP de producción (3–4 semanas)
-- [ ] Canales y proyectos (video/reel).
-- [ ] Generación de guion con Claude CLI, editor por segmentos, versiones, aprobación.
-- [ ] Tabla de escenas generada, editable, aprobación y propagación de cambios.
-- [ ] Búsqueda Pexels + Pixabay con orientación; galería de candidatos con selección múltiple.
-- [ ] Cola de descargas, renombrado, miniaturas.
-- [ ] Vista grande + "Abrir en navegador" + zona de arrastre + Ctrl+V.
-- [ ] Exportar `escenas.md` y paquete de carpeta.
+- [x] Canales y proyectos (video/reel).
+- [x] Generación de guion con Claude CLI, editor por segmentos, versiones, aprobación.
+- [x] Tabla de escenas generada, editable, aprobación y propagación de cambios.
+- [x] Búsqueda Pexels + Pixabay con orientación; galería de candidatos con selección múltiple.
+- [x] Cola de descargas, renombrado, miniaturas.
+- [x] Vista grande + "Abrir en navegador" + zona de arrastre + Ctrl+V.
+- [x] Exportar `escenas.md` y paquete de carpeta.
 
 ### Fase 2 — Material real y tiempos (2–3 semanas)
 - [ ] SearXNG, Wikimedia, Openverse, Unsplash; yt-dlp desde URL.
