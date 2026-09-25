@@ -30,7 +30,9 @@ class SceneCandidate(SQLModel, table=True):
     scene_id: int = Field(foreign_key="scene.id")
     provider: str
     provider_id: str | None = None
+    kind: str = "image"  # image | video
     preview_url: str | None = None
+    video_preview_url: str | None = None  # clip liviano para previsualizar
     full_url: str | None = None
     page_url: str | None = None
     width: int | None = None
@@ -53,6 +55,7 @@ class SceneAsset(SQLModel, table=True):
     scene_id: int = Field(foreign_key="scene.id", primary_key=True)
     asset_id: int = Field(foreign_key="asset.id", primary_key=True)
     role: str = "main"  # main | alt
+    file_path: str | None = None  # copia en media/approved (relativa a GUIONARIA_HOME)
     crop_json: str | None = None  # encuadre para 16:9 / 9:16
     trim_in_s: float | None = None
     trim_out_s: float | None = None

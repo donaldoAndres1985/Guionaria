@@ -135,6 +135,11 @@ def recompute_timings(session: Session, project_id: int) -> None:
         if segment:
             scene.narration = segment.text
 
+    from .media.service import sync_approved_names  # import local: media depende de scenes
+
+    session.flush()
+    sync_approved_names(session, project_id)  # los nombres llevan número de escena e inicio
+
 
 # --- permisos ---
 
@@ -261,15 +266,15 @@ async def generate_scenes(
         project = _editable_project(session, project_id)
         script = _approved_script(session, project)
         target_set = set(targets)
+        current_keys = {s.seg_key for s in script.segments}
         keep: dict[str, list[Scene]] = {}
+        drop: list[Scene] = []
         for scene in _scenes(session, project_id):
-            if mode == "all" or scene.seg_key in target_set:
-                session.delete(scene)
-            elif scene.seg_key in {s.seg_key for s in script.segments}:
-                keep.setdefault(scene.seg_key, []).append(scene)
+            if mode == "all" or scene.seg_key in target_set or scene.seg_key not in current_keys:
+                drop.append(scene)  # regenerada o su segmento ya no existe
             else:
-                session.delete(scene)  # su segmento ya no existe
-        session.flush()
+                keep.setdefault(scene.seg_key, []).append(scene)
+        _drop_scenes(session, drop)
 
         fresh: dict[str, list[Scene]] = {}
         for e in new:
@@ -377,12 +382,20 @@ def duplicate_scene(session: Session, scene_id: int) -> ScenesRead:
     return list_scenes(session, scene.project_id)
 
 
+def _drop_scenes(session: Session, scenes: list[Scene]) -> None:
+    from .media.service import delete_for_scenes  # import local: media depende de scenes
+
+    delete_for_scenes(session, [s.id for s in scenes])
+    for scene in scenes:
+        session.delete(scene)
+    session.flush()
+
+
 def delete_scene(session: Session, scene_id: int) -> ScenesRead:
     scene = get_scene(session, scene_id)
     project_id = scene.project_id
     _editable_project(session, project_id)
-    session.delete(scene)
-    session.flush()
+    _drop_scenes(session, [scene])
     recompute_timings(session, project_id)
     session.commit()
     return list_scenes(session, project_id)

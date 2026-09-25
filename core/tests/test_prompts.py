@@ -74,6 +74,14 @@ def test_default_prompts_use_only_supported_placeholders():
             "lista_efectos",
             "guion",
         },
+        "busquedas_alternativas": {
+            "canal",
+            "tipo",
+            "orientacion",
+            "narracion",
+            "descripcion",
+            "busqueda_actual",
+        },
     }
     for name, keys in supported.items():
         used = set(re.findall(r"\{(\w+)\}", prompts.default_content(name)))

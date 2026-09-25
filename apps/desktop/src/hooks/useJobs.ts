@@ -33,6 +33,11 @@ export function useJobEvents() {
             return isActive(job) ? [job, ...rest] : rest;
           });
         }
+        // Cada paso de una descarga actualiza la galería (candidato descargado, fallido…).
+        if (job.type === "download_media") {
+          void client.invalidateQueries({ queryKey: ["scene-media"] });
+          if (job.project_id != null) void client.invalidateQueries({ queryKey: ["media", job.project_id] });
+        }
         if (!isActive(job)) onJobFinished(client, job);
       };
       // Si el núcleo se reinicia, se reconecta solo.
