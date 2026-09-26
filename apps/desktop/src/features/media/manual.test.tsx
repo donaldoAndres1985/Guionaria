@@ -169,8 +169,8 @@ describe("vista grande, descargar y aprobar, e importación manual", () => {
     const overview: MediaOverview = {
       project_id: 1, orientation: "portrait", editable: true, approved: false, configured_providers: ["pexels"],
       scenes: [{ scene_id: 1, position: 1, media_kind: "image", visual_description: "Calle", status: "candidates",
-        needs_media: true, candidate_count: 2, downloaded_count: 1, approved_thumb_url: null }],
-      needing_media: 1, with_media: 0,
+        needs_media: true, candidate_count: 2, downloaded_count: 1, selected_count: 0, approved_thumb_url: null }],
+      needing_media: 1, with_media: 0, selected_pending: 0,
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname;

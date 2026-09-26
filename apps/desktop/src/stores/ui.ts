@@ -16,6 +16,9 @@ interface UiState {
   setStagePanelMode: (mode: StagePanelMode) => void;
   stagePanelWidth: number;
   setStagePanelWidth: (width: number) => void;
+  /** Guía «cómo funciona» de la etapa de medios. */
+  mediaHelpHidden: boolean;
+  setMediaHelpHidden: (hidden: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -27,6 +30,8 @@ export const useUiStore = create<UiState>()(
       setSelectedChannel: (id) => set({ selectedChannelId: id }),
       stagePanelMode: "expanded",
       setStagePanelMode: (mode) => set({ stagePanelMode: mode }),
+      mediaHelpHidden: false,
+      setMediaHelpHidden: (hidden) => set({ mediaHelpHidden: hidden }),
       stagePanelWidth: STAGE_PANEL_WIDTH.default,
       setStagePanelWidth: (width) =>
         set({

@@ -172,9 +172,9 @@ describe("controlador de medios", () => {
       scenes: Object.values(scenes).map((s) => ({
         scene_id: s.scene_id, position: s.position, media_kind: s.media_kind,
         visual_description: s.visual_description, status: s.status, needs_media: s.needs_media,
-        candidate_count: 0, downloaded_count: 0, approved_thumb_url: null,
+        candidate_count: 0, downloaded_count: 0, selected_count: 0, approved_thumb_url: null,
       })),
-      needing_media: 2, with_media: 0,
+      needing_media: 2, with_media: 0, selected_pending: 0,
     };
     vi.stubGlobal(
       "fetch",
@@ -191,6 +191,23 @@ describe("controlador de medios", () => {
           scenes[sceneId] = { ...scenes[sceneId], status: "candidates", candidates: [candidate(10), candidate(11)] };
           return ok({ scene: scenes[sceneId], warnings: ["Pixabay: falta la clave"], page: body.page, has_more: true });
         }
+        if (path.endsWith("/selected") && method === "PUT") {
+          // Como el núcleo: guarda la elección con su orden.
+          const candidateId = Number(path.split("/")[5]);
+          const next = Math.max(0, ...scenes[sceneId].candidates.map((c) => c.selection_order ?? 0)) + 1;
+          scenes[sceneId] = {
+            ...scenes[sceneId],
+            candidates: scenes[sceneId].candidates.map((c) =>
+              c.id === candidateId ? { ...c, selected: body.selected, selection_order: body.selected ? next : null } : c,
+            ),
+          };
+          return ok(scenes[sceneId]);
+        }
+        if (path === "/api/projects/1/media:download-selected") {
+          return ok({ id: 6, type: "download_selected", project_id: 1, status: "queued", progress: 0,
+            message: null, result: null, error: null, created_at: "", finished_at: null });
+        }
+        if (path.startsWith("/api/jobs")) return ok([]);
         if (path.endsWith("candidates:download")) {
           return ok({ id: 5, type: "download_media", project_id: 1, status: "queued", progress: 0,
             message: null, result: null, error: null, created_at: "", finished_at: null });
@@ -228,19 +245,30 @@ describe("controlador de medios", () => {
     expect(result.current.hasMore).toBe(true);
   });
 
-  it("elegir, descargar (manda los ids y vacía la selección) y mostrar más", async () => {
-    const { result } = setup();
+  it("elegir se guarda en el núcleo, sobrevive a cerrar y «Descargar y aprobar» baja todo", async () => {
+    const { result, unmount } = setup();
     await waitFor(() => expect(result.current.scene?.candidates).toHaveLength(2));
+    act(() => result.current.toggle(11));
+    await waitFor(() => expect(result.current.selected).toEqual([11]));
     act(() => result.current.toggle(10));
+    await waitFor(() => expect(result.current.selected).toEqual([11, 10])); // orden de elección
     act(() => result.current.toggle(11));
-    act(() => result.current.toggle(11));
-    expect(result.current.selected).toEqual([10]);
+    await waitFor(() => expect(result.current.selected).toEqual([10]));
+    expect(requests.filter((r) => r.method === "PUT").map((r) => [r.path, r.body])).toEqual([
+      ["/api/scenes/1/candidates/11/selected", { selected: true }],
+      ["/api/scenes/1/candidates/10/selected", { selected: true }],
+      ["/api/scenes/1/candidates/11/selected", { selected: false }],
+    ]);
 
-    await act(() => result.current.download());
-    expect(requests.find((r) => r.path.endsWith("candidates:download"))!.body).toEqual({ candidate_ids: [10] });
-    expect(result.current.selected).toEqual([]);
+    // Cerrar y volver a abrir: la elección sigue ahí.
+    unmount();
+    const again = setup();
+    await waitFor(() => expect(again.result.current.selected).toEqual([10]));
 
-    await act(() => result.current.loadMore());
+    await act(() => again.result.current.downloadAll());
+    expect(requests.some((r) => r.method === "POST" && r.path === "/api/projects/1/media:download-selected")).toBe(true);
+
+    await act(() => again.result.current.loadMore());
     expect(requests.filter((r) => r.path.endsWith("/search")).at(-1)!.body).toMatchObject({ page: 2 });
   });
 

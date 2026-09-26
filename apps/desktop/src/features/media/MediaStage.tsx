@@ -1,4 +1,4 @@
-import { Crop as CropIcon, Film, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
+import { Check, Crop as CropIcon, Film, HelpCircle, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -9,6 +9,7 @@ import { KIND_LABEL, formatSceneTime } from "@/features/scenes/sceneMeta";
 import { coreUrl, type Project } from "@/lib/api";
 import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
+import { useUiStore } from "@/stores/ui";
 import { CandidateCard } from "./CandidateCard";
 import { FramingDialog, type FramingTarget } from "./FramingDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
@@ -33,6 +34,8 @@ export function MediaStage({
 }) {
   const [framing, setFraming] = useState<FramingTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const helpHidden = useUiStore((s) => s.mediaHelpHidden);
+  const setHelpHidden = useUiStore((s) => s.setMediaHelpHidden);
   const { data: sceneRows } = useScenes(project.id);
   const queryClient = useQueryClient();
   // Al entrar en la etapa se recarga la lista: las escenas pueden haber cambiado desde que se abrió
@@ -97,12 +100,22 @@ export function MediaStage({
         {scenes.map((s) => {
           const active = s.scene_id === ctl.sceneId;
           const done = s.status === "approved" || s.status === "manual";
+          const chosen = !done && s.selected_count > 0;
           return (
             <button
               key={s.scene_id}
               type="button"
               disabled={!s.needs_media}
               onClick={() => ctl.selectScene(s.scene_id)}
+              title={
+                !s.needs_media
+                  ? "Se genera en el render (texto o negro): no necesita medio"
+                  : done
+                    ? "Ya tiene medio principal"
+                    : chosen
+                      ? `${s.selected_count} elegido(s): pulsa «Descargar y aprobar»`
+                      : "Sin medio: elige uno"
+              }
               className={cn(
                 "relative flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
                 active
@@ -111,9 +124,17 @@ export function MediaStage({
                 !s.needs_media && "opacity-50",
               )}
             >
-              <span className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-panel-2 text-muted-foreground">
+              <span
+                className={cn(
+                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-panel-2 text-muted-foreground",
+                  done && "ring-1 ring-success-foreground",
+                  chosen && "bg-active text-brand ring-1 ring-brand",
+                )}
+              >
                 {s.approved_thumb_url ? (
                   <img src={coreUrl(s.approved_thumb_url)} alt="" className="size-full object-cover" />
+                ) : !s.needs_media ? (
+                  <Type className="size-4" />
                 ) : s.media_kind === "video" ? (
                   <Film className="size-4" />
                 ) : (
@@ -129,20 +150,21 @@ export function MediaStage({
                   {s.visual_description}
                 </span>
               </span>
-              <span
-                className={cn(
-                  "shrink-0 text-[11px]",
-                  done ? "text-success-foreground" : s.downloaded_count ? "text-brand" : "text-subtle",
-                )}
-              >
-                {!s.needs_media
-                  ? "—"
-                  : done
-                    ? "✓"
-                    : s.downloaded_count
-                      ? `${s.downloaded_count}↓`
-                      : s.candidate_count || ""}
-              </span>
+              {!s.needs_media ? (
+                <span className="shrink-0 text-[10px] text-subtle">Render</span>
+              ) : done ? (
+                <Check className="size-4 shrink-0 text-success-foreground" aria-label="Con medio" />
+              ) : chosen ? (
+                <span
+                  data-testid={`scene-chosen-${s.scene_id}`}
+                  className="flex shrink-0 items-center gap-0.5 rounded-full bg-brand px-1.5 py-px text-[10px] font-medium text-primary-foreground"
+                >
+                  <Check className="size-2.5" />
+                  {s.selected_count}
+                </span>
+              ) : (
+                <span className="shrink-0 text-[11px] text-subtle">{s.candidate_count || ""}</span>
+              )}
             </button>
           );
         })}
@@ -156,6 +178,33 @@ export function MediaStage({
             <span className="text-[12px] text-muted-foreground">
               Si lo sueltas sobre un medio que no se pudo descargar, lo reemplaza.
             </span>
+          </div>
+        )}
+        {ctl.editable && !helpHidden && (
+          <div role="note" className="flex shrink-0 items-start gap-3 border-b bg-active/40 px-5 py-2.5 text-[12px]">
+            <HelpCircle className="mt-0.5 size-4 shrink-0 text-brand" />
+            <ol className="flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-1 text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">1. Elige</span> el medio de cada escena (✓). El primero
+                que elijas será el principal; se guarda aunque cierres.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">2. «Descargar y aprobar»</span> baja lo elegido de todas
+                las escenas a la vez.
+              </li>
+              <li>
+                <span className="font-medium text-foreground">3. «Aprobar medios»</span> cuando todas tengan ✓ verde.
+                Las de texto se generan en el render.
+              </li>
+            </ol>
+            <button
+              type="button"
+              aria-label="Ocultar guía"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setHelpHidden(true)}
+            >
+              <X className="size-3.5" />
+            </button>
           </div>
         )}
         {!scene ? (

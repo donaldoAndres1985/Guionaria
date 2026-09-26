@@ -67,6 +67,43 @@ export function useDownloadCandidates(projectId: number) {
   });
 }
 
+/** Elegir o quitar un candidato: se guarda en el núcleo y se ve al instante. */
+export function useSelectCandidate(projectId: number) {
+  const client = useQueryClient();
+  const onScene = useOnSceneMedia(projectId);
+  return useMutation({
+    mutationFn: ({ sceneId, candidateId, selected }: { sceneId: number; candidateId: number; selected: boolean }) =>
+      api.put<SceneMedia>(`/api/scenes/${sceneId}/candidates/${candidateId}/selected`, { selected }),
+    onMutate: async ({ sceneId, candidateId, selected }) => {
+      await client.cancelQueries({ queryKey: mediaKeys.scene(sceneId) });
+      const previous = client.getQueryData<SceneMedia>(mediaKeys.scene(sceneId));
+      if (previous) {
+        client.setQueryData<SceneMedia>(mediaKeys.scene(sceneId), {
+          ...previous,
+          candidates: previous.candidates.map((c) => (c.id === candidateId ? { ...c, selected } : c)),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, { sceneId }, context) => {
+      if (context?.previous) client.setQueryData(mediaKeys.scene(sceneId), context.previous);
+    },
+    onSuccess: onScene,
+  });
+}
+
+/** «Descargar y aprobar»: lo elegido en todas las escenas (trabajo en segundo plano). */
+export function useDownloadSelected(projectId: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Job>(`/api/projects/${projectId}/media:download-selected`, {}),
+    onSuccess: (job) => {
+      client.setQueryData(["job", job.id], job);
+      void client.invalidateQueries({ queryKey: mediaKeys.overview(projectId) });
+    },
+  });
+}
+
 export function useApproveAsset(projectId: number) {
   const onScene = useOnSceneMedia(projectId);
   return useMutation({

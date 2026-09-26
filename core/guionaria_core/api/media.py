@@ -13,8 +13,10 @@ from ..schemas.media import (
     SceneMediaRead,
     SearchRequest,
     SearchResult,
+    SelectRequest,
     SuggestResult,
 )
+from ..services.errors import DomainError
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.llm.claude_cli import get_runner
 from ..services.media import framing
@@ -41,6 +43,31 @@ def approve_media(project_id: int, session: SessionDep) -> MediaOverview:
 @router.post("/api/projects/{project_id}/media:unlock", response_model=MediaOverview)
 def unlock_media(project_id: int, session: SessionDep) -> MediaOverview:
     return svc.unlock_media(session, project_id)
+
+
+@router.post(
+    "/api/projects/{project_id}/media:download-selected",
+    response_model=JobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def download_selected(project_id: int, session: SessionDep) -> JobRead:
+    """Descarga lo elegido en todas las escenas y aprueba el primero de cada una."""
+    if not svc.media_overview(session, project_id).editable:
+        raise DomainError("Los medios están aprobados: desbloquéalos para cambiarlos")
+
+    async def work(ctx: JobContext) -> dict:
+        return await svc.download_selected(_session_factory, project_id, ctx)
+
+    return jobs.submit("download_selected", work, project_id=project_id)
+
+
+@router.put(
+    "/api/scenes/{scene_id}/candidates/{candidate_id}/selected", response_model=SceneMediaRead
+)
+def select_candidate(
+    scene_id: int, candidate_id: int, data: SelectRequest, session: SessionDep
+) -> SceneMediaRead:
+    return svc.select_candidate(session, scene_id, candidate_id, data.selected)
 
 
 @router.get("/api/scenes/{scene_id}/media", response_model=SceneMediaRead)

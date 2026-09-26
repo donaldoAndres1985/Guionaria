@@ -74,8 +74,8 @@ describe("fuentes por escena y video desde URL", () => {
       project_id: 1, orientation: "portrait", editable: true, approved: false,
       configured_providers: ["pexels", "openverse", "wikimedia", "searxng"],
       scenes: [{ scene_id: 1, position: 3, media_kind: "real", visual_description: "Foto real", status: "candidates",
-        needs_media: true, candidate_count: 1, downloaded_count: 0, approved_thumb_url: null }],
-      needing_media: 1, with_media: 0,
+        needs_media: true, candidate_count: 1, downloaded_count: 0, selected_count: 0, approved_thumb_url: null }],
+      needing_media: 1, with_media: 0, selected_pending: 0,
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input)).pathname;
