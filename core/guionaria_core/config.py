@@ -93,6 +93,8 @@ class AppSettings(BaseModel):
     theme: str = "dark"
     api_keys: ApiKeys = Field(default_factory=ApiKeys)
     elevenlabs: ElevenLabsPrefs = Field(default_factory=ElevenLabsPrefs)
+    # Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena.
+    trim_after_download: bool = False
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

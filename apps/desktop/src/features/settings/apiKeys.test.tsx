@@ -14,6 +14,7 @@ const baseSettings = (keys: Partial<AppSettings["api_keys"]> = {}): AppSettings 
   download_parallelism: 4,
   ui_language: "es",
   theme: "dark",
+  trim_after_download: false,
   api_keys: { pexels: "", pixabay: "", unsplash: "", freesound: "", elevenlabs: "", ...keys },
   elevenlabs: {
     voice_id: "", voice_name: "", model_id: "eleven_multilingual_v2",

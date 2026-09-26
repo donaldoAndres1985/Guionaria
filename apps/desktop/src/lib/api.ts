@@ -140,6 +140,8 @@ export interface AppSettings {
   theme: "dark" | "light";
   api_keys: ApiKeys;
   elevenlabs: ElevenLabsPrefs;
+  /** Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena. */
+  trim_after_download: boolean;
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -415,6 +417,8 @@ export interface FramingState extends FramingInput {
   source_width: number | null;
   source_height: number | null;
   source_duration_s: number | null;
+  /** Lo que dura la escena en el guion: el largo ideal del tramo. */
+  scene_duration_s: number | null;
   target_width: number;
   target_height: number;
   orientation_mismatch: boolean;

@@ -132,6 +132,35 @@ def make_thumbnail(src: Path, dest: Path, kind: str, duration_s: float | None = 
         return None
 
 
+FILMSTRIP_HEIGHT = 90
+
+
+def make_filmstrip(src: Path, dest: Path, duration_s: float, frames: int = 12) -> bool:
+    """Tira horizontal de `frames` fotogramas repartidos por todo el video (para el recorte)."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.unlink(missing_ok=True)
+    fps = frames / max(duration_s, 0.1)
+    proc = _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(src),
+            "-vf",
+            f"fps={fps:.6f},scale=-2:{FILMSTRIP_HEIGHT},tile={frames}x1",
+            "-frames:v",
+            "1",
+            "-q:v",
+            "4",
+            str(dest),
+        ],
+        timeout=120,
+    )
+    return bool(proc) and proc.returncode == 0 and dest.exists()
+
+
 def extension_for(url: str, content_type: str | None, kind: str) -> str:
     known = {".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".webm"}
     suffix = Path(url.split("?")[0]).suffix.lower()

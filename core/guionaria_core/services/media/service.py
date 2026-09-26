@@ -808,6 +808,7 @@ async def download_selected(session_factory, project_id: int, ctx: JobContext) -
         await asyncio.gather(*(one(cid) for cid in pending))
 
     approved = 0
+    to_trim: list[dict] = []
     with session_factory() as session:
         for scene_id in scene_ids:
             scene = get_scene(session, scene_id)
@@ -815,7 +816,13 @@ async def download_selected(session_factory, project_id: int, ctx: JobContext) -
                 c.download_status == "done" for c in _candidates(session, scene_id)
             ):
                 scene.status = "candidates"
-            approved += _auto_approve(session, scene)
+            if _auto_approve(session, scene):
+                approved += 1
+                # Videos más largos que la escena: la app puede abrir «Ajustar tramo».
+                from .framing import needs_trim  # import local: framing usa este módulo
+
+                if needs_trim(session, scene):
+                    to_trim.append({"scene_id": scene.id, "asset_id": scene.approved_asset_id})
         log_operation(
             session,
             "download",
@@ -825,7 +832,13 @@ async def download_selected(session_factory, project_id: int, ctx: JobContext) -
             actor="system",
         )
         session.commit()
-    return {"requested": total, "downloaded": ok, "failed": total - ok, "approved": approved}
+    return {
+        "requested": total,
+        "downloaded": ok,
+        "failed": total - ok,
+        "approved": approved,
+        "trim": to_trim,
+    }
 
 
 # --- aprobación de medios por escena ---
@@ -1014,6 +1027,24 @@ def approved_file(session: Session, scene_id: int, asset_id: int) -> Path:
     if not row or not row.file_path or not _abs(row.file_path).exists():
         raise NotFound("El medio aprobado no está en disco")
     return _abs(row.file_path)
+
+
+def filmstrip(session: Session, asset_id: int, frames: int) -> Path:
+    """Tira de fotogramas del video (se guarda junto a la miniatura y se reutiliza)."""
+    asset = session.get(Asset, asset_id)
+    if not asset or asset.kind != "video":
+        raise NotFound("El video no existe")
+    source = _abs(asset.file_path)
+    if not source.exists():
+        raise NotFound("El archivo no está en disco")
+    if not asset.duration_s:
+        raise DomainError("No se conoce la duración del video")
+    folder = _abs(asset.thumb_path).parent if asset.thumb_path else source.parent / ".thumbs"
+    dest = folder / f"{source.stem}_tira{frames}.jpg"
+    stale = not dest.exists() or dest.stat().st_mtime < source.stat().st_mtime
+    if stale and not process.make_filmstrip(source, dest, asset.duration_s, frames):
+        raise DomainError("No se pudo generar la tira de fotogramas (¿FFmpeg instalado?)")
+    return dest
 
 
 def asset_file(session: Session, asset_id: int, thumb: bool = False) -> Path:

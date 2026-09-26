@@ -14,6 +14,7 @@ import {
   useUnapproveAsset,
 } from "@/hooks/useMedia";
 import { type ImportSource, useImportMedia, useVideoFromUrl } from "@/hooks/useManualMedia";
+import { useSettings } from "@/hooks/useCore";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { isVideoSite } from "./dropUtils";
 import type { Project } from "@/lib/api";
@@ -61,6 +62,10 @@ export function useMediaController(project: Project) {
   const selectMutation = useSelectCandidate(project.id);
   const downloadSelectedMutation = useDownloadSelected(project.id);
   const queryClient = useQueryClient();
+  const { data: settings } = useSettings();
+  // Videos para «Ajustar tramo» tras descargar (opción de Ajustes), uno detrás de otro.
+  const [trimQueue, setTrimQueue] = useState<{ scene_id: number; asset_id: number }[]>([]);
+  const [trimIndex, setTrimIndex] = useState(0);
   // «Descargar y aprobar»: todas las escenas a la vez; al terminar se refresca todo.
   const downloadAll = useProjectJob(
     project.id,
@@ -70,7 +75,16 @@ export function useMediaController(project: Project) {
       void queryClient.invalidateQueries({ queryKey: mediaKeys.overview(project.id) });
       void queryClient.invalidateQueries({ queryKey: ["scene-media"] });
       void queryClient.invalidateQueries({ queryKey: ["project", project.id] });
-      const r = (job.result ?? {}) as { downloaded?: number; failed?: number; approved?: number };
+      const r = (job.result ?? {}) as {
+        downloaded?: number;
+        failed?: number;
+        approved?: number;
+        trim?: { scene_id: number; asset_id: number }[];
+      };
+      if (settings?.trim_after_download && r.trim?.length) {
+        setTrimQueue(r.trim);
+        setTrimIndex(0);
+      }
       if (r.failed) {
         toast.warning(`${r.approved ?? 0} escenas con medio · ${r.failed} descargas fallaron`, {
           description: "Siguen elegidas: reinténtalo o arrastra el archivo a la escena.",
@@ -292,6 +306,16 @@ export function useMediaController(project: Project) {
     downloadAll: downloadAll.start,
     downloadingAll: downloadAll.running,
     downloadAllJob: downloadAll.job,
+    trimQueue,
+    trimIndex,
+    nextTrim: () =>
+      setTrimIndex((i) => {
+        if (i + 1 >= trimQueue.length) {
+          setTrimQueue([]);
+          return 0;
+        }
+        return i + 1;
+      }),
     importMedia,
     importing: importMutation.isPending,
     available,
