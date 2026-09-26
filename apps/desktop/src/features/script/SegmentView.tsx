@@ -10,7 +10,7 @@ import { Segment } from "./segment-extension";
 
 type SegmentStorage = { segment: { wordsPerSecond: number } };
 
-function SegmentView({ node, editor, decorations }: NodeViewProps) {
+function SegmentView({ node, editor, decorations, updateAttributes }: NodeViewProps) {
   const wps = (editor.storage as unknown as SegmentStorage).segment.wordsPerSecond;
   const seconds = estimateSeconds(node.textContent, wps);
   const sectionLabel = decorations
@@ -29,11 +29,22 @@ function SegmentView({ node, editor, decorations }: NodeViewProps) {
       </span>
       <NodeViewContent className="seg-text" />
       <span className="seg-flag" contentEditable={false}>
-        {node.attrs.factCheck && (
-          <span title="Verificar dato: no está en las notas de investigación">
-            <TriangleAlert className="size-3.5" />
-          </span>
-        )}
+        {node.attrs.factCheck &&
+          (editor.isEditable ? (
+            <button
+              type="button"
+              className="seg-flag-button"
+              title="Dato por verificar: no está en el tema ni en las notas. Clic para marcarlo como comprobado."
+              aria-label="Marcar dato como comprobado"
+              onClick={() => updateAttributes({ factCheck: false })}
+            >
+              <TriangleAlert className="size-3.5" />
+            </button>
+          ) : (
+            <span title="Dato por verificar: no está en el tema ni en las notas de investigación">
+              <TriangleAlert className="size-3.5" />
+            </span>
+          ))}
       </span>
     </NodeViewWrapper>
   );

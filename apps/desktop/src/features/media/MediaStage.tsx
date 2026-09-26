@@ -1,4 +1,5 @@
 import { Crop as CropIcon, Film, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
@@ -12,6 +13,7 @@ import { CandidateCard } from "./CandidateCard";
 import { FramingDialog, type FramingTarget } from "./FramingDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
+import { mediaKeys } from "@/hooks/useMedia";
 import { useScenes } from "@/hooks/useScenes";
 import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
@@ -32,6 +34,12 @@ export function MediaStage({
   const [framing, setFraming] = useState<FramingTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { data: sceneRows } = useScenes(project.id);
+  const queryClient = useQueryClient();
+  // Al entrar en la etapa se recarga la lista: las escenas pueden haber cambiado desde que se abrió
+  // el proyecto (p. ej. recién aprobadas).
+  useEffect(() => {
+    void queryClient.invalidateQueries({ queryKey: mediaKeys.overview(project.id) });
+  }, [queryClient, project.id, project.status]);
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
   const { dragging, dropProps } = useMediaDrop(

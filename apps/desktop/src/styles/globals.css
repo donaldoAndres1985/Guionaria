@@ -199,6 +199,17 @@
     user-select: none;
   }
 
+  .script-editor .seg-flag-button {
+    display: inline-flex;
+    border-radius: 4px;
+    padding: 2px;
+    cursor: pointer;
+  }
+
+  .script-editor .seg-flag-button:hover {
+    background: color-mix(in srgb, var(--warning) 18%, transparent);
+  }
+
   .script-editor .seg:hover .seg-gutter {
     color: var(--text-muted);
   }
