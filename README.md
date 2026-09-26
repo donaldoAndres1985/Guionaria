@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
   <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
-  <img src="https://img.shields.io/badge/pruebas-380-2ea44f" alt="380 pruebas">
+  <img src="https://img.shields.io/badge/pruebas-389-2ea44f" alt="389 pruebas">
 </p>
 
 <p align="center">
@@ -84,7 +84,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **3C — Almacenamiento** | Espacio por canal, proyecto y tipo con treemap · limpieza de candidatos sin usar | ✅ Completa |
 | **3D — Historial y papelera** | Historial de operaciones · papelera de 30 días con restauración · registro de derechos | ✅ Completa |
 | **3E — SFX y música** | Biblioteca de efectos y música · Freesound · sonidos por escena en el timeline | ✅ Completa |
-| 4 / 5 | Render automático · publicación y analítica | ⏳ |
+| **4 — Render automático** | FFmpeg: efectos, voz + SFX + música con ducking, subtítulos quemados, borrador 720p, miniatura | ✅ Completa |
+| 5 — Publicación | YouTube, Meta y TikTok · analítica | ⏳ Siguiente |
 
 La especificación completa está en [SPEC.md](SPEC.md).
 
@@ -169,6 +170,15 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - Los archivos compartidos por enlaces duros se cuentan una sola vez: es el espacio real en disco. También muestra el espacio libre del disco.
 - **Liberar espacio:** borra los archivos de los candidatos descargados que no se aprobaron. Por defecto solo en los proyectos con los medios aprobados, y los candidatos siguen en la lista para volver a descargarlos.
 
+### Render automático
+
+- En la etapa Timeline, **Borrador 720p** (rápido, para revisar) o **Render final** a 1920×1080 o 1080×1920: `render/proyecto.mp4` en H.264 + AAC.
+- Cada escena se arma con su **efecto**: zoom lento de entrada o de salida, Ken Burns, estática, glitch, fundido a negro y cámara rápida. El **texto en pantalla** se superpone, y las escenas de texto o negro van sobre fondo negro.
+- **Audio:** la voz, los SFX en su momento y la música con **ducking** (baja sola cuando hay voz), con limitador.
+- **Subtítulos quemados**, grandes y centrados (por defecto en reels).
+- **Miniatura sugerida:** un fotograma del medio de portada con el título encima.
+- Progreso en vivo por escena y reproductor del resultado. El render final marca el proyecto como *Renderizado*.
+
 ### Ideas y calendario
 
 - **Banco de ideas** por canal, con prioridad y notas: se escribe la idea y se pulsa Enter. Se descarta, se reabre o se **convierte en proyecto** con un clic (el título y las notas pasan al proyecto). Si se borra el proyecto, la idea vuelve a quedar abierta.
@@ -212,12 +222,12 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 
 - El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
 - **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
-- Herramientas para todo el flujo (31):
+- Herramientas para todo el flujo (32):
   - canales, proyectos e ideas (`list_ideas`, `add_ideas`, `convert_idea`);
   - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
   - medios (`search_media`, `search_library`, `reuse_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
   - voz y sonido (`generate_voice`, `import_voice`, `transcribe_voice`, `search_sounds`, `assign_sound`);
-  - salida (`export_timeline`, `get_credits`) y `job_status`.
+  - salida (`export_timeline`, `render_video`, `get_credits`) y `job_status`.
 - Recursos de solo lectura: el guion y las escenas de un proyecto, y el estilo de un canal.
 - **Sin doble consumo:** Claude redacta el guion y las escenas con tu plan y los guarda. Las herramientas nunca vuelven a llamar a la CLI, y las escenas se validan con las mismas reglas que las generadas en la app.
 - Los cambios quedan en el historial con `actor = mcp`. Solo acepta conexiones a `127.0.0.1` o `localhost`, para protegerse del DNS rebinding.
@@ -320,7 +330,7 @@ Guionaria/
 
 ## Pruebas
 
-- **380 pruebas automáticas:** 251 del núcleo y 129 de la app.
+- **389 pruebas automáticas:** 258 del núcleo y 131 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:
@@ -331,7 +341,8 @@ Guionaria/
   - voz real con Piper y transcripción con Whisper, también desde el sidecar empaquetado;
   - exportación del timeline de un proyecto con archivos reales, desde el código y desde el sidecar;
   - Claude Code como cliente MCP: creó un proyecto, redactó y aprobó el guion y guardó las escenas; el sidecar respondió por HTTP y por stdio;
-  - encuadre real: imagen recortada y video con fondo desenfocado y tramo, codificado con FFmpeg y usado en el timeline.
+  - encuadre real: imagen recortada y video con fondo desenfocado y tramo, codificado con FFmpeg y usado en el timeline;
+  - render real de un proyecto con efectos, voz, SFX, música y subtítulos (borrador y final), revisado cuadro a cuadro.
 
 ## Derechos y responsabilidad
 

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Project, TimelineState } from "@/lib/api";
+import type { Project, RenderState, TimelineState } from "@/lib/api";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
 import { clipCount, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
@@ -52,16 +52,33 @@ describe("utilidades del timeline", () => {
 
 describe("etapa de timeline", () => {
   let server: TimelineState;
+  let renderState: RenderState;
+  const renderJob = { id: 9, type: "render", project_id: 7, status: "running", progress: 0.42, message: "Escena 2 de 3…", created_at: "" };
   let posts: { path: string; body: unknown }[];
 
   beforeEach(() => {
     posts = [];
+    renderState = {
+      project_id: 7,
+      can_render: true,
+      reason: null,
+      has_voice: true,
+      has_subtitles: true,
+      default_burn_subtitles: true,
+      duration_s: 4.9,
+      scenes: 3,
+      files: [
+        { kind: "final", name: "proyecto.mp4", url: "/api/projects/7/render/files/proyecto.mp4", size_bytes: 8 * 1024 * 1024, duration_s: 4.9, width: 1080, height: 1920, updated_at: "2026-09-26T10:00:00" },
+        { kind: "thumbnail", name: "miniatura.jpg", url: "/api/projects/7/render/files/miniatura.jpg", size_bytes: 90000, duration_s: null, width: 1080, height: 1920, updated_at: "2026-09-26T10:00:00" },
+      ],
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const path = new URL(String(input)).pathname;
         if (init?.method === "POST") {
           posts.push({ path, body: JSON.parse(String(init.body)) });
+          if (path.endsWith("/render")) return new Response(JSON.stringify(renderJob), { status: 202 });
           if (path.endsWith(":export")) {
             server = {
               ...server,
@@ -76,6 +93,9 @@ describe("etapa de timeline", () => {
           }
           return new Response(null, { status: 204 });
         }
+        if (path === "/api/jobs") return new Response(JSON.stringify([]));
+        if (path.startsWith("/api/jobs/")) return new Response(JSON.stringify(renderJob));
+        if (path.endsWith("/render")) return new Response(JSON.stringify(renderState));
         return new Response(JSON.stringify(server));
       }),
     );
@@ -141,5 +161,29 @@ describe("etapa de timeline", () => {
     expect(await screen.findByText(/no tiene voz: el timeline usa/)).toBeTruthy();
     expect(screen.getByText("Sin voz: se usan los tiempos estimados")).toBeTruthy();
     expect(screen.getByText("Sin voz")).toBeTruthy();
+  });
+
+  it("render: opciones, progreso y resultado", async () => {
+    server = timeline();
+    renderStage();
+    const panel = await screen.findByLabelText("Render");
+    expect(within(panel).getByText(/render\/proyecto\.mp4 · 8.00 MB/)).toBeTruthy();
+    expect(within(panel).getByAltText("Miniatura sugerida")).toBeTruthy();
+    const burn = within(panel).getByLabelText("Quemar subtítulos") as HTMLInputElement;
+    expect(burn.checked).toBe(true); // reel: por defecto sí
+    fireEvent.click(burn);
+    fireEvent.click(within(panel).getByText("Borrador 720p"));
+    await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
+    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ draft: true, burn_subtitles: false });
+    expect(await within(panel).findByText("Escena 2 de 3…")).toBeTruthy();
+  });
+
+  it("render bloqueado hasta aprobar los medios", async () => {
+    server = timeline();
+    renderState = { ...renderState, can_render: false, reason: "Aprueba los medios antes de renderizar", files: [] };
+    renderStage();
+    const panel = await screen.findByLabelText("Render");
+    expect(within(panel).getByText("Aprueba los medios antes de renderizar")).toBeTruthy();
+    expect((within(panel).getByText("Render final").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 });

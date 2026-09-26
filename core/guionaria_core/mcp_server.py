@@ -716,6 +716,23 @@ def build_mcp() -> MCPServer:
             }
 
     @tool
+    def render_video(
+        project_id: int, draft: bool = False, burn_subtitles: bool | None = None
+    ) -> dict[str, Any]:
+        """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos
+        quemados en reels). draft=true: borrador a 720p, más rápido. Devuelve el job."""
+        from .services.render import service as render
+
+        with _session() as s:
+            projects.get_project(s, project_id)
+
+        async def work(ctx: JobContext) -> dict:
+            return await render.render_project(_session, project_id, draft, burn_subtitles, ctx)
+
+        job = jobs.jobs.submit("render", work, project_id=project_id, payload={"draft": draft})
+        return _job_summary(job)
+
+    @tool
     def get_credits(project_id: int) -> str:
         """Créditos de los medios aprobados (autor, licencia y origen) para la descripción."""
         with _session() as s:
