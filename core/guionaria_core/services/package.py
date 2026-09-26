@@ -51,6 +51,29 @@ def _approved_by_scene(
     return out
 
 
+def _sound_credits(scenes) -> list[str]:
+    """SFX y música usados (Freesound pide citar autor y licencia en CC BY)."""
+    from sqlmodel import Session as _Session
+
+    from ..db import get_engine
+    from ..models import Sound
+
+    ids = {s.sfx_sound_id for s in scenes} | {s.music_sound_id for s in scenes}
+    ids.discard(None)
+    if not ids:
+        return []
+    with _Session(get_engine()) as session:
+        sounds = session.exec(select(Sound).where(col(Sound.id).in_(ids))).all()
+        lines = []
+        for sound in sorted(sounds, key=lambda x: (x.kind, x.title)):
+            kind = "Efecto" if sound.kind == "sfx" else "Música"
+            who = f" — {sound.author}" if sound.author else ""
+            license_ = f" ({sound.license})" if sound.license else ""
+            where = f"\n    {sound.source_url}" if sound.source_url else ""
+            lines.append(f"  · {kind}: «{sound.title}»{who}{license_}{where}")
+    return ["Sonidos:", *lines, ""]
+
+
 def credits_text(title: str, scenes, approved) -> str:
     """Créditos para la descripción del video (sección 19): origen, autor y licencia."""
     lines = [f"Créditos — {title}", ""]
@@ -77,6 +100,8 @@ def credits_text(title: str, scenes, approved) -> str:
         if group in groups:
             lines += [GROUP_TITLE[group] + ":", *groups[group], ""]
 
+    sound_lines = _sound_credits(scenes)
+    lines += sound_lines
     banks = [STOCK[g] for g in STOCK if g in groups]
     suggested = []
     if banks:

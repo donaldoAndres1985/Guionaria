@@ -70,6 +70,8 @@ class SceneRead(BaseModel):
     music_cue: str | None
     status: SceneStatus
     approved_asset_id: int | None
+    sfx_sound_id: int | None = None
+    music_sound_id: int | None = None
     segment_missing: bool  # su segmento ya no está en el guion
 
 

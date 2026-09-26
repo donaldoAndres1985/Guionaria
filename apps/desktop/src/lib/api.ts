@@ -255,6 +255,8 @@ export interface Scene {
   music_cue: string | null;
   status: SceneStatus;
   approved_asset_id: number | null;
+  sfx_sound_id?: number | null;
+  music_sound_id?: number | null;
   segment_missing: boolean;
 }
 
@@ -502,6 +504,8 @@ export interface TimelineState {
   voice_duration_s: number | null;
   scenes: TimelineScene[];
   markers: TimelineMarker[];
+  sfx?: TimelineSound[];
+  music?: TimelineSound[];
   warnings: string[];
   folder: string;
   exports: { format: TimelineFormat; file: string; updated_at: string }[];
@@ -679,4 +683,56 @@ export interface RightsReport {
   rows: RightsRow[];
   review_count: number;
   credits: string;
+}
+
+export interface TimelineSound {
+  name: string;
+  start_s: number;
+  duration_s: number;
+  scene_position: number | null;
+}
+
+export type SoundKind = "sfx" | "music";
+
+export interface Sound {
+  id: number;
+  kind: SoundKind;
+  title: string;
+  file_url: string;
+  provider: string;
+  source_url: string | null;
+  author: string | null;
+  license: string | null;
+  duration_s: number | null;
+  tags: string[];
+  mood: string | null;
+  bpm: number | null;
+  size_bytes: number | null;
+  used_in: number;
+  created_at: string;
+}
+
+export interface FreesoundResult {
+  freesound_id: number;
+  title: string;
+  tags: string[];
+  duration_s: number;
+  license: string;
+  author: string;
+  page_url: string;
+  preview_url: string;
+  saved_sound_id: number | null;
+}
+
+export interface FreesoundPage {
+  results: FreesoundResult[];
+  total: number;
+  page: number;
+  has_more: boolean;
+}
+
+export interface SceneSounds {
+  scene_id: number;
+  sfx: Sound | null;
+  music: Sound | null;
 }

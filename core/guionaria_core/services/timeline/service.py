@@ -41,6 +41,13 @@ class TimelineMarker(BaseModel):
     color: str
 
 
+class TimelineSound(BaseModel):
+    name: str
+    start_s: float
+    duration_s: float
+    scene_position: int | None
+
+
 class TimelineFile(BaseModel):
     format: Format
     file: str
@@ -59,6 +66,8 @@ class TimelineState(BaseModel):
     voice_duration_s: float | None
     scenes: list[TimelineScene]
     markers: list[TimelineMarker]
+    sfx: list[TimelineSound]
+    music: list[TimelineSound]
     warnings: list[str]
     folder: str
     exports: list[TimelineFile]
@@ -86,6 +95,15 @@ def _exports(project: Project) -> list[TimelineFile]:
             stamp = datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
             out.append(TimelineFile(format=fmt, file=path.name, updated_at=stamp))
     return out
+
+
+def _sound(c, sec) -> TimelineSound:
+    return TimelineSound(
+        name=c.name,
+        start_s=sec(c.start),
+        duration_s=sec(c.duration),
+        scene_position=c.scene_position,
+    )
 
 
 def timeline_state(session: Session, project_id: int) -> TimelineState:
@@ -119,6 +137,8 @@ def timeline_state(session: Session, project_id: int) -> TimelineState:
             TimelineMarker(time_s=sec(mk.frame), name=mk.name, note=mk.note, color=mk.color)
             for mk in m.markers
         ],
+        sfx=[_sound(c, sec) for c in m.sfx],
+        music=[_sound(c, sec) for c in m.music],
         warnings=m.warnings,
         folder=str(project_dir(project) / "timeline"),
         exports=_exports(project),

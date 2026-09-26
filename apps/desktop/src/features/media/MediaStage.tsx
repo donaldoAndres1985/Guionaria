@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { CandidateCard } from "./CandidateCard";
 import { FramingDialog, type FramingTarget } from "./FramingDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
+import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
+import { useScenes } from "@/hooks/useScenes";
 import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
 import { VideoUrlDialog } from "./VideoUrlDialog";
@@ -29,6 +31,7 @@ export function MediaStage({
 }) {
   const [framing, setFraming] = useState<FramingTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { data: sceneRows } = useScenes(project.id);
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
   const { dragging, dropProps } = useMediaDrop(
@@ -287,6 +290,11 @@ export function MediaStage({
             {ctl.warnings.length > 0 && <NoticeBanner>{ctl.warnings.join(" · ")}</NoticeBanner>}
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <SceneSoundsBar
+                sceneId={scene.scene_id}
+                sfxCue={sceneRows?.scenes.find((r) => r.id === scene.scene_id)?.sfx ?? null}
+                musicCue={sceneRows?.scenes.find((r) => r.id === scene.scene_id)?.music_cue ?? null}
+              />
               {scene.approved.length > 0 && (
                 <section className="mb-5">
                   <h3 className="mb-2 text-[12px] font-medium text-muted-foreground">Aprobado</h3>

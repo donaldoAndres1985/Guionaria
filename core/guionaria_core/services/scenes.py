@@ -80,6 +80,8 @@ def _to_read(scene: Scene, known_keys: set[str]) -> SceneRead:
         music_cue=scene.music_cue,
         status=scene.status,
         approved_asset_id=scene.approved_asset_id,
+        sfx_sound_id=scene.sfx_sound_id,
+        music_sound_id=scene.music_sound_id,
         segment_missing=scene.seg_key not in known_keys,
     )
 

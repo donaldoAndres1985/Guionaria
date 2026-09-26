@@ -28,7 +28,7 @@ from .models import Channel, Scene
 from .schemas.project import ProjectCreate
 from .schemas.scene import EFFECTS, EscenaClaude, SceneUpdate
 from .schemas.script import SegmentIn
-from .services import channels, ideas, jobs, library, projects, script
+from .services import channels, ideas, jobs, library, projects, script, sounds
 from .services import scenes as scene_svc
 from .services.errors import DomainError, NotFound
 from .services.jobs import JobContext, JobRead
@@ -610,6 +610,47 @@ def build_mcp() -> MCPServer:
             exclusive=False,
         )
         return _job_summary(job)
+
+    # --- SFX y música ---
+
+    @tool
+    def search_sounds(
+        query: str | None = None,
+        kind: Literal["sfx", "music"] | None = None,
+        tag: str | None = None,
+    ) -> dict[str, Any]:
+        """Busca en la biblioteca local de efectos de sonido y música (por título, etiquetas o
+        mood). Para asignarlos a una escena usa assign_sound."""
+        with _session() as s:
+            found = sounds.list_sounds(s, kind, query, tag)
+            return {
+                "sounds": [
+                    {
+                        "sound_id": x.id,
+                        "kind": x.kind,
+                        "title": x.title,
+                        "tags": x.tags,
+                        "mood": x.mood,
+                        "duration_s": x.duration_s,
+                        "license": x.license,
+                    }
+                    for x in found[:50]
+                ]
+            }
+
+    @tool
+    def assign_sound(
+        scene_id: int, role: Literal["sfx", "music"], sound_id: int | None
+    ) -> dict[str, Any]:
+        """Asigna a una escena un efecto (sfx, suena al inicio) o un tema de música (desde esa
+        escena hasta el siguiente cambio). sound_id vacío lo quita."""
+        with _session() as s:
+            result = sounds.assign_sound(s, scene_id, role, sound_id)
+            return {
+                "scene_id": result.scene_id,
+                "sfx": result.sfx.title if result.sfx else None,
+                "music": result.music.title if result.music else None,
+            }
 
     # --- voz ---
 
