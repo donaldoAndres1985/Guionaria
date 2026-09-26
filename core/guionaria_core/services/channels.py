@@ -3,7 +3,7 @@ import os
 import shutil
 
 from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from ..config import get_paths
 from ..models import Channel, Project
@@ -15,7 +15,11 @@ from .oplog import log_operation
 
 
 def _project_counts(session: Session) -> dict[int, int]:
-    rows = session.exec(select(Project.channel_id, func.count()).group_by(Project.channel_id)).all()
+    rows = session.exec(
+        select(Project.channel_id, func.count())
+        .where(col(Project.deleted_at).is_(None))
+        .group_by(Project.channel_id)
+    ).all()
     return dict(rows)
 
 
@@ -109,8 +113,10 @@ def delete_channel(session: Session, channel_id: int) -> None:
             raise Conflict("La carpeta del canal tiene archivos (marca, logos...): muévelos antes")
         shutil.rmtree(channel_dir)
 
-    from .ideas import delete_channel_ideas  # import local: ideas depende de proyectos
+    from .ideas import delete_channel_ideas  # imports locales: dependen de proyectos
+    from .trash import purge_channel_trash
 
+    purge_channel_trash(session, channel.id)  # sus proyectos en la papelera se borran del todo
     delete_channel_ideas(session, channel.id)
     log_operation(session, "delete", "channel", channel.id, {"name": channel.name})
     session.delete(channel)

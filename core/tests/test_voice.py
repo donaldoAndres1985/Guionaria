@@ -273,6 +273,7 @@ def test_delete_project_removes_voice(client, media_project, engines_fake):
     pid = media_project["id"]
     generate(client, pid)
     assert client.delete(f"/api/projects/{pid}").status_code == 204
+    assert client.delete(f"/api/trash/{pid}").status_code == 204  # borrado definitivo
     with Session(get_engine()) as session:
         assert session.exec(select(VoiceTrack)).all() == []
 

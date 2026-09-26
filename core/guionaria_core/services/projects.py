@@ -1,11 +1,10 @@
 import json
 import re
-import shutil
 from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from ..config import get_paths
 from ..domain.states import ProjectStatus
@@ -57,8 +56,9 @@ def to_read(project: Project, channel: Channel) -> ProjectRead:
 
 
 def get_project(session: Session, project_id: int) -> Project:
+    """Proyecto activo. Los que están en la papelera no existen para el resto de la app."""
     project = session.get(Project, project_id)
-    if not project:
+    if not project or project.deleted_at:
         raise NotFound("El proyecto no existe")
     return project
 
@@ -80,7 +80,11 @@ def list_projects(
     status: ProjectStatus | None = None,
     q: str | None = None,
 ) -> list[ProjectRead]:
-    stmt = select(Project, Channel).join(Channel, Channel.id == Project.channel_id)
+    stmt = (
+        select(Project, Channel)
+        .join(Channel, Channel.id == Project.channel_id)
+        .where(col(Project.deleted_at).is_(None))
+    )
     if channel_id is not None:
         stmt = stmt.where(Project.channel_id == channel_id)
     if status is not None:
@@ -185,16 +189,14 @@ def update_project(session: Session, project_id: int, data: ProjectUpdate) -> Pr
 
 
 def delete_project(session: Session, project_id: int) -> None:
-    """Mueve la carpeta a trash/ (la papelera con restauración llega en la Fase 3)."""
-    project = get_project(session, project_id)
-    folder = project_dir(project)
-    if folder.exists():
-        trash = get_paths().home / "trash"
-        trash.mkdir(exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.move(str(folder), str(trash / f"{stamp}_{folder.name}"))
+    """Mueve el proyecto a la papelera: se puede restaurar durante 30 días."""
+    from .trash import trash_project  # import local: la papelera depende de este módulo
 
-    # imports locales: script, scenes y media dependen de este módulo
+    trash_project(session, get_project(session, project_id))
+
+
+def purge_project_data(session: Session, project: Project) -> None:
+    """Borrado definitivo de las filas del proyecto (al vaciar la papelera)."""
     from .ideas import release_project
     from .media.service import delete_media_data
     from .scenes import delete_scene_data
@@ -207,9 +209,7 @@ def delete_project(session: Session, project_id: int) -> None:
     delete_script_data(session, project.id)
     delete_voice_data(session, project.id)
     session.exec(text("DELETE FROM project_fts WHERE rowid = :id").bindparams(id=project.id))
-    log_operation(session, "delete", "project", project.id, {"title": project.title})
     session.delete(project)
-    session.commit()
 
 
 # Etapas finales que todavía se hacen fuera de la app (render y publicación): se marcan a mano,

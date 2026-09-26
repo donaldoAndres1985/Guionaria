@@ -34,7 +34,9 @@ import { useVoiceController } from "@/features/voice/useVoiceController";
 import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
 import { VoiceStage } from "@/features/voice/VoiceStage";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useRestoreProject } from "@/hooks/useHistory";
 import { useRevealProject } from "@/hooks/useManualMedia";
+import { RightsPanel } from "@/features/rights/RightsPanel";
 import { useScenes } from "@/hooks/useScenes";
 import type { Project, ProjectUpdate } from "@/lib/api";
 import {
@@ -87,6 +89,7 @@ function ProjectView({ project }: { project: Project }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const update = useUpdateProject(project.id);
   const remove = useDeleteProject();
+  const restore = useRestoreProject();
   const script = useScriptEditor(project);
   const generation = useScriptGeneration(project);
   const scenesGeneration = useScenesGeneration(project);
@@ -314,6 +317,8 @@ function ProjectView({ project }: { project: Project }) {
                   <InfoRow label="Creado" value={formatDate(project.created_at)} />
                 </div>
 
+                <RightsPanel projectId={project.id} />
+
                 <div>
                   <Button
                     variant="ghost"
@@ -359,14 +364,16 @@ function ProjectView({ project }: { project: Project }) {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`¿Eliminar "${project.title}"?`}
-        description="La carpeta del proyecto se mueve a la papelera (trash/ dentro de tu carpeta de datos)."
+        description="Se mueve a la papelera con todos sus archivos. Puedes restaurarlo durante 30 días desde Historial → Papelera."
         confirmLabel="Eliminar proyecto"
         destructive
         pending={remove.isPending}
         onConfirm={() =>
           remove.mutate(project.id, {
             onSuccess: () => {
-              toast.success("Proyecto eliminado");
+              toast.success("Proyecto enviado a la papelera", {
+                action: { label: "Deshacer", onClick: () => restore.mutate(project.id) },
+              });
               navigate("/proyectos");
             },
           })

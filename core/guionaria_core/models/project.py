@@ -23,3 +23,5 @@ class Project(SQLModel, table=True):
     parent_project_id: int | None = Field(default=None, foreign_key="project.id")  # reels derivados
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
+    deleted_at: str | None = None  # en la papelera desde esta fecha (30 días para restaurar)
+    trash_path: str | None = None  # carpeta dentro de trash/ (relativa a GUIONARIA_HOME)

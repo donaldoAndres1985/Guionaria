@@ -9,6 +9,7 @@ from . import __version__
 from .api import (
     channels,
     health,
+    history,
     ideas,
     integrations,
     jobs,
@@ -33,6 +34,17 @@ from .services.jobs import fail_interrupted
 from .services.prompts import ensure_prompts
 
 
+def _purge_expired_trash() -> None:
+    """Al iniciar: borra lo que lleva más de 30 días en la papelera."""
+    from sqlmodel import Session
+
+    from .db import get_engine
+    from .services.trash import purge_expired
+
+    with Session(get_engine()) as session:
+        purge_expired(session)
+
+
 def create_app() -> FastAPI:
     # Servidor MCP por HTTP en /mcp (sección 4.2): sin estado y con respuestas JSON, que es lo
     # más simple para clientes locales como Claude Code.
@@ -50,6 +62,7 @@ def create_app() -> FastAPI:
         run_migrations()
         ensure_prompts()
         fail_interrupted()
+        _purge_expired_trash()
         async with mcp.session_manager.run():
             yield
 
@@ -77,6 +90,7 @@ def create_app() -> FastAPI:
         ideas,
         library,
         storage,
+        history,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

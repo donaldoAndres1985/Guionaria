@@ -533,6 +533,7 @@ export interface Idea {
   priority: number;
   status: IdeaStatus;
   project_id: number | null;
+  project_in_trash: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -628,4 +629,54 @@ export interface CleanupPreview {
   projects: CleanupProject[];
   total_count: number;
   total_bytes: number;
+}
+
+export type HistoryActor = "ui" | "mcp" | "system";
+
+export interface HistoryItem {
+  id: number;
+  at: string;
+  actor: HistoryActor;
+  action: string;
+  entity: string;
+  text: string;
+  project_id: number | null;
+  project_title: string | null;
+  can_restore: boolean;
+}
+
+export interface HistoryPage {
+  items: HistoryItem[];
+  next_before: number | null;
+}
+
+export interface TrashItem {
+  project_id: number;
+  title: string;
+  channel_name: string;
+  format: ProjectFormat;
+  status: ProjectStatus;
+  deleted_at: string;
+  days_left: number;
+  bytes: number;
+}
+
+export interface RightsRow {
+  scene_position: number;
+  scene_start: string;
+  role: string;
+  file_name: string;
+  provider: string;
+  origin: string;
+  author: string | null;
+  license: string | null;
+  source_url: string | null;
+  needs_review: boolean;
+}
+
+export interface RightsReport {
+  project_id: number;
+  rows: RightsRow[];
+  review_count: number;
+  credits: string;
 }
