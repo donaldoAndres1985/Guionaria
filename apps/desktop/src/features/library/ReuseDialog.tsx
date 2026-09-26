@@ -29,7 +29,7 @@ import { REUSE_STATUSES } from "./libraryMeta";
 export function ReuseDialog({ item, onClose }: { item: LibraryItem | null; onClose: () => void }) {
   return (
     <Dialog open={item !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-panel sm:max-w-lg">{item && <ReuseForm item={item} onClose={onClose} />}</DialogContent>
+      <DialogContent dismissOnOutsideClick={false} className="bg-panel sm:max-w-lg">{item && <ReuseForm item={item} onClose={onClose} />}</DialogContent>
     </Dialog>
   );
 }
