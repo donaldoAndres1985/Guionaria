@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
   <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
-  <img src="https://img.shields.io/badge/pruebas-349-2ea44f" alt="349 pruebas">
+  <img src="https://img.shields.io/badge/pruebas-357-2ea44f" alt="357 pruebas">
 </p>
 
 <p align="center">
@@ -81,7 +81,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **2E — Encuadre** | Zona visible en 16:9 o 9:16 y tramo del clip | ✅ Completa |
 | **3A — Planificación** | Banco de ideas · calendario mensual y semanal · tablero kanban · recordatorios | ✅ Completa |
 | **3B — Biblioteca** | Biblioteca global de medios · deduplicado por hash · reutilización sin duplicar archivos | ✅ Completa |
-| 3C–3E — Organización | Almacenamiento · historial y papelera · SFX y música | ⏳ Siguiente |
+| **3C — Almacenamiento** | Espacio por canal, proyecto y tipo con treemap · limpieza de candidatos sin usar | ✅ Completa |
+| 3D–3E — Organización | Historial y papelera · SFX y música | ⏳ Siguiente |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -159,6 +160,13 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - Panel de detalle con vista previa, autor, licencia, en qué escenas se usa, **Mostrar en carpeta** y enlace al origen.
 - **Reutilizar en…** otro proyecto, o **Biblioteca** desde la escena en la pantalla de medios: el medio queda como candidato sin volver a descargarse.
 - **Deduplicado por hash (SHA-256):** los archivos idénticos, las copias aprobadas y los medios reutilizados son enlaces duros al mismo archivo, así que no ocupan espacio de nuevo. La barra inferior muestra cuánto se ahorró.
+
+### Almacenamiento
+
+- Espacio por **canal → proyecto → tipo** (candidatos, agregados a mano, aprobados, voz, timeline y subtítulos), más modelos de voz y Whisper, papelera y base de datos.
+- Lista con barras de porcentaje y **treemap**; un clic entra al siguiente nivel y las migas de navegación vuelven atrás.
+- Los archivos compartidos por enlaces duros se cuentan una sola vez: es el espacio real en disco. También muestra el espacio libre del disco.
+- **Liberar espacio:** borra los archivos de los candidatos descargados que no se aprobaron. Por defecto solo en los proyectos con los medios aprobados, y los candidatos siguen en la lista para volver a descargarlos.
 
 ### Ideas y calendario
 
@@ -297,7 +305,7 @@ Guionaria/
 
 ## Pruebas
 
-- **349 pruebas automáticas:** 234 del núcleo y 115 de la app.
+- **357 pruebas automáticas:** 237 del núcleo y 120 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:

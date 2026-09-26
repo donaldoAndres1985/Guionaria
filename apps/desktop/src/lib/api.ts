@@ -594,3 +594,38 @@ export interface LibraryFilters {
   page?: number;
   page_size?: number;
 }
+
+export interface StorageNode {
+  id: string;
+  name: string;
+  kind: "root" | "channel" | "project" | "part" | "area";
+  bytes: number;
+  files: number;
+  project_id: number | null;
+  channel_id: number | null;
+  children: StorageNode[];
+}
+
+export interface StorageUsage {
+  home: string;
+  tree: StorageNode;
+  shared_bytes: number;
+  disk_total: number;
+  disk_free: number;
+}
+
+export interface CleanupProject {
+  project_id: number;
+  title: string;
+  channel_name: string;
+  status: ProjectStatus;
+  media_approved: boolean;
+  count: number;
+  bytes: number;
+}
+
+export interface CleanupPreview {
+  projects: CleanupProject[];
+  total_count: number;
+  total_bytes: number;
+}

@@ -20,6 +20,7 @@ from .api import (
     scenes,
     script,
     settings,
+    storage,
     timeline,
     voice,
 )
@@ -75,6 +76,7 @@ def create_app() -> FastAPI:
         integrations,
         ideas,
         library,
+        storage,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

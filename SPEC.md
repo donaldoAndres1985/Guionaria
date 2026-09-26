@@ -863,7 +863,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 
 ### Fase 3 — Organización profesional (2 semanas)
 - [x] Biblioteca global, deduplicado por hash, reutilización.
-- [ ] Almacenamiento con treemap y limpieza.
+- [x] Almacenamiento con treemap y limpieza.
 - [x] Calendario, kanban, banco de ideas.
 - [ ] Créditos automáticos, historial y papelera.
 - [ ] SFX (Freesound) y música.
