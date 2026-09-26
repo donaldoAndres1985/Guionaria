@@ -74,7 +74,7 @@ def _origins(session: Session) -> dict[int, tuple[Project, Channel]]:
         .join(Scene, Scene.id == SceneCandidate.scene_id)
         .join(Project, Project.id == Scene.project_id)
         .join(Channel, Channel.id == Project.channel_id)
-        .where(col(SceneCandidate.asset_id).is_not(None))
+        .where(col(SceneCandidate.asset_id).is_not(None), col(Project.deleted_at).is_(None))
     ).all()
     out: dict[int, tuple[Project, Channel]] = {}
     for asset_id, project, channel in rows:

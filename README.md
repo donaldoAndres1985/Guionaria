@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
   <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
-  <img src="https://img.shields.io/badge/pruebas-357-2ea44f" alt="357 pruebas">
+  <img src="https://img.shields.io/badge/pruebas-370-2ea44f" alt="370 pruebas">
 </p>
 
 <p align="center">
@@ -82,7 +82,8 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **3A — Planificación** | Banco de ideas · calendario mensual y semanal · tablero kanban · recordatorios | ✅ Completa |
 | **3B — Biblioteca** | Biblioteca global de medios · deduplicado por hash · reutilización sin duplicar archivos | ✅ Completa |
 | **3C — Almacenamiento** | Espacio por canal, proyecto y tipo con treemap · limpieza de candidatos sin usar | ✅ Completa |
-| 3D–3E — Organización | Historial y papelera · SFX y música | ⏳ Siguiente |
+| **3D — Historial y papelera** | Historial de operaciones · papelera de 30 días con restauración · registro de derechos | ✅ Completa |
+| 3E — SFX y música | Freesound y biblioteca local de efectos y música | ⏳ Siguiente |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -174,6 +175,12 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - **Calendario** mensual y semanal con los proyectos en su fecha de publicación: se arrastran a otro día o a «Sin fecha».
 - **Tablero** por etapa. Las etapas de producción avanzan aprobando dentro del proyecto; las finales (*Para editar → Renderizado → Programado → Publicado*) se mueven arrastrando, porque el render y la publicación todavía se hacen fuera de la app.
 - **Recordatorios:** notificación del sistema para las publicaciones de hoy y de mañana, una vez al día.
+
+### Historial, papelera y derechos
+
+- **Historial de operaciones** en frases claras (*«Encuadre del medio: fondo desenfocado (escena 1)»*, *«Voz transcrita con Whisper (412 palabras)»*), agrupado por día, con quién lo hizo (tú, Claude por MCP o el sistema) y filtros por tipo.
+- **Papelera de 30 días:** eliminar un proyecto lo manda a la papelera con todos sus archivos y datos. Se restaura intacto desde el historial, la papelera o el aviso «Deshacer». A los 30 días, o con «Vaciar papelera», se borra de verdad.
+- **Registro de derechos** en el resumen de cada proyecto: origen, autor y licencia de cada medio aprobado, con aviso en lo que hay que revisar. «Copiar créditos» para la descripción y «Exportar CSV» (`derechos.csv`).
 
 ### Canales y ajustes
 
@@ -305,7 +312,7 @@ Guionaria/
 
 ## Pruebas
 
-- **357 pruebas automáticas:** 237 del núcleo y 120 de la app.
+- **370 pruebas automáticas:** 245 del núcleo y 125 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:

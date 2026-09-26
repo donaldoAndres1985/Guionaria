@@ -111,7 +111,7 @@ def storage_usage(session: Session) -> StorageUsage:
     paths = get_paths()
     home = paths.home
     walker = _Walker()
-    projects = session.exec(select(Project)).all()
+    projects = session.exec(select(Project).where(col(Project.deleted_at).is_(None))).all()
     channels = {c.id: c for c in session.exec(select(Channel)).all()}
 
     channel_nodes: list[StorageNode] = []
@@ -229,7 +229,7 @@ def cleanup_preview(session: Session) -> CleanupPreview:
     home = get_paths().home
     channels = {c.id: c for c in session.exec(select(Channel)).all()}
     out = []
-    for project in session.exec(select(Project)).all():
+    for project in session.exec(select(Project).where(col(Project.deleted_at).is_(None))).all():
         assets = _unused_assets(session, project.id)
         if not assets:
             continue

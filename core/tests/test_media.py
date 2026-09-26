@@ -403,6 +403,10 @@ def test_delete_project_with_media(client, media_project, web):
     [asset, *_] = downloaded(client, image)
     client.post(f"/api/scenes/{image}/assets/{asset['id']}:approve")
     assert client.delete(f"/api/projects/{media_project['id']}").status_code == 204
+    # Va a la papelera: las filas siguen hasta vaciarla.
+    with Session(get_engine()) as s:
+        assert s.exec(select(Asset)).all() != []
+    assert client.delete(f"/api/trash/{media_project['id']}").status_code == 204
     with Session(get_engine()) as s:
         assert s.exec(select(Asset)).all() == []
         assert s.exec(select(SceneCandidate)).all() == []

@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from sqlmodel import Session, col, delete, select
 
-from ..models import Idea
+from ..models import Idea, Project
 from ..models._base import now_iso
 from ..schemas.project import ProjectCreate, ProjectFormat, ProjectRead
 from .channels import get_channel
@@ -40,6 +40,7 @@ class IdeaRead(BaseModel):
     priority: int
     status: IdeaStatus
     project_id: int | None
+    project_in_trash: bool  # el proyecto creado está en la papelera (se puede restaurar)
     created_at: str
     updated_at: str
 
@@ -52,6 +53,7 @@ class ConvertRequest(BaseModel):
 
 def _read(session: Session, idea: Idea) -> IdeaRead:
     channel = get_channel(session, idea.channel_id)
+    project = session.get(Project, idea.project_id) if idea.project_id else None
     return IdeaRead(
         id=idea.id,
         channel_id=idea.channel_id,
@@ -61,6 +63,7 @@ def _read(session: Session, idea: Idea) -> IdeaRead:
         priority=idea.priority or 2,
         status=idea.status or "open",
         project_id=idea.project_id,
+        project_in_trash=bool(project and project.deleted_at),
         created_at=idea.created_at,
         updated_at=idea.updated_at or idea.created_at,
     )

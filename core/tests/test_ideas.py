@@ -61,8 +61,11 @@ def test_convert_to_project_and_release_on_delete(client, channel):
     locked = client.patch(f"/api/ideas/{i['id']}", json={"status": "discarded"})
     assert locked.json()["detail"] == "La idea ya es un proyecto: edítalo desde Proyectos"
 
-    # Si se borra el proyecto, la idea vuelve a estar abierta.
+    # En la papelera la idea sigue enlazada (se puede restaurar); al borrarlo del todo, se reabre.
     assert client.delete(f"/api/projects/{project['id']}").status_code == 204
+    trashed = client.get("/api/ideas").json()[0]
+    assert (trashed["status"], trashed["project_in_trash"]) == ("converted", True)
+    assert client.delete(f"/api/trash/{project['id']}").status_code == 204
     reopened = client.get("/api/ideas").json()[0]
     assert (reopened["status"], reopened["project_id"]) == ("open", None)
 

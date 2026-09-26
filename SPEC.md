@@ -865,7 +865,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] Biblioteca global, deduplicado por hash, reutilización.
 - [x] Almacenamiento con treemap y limpieza.
 - [x] Calendario, kanban, banco de ideas.
-- [ ] Créditos automáticos, historial y papelera.
+- [x] Créditos automáticos, historial y papelera.
 - [ ] SFX (Freesound) y música.
 
 ### Fase 4 — Render automático

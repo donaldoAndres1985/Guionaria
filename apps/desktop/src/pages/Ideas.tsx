@@ -203,9 +203,12 @@ function IdeaDetail({ idea, onConvert }: { idea: Idea; onConvert: () => void }) 
       <div className="grid max-w-3xl gap-5 p-5">
         {idea.status === "converted" && idea.project_id && (
           <div className="flex items-center gap-3 rounded-md border bg-panel p-3 text-[13px]">
-            Esta idea ya es un proyecto.
-            <Link to={`/proyectos/${idea.project_id}`} className="ml-auto font-medium text-brand hover:underline">
-              Abrir proyecto
+            {idea.project_in_trash ? "Su proyecto está en la papelera." : "Esta idea ya es un proyecto."}
+            <Link
+              to={idea.project_in_trash ? "/historial" : `/proyectos/${idea.project_id}`}
+              className="ml-auto font-medium text-brand hover:underline"
+            >
+              {idea.project_in_trash ? "Ir a la papelera" : "Abrir proyecto"}
             </Link>
           </div>
         )}
