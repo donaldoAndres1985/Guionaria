@@ -61,7 +61,7 @@ describe("diálogo de encuadre", () => {
     trim_out_s: null,
     source_width: 1920,
     source_height: 1080,
-    source_duration_s: null,
+    source_duration_s: null, scene_duration_s: null,
     target_width: 1080,
     target_height: 1920,
     orientation_mismatch: true,

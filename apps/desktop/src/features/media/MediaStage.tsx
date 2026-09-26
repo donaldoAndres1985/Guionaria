@@ -1,4 +1,4 @@
-import { Check, Crop as CropIcon, Film, HelpCircle, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
+import { Check, Crop as CropIcon, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
 import { CandidateCard } from "./CandidateCard";
 import { FramingDialog, type FramingTarget } from "./FramingDialog";
+import { TrimDialog, type TrimTarget } from "./TrimDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
 import { mediaKeys } from "@/hooks/useMedia";
@@ -33,6 +34,7 @@ export function MediaStage({
   onGoToScenes: () => void;
 }) {
   const [framing, setFraming] = useState<FramingTarget | null>(null);
+  const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const helpHidden = useUiStore((s) => s.mediaHelpHidden);
   const setHelpHidden = useUiStore((s) => s.setMediaHelpHidden);
@@ -385,6 +387,24 @@ export function MediaStage({
                             </div>
                           )}
                         </div>
+                        {ctl.editable && a.asset.kind === "video" && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={a.framing_pending}
+                            title="Elegir visualmente el momento exacto del clip que se usa en la escena"
+                            onClick={() =>
+                              setTrim({
+                                sceneId: scene.scene_id,
+                                assetId: a.asset.id,
+                                fileUrl: a.asset.file_url,
+                                position: scene.position,
+                              })
+                            }
+                          >
+                            <Scissors /> Ajustar tramo
+                          </Button>
+                        )}
                         {ctl.editable && (
                           <Button
                             size="xs"
@@ -465,6 +485,20 @@ export function MediaStage({
       <MediaViewer ctl={ctl} />
       <VideoUrlDialog ctl={ctl} />
       <FramingDialog projectId={project.id} target={framing} onClose={() => setFraming(null)} />
+      <TrimDialog projectId={project.id} target={trim} onClose={() => setTrim(null)} />
+      {!trim && ctl.trimQueue.length > 0 && (
+        <TrimDialog
+          projectId={project.id}
+          target={{
+            sceneId: ctl.trimQueue[ctl.trimIndex].scene_id,
+            assetId: ctl.trimQueue[ctl.trimIndex].asset_id,
+            fileUrl: `/api/assets/${ctl.trimQueue[ctl.trimIndex].asset_id}/file`,
+            position: scenes.find((s) => s.scene_id === ctl.trimQueue[ctl.trimIndex].scene_id)?.position,
+          }}
+          queue={{ index: ctl.trimIndex, total: ctl.trimQueue.length }}
+          onClose={ctl.nextTrim}
+        />
+      )}
       {ctl.scene && (
         <LibraryPickerDialog
           scene={ctl.scene}

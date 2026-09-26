@@ -60,7 +60,15 @@ def test_download_selected_approves_first_choice_of_every_scene(client, media_pr
     assert overview(client, pid)["selected_pending"] == 4
     job = download_selected(client, pid)
     assert job["status"] == "done", job
-    assert job["result"] == {"requested": 4, "downloaded": 4, "failed": 0, "approved": 3}
+    result = job["result"]
+    assert {k: result[k] for k in ("requested", "downloaded", "failed", "approved")} == {
+        "requested": 4,
+        "downloaded": 4,
+        "failed": 0,
+        "approved": 3,
+    }
+    # El video de 12 s en una escena de 2 s queda para «Ajustar tramo».
+    assert [t["scene_id"] for t in result["trim"]] == [video]
 
     data = overview(client, pid)
     assert data["with_media"] == data["needing_media"] == 3
