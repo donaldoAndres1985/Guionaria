@@ -13,6 +13,7 @@ import {
   Loader2,
   Lock,
   type LucideIcon,
+  Mic,
   Music,
   PlugZap,
   X,
@@ -25,12 +26,13 @@ import { useOpenUrl } from "@/hooks/useManualMedia";
 import type { ApiKeys, AppSettings, KeyProvider, KeyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type Capability = "photo" | "video" | "sound";
+type Capability = "photo" | "video" | "sound" | "voice";
 
 const CAPABILITIES: Record<Capability, { label: string; icon: LucideIcon }> = {
   photo: { label: "Fotos", icon: ImageIcon },
   video: { label: "Videos", icon: Film },
   sound: { label: "Sonido", icon: Music },
+  voice: { label: "Voz IA", icon: Mic },
 };
 
 interface KeyedProvider {
@@ -111,6 +113,24 @@ export const KEYED_PROVIDERS: KeyedProvider[] = [
     ],
     limit: "2 000 peticiones/día",
   },
+  {
+    id: "elevenlabs",
+    name: "ElevenLabs",
+    description:
+      "Voz profesional y subtítulos exactos. Opcional: Piper sigue siendo la voz gratis y local.",
+    monogram: "11",
+    tint: "#a78bfa",
+    capabilities: ["voice"],
+    keyName: "API Key",
+    signupUrl: "https://elevenlabs.io/app/settings/api-keys",
+    steps: [
+      "Crea una cuenta en elevenlabs.io (el plan gratuito sirve para probar).",
+      "Ve a Settings → API Keys y pulsa «Create API Key» (con permiso de Text to Speech y Voices).",
+      "Copia la clave: solo se muestra una vez.",
+      "El plan gratuito exige atribución y no permite uso comercial: para monetizar usa Starter o superior.",
+    ],
+    limit: "10 000 créditos/mes (1 crédito ≈ 1 carácter)",
+  },
 ];
 
 interface Props {
@@ -128,7 +148,8 @@ export function ApiKeysSettings({ settings, saved, onChange }: Props) {
   const coverage = (cap: Capability) =>
     configured.filter((p) => p.capabilities.includes(cap)).length +
     (cap === "photo" ? 2 : 0) + // Openverse y Wikimedia no piden clave
-    (cap === "video" && ytdlp?.ok ? 1 : 0);
+    (cap === "video" && ytdlp?.ok ? 1 : 0) +
+    (cap === "voice" ? 1 : 0); // Piper, local y sin clave
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-5">

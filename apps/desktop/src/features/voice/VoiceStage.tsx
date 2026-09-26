@@ -1,4 +1,4 @@
-import { AudioLines, Mic, Play, RefreshCw, Upload } from "lucide-react";
+import { AudioLines, Captions, Mic, Play, RefreshCw, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorBanner, JobProgress, NoticeBanner } from "@/components/JobProgress";
@@ -11,8 +11,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatSceneTime } from "@/features/scenes/sceneMeta";
+import { useRevealSubtitles } from "@/hooks/useVoice";
 import { coreUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ElevenLabsPanel } from "./ElevenLabsPanel";
 import type { VoiceController } from "./useVoiceController";
 import { PAUSES, SPEEDS, segmentAt, sourceLabel, speedLabel } from "./voiceMeta";
 import { VoiceSelect } from "./VoiceSelect";
@@ -25,6 +27,7 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
   const fileInput = useRef<HTMLInputElement>(null);
   const [current, setCurrent] = useState<string | null>(null);
   const [seek, setSeek] = useState<SeekRequest | null>(null);
+  const revealSubs = useRevealSubtitles(state?.project_id ?? 0);
 
   if (!state) return null;
   if (!state.can_edit) {
@@ -43,6 +46,22 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
       <span className="text-[13px] font-medium">Voz</span>
       <span className="text-[12px] text-muted-foreground">{sourceLabel(state.source)}</span>
       <div className="ml-auto flex items-center gap-2">
+        {state.subtitles.length > 0 && (
+          <span className="flex items-center gap-1 text-[12px] text-muted-foreground">
+            <Captions className="size-4" /> Subtítulos:
+            {state.subtitles.map((name) => (
+              <Button
+                key={name}
+                size="xs"
+                variant="ghost"
+                title={`Abrir la carpeta con ${name} (para subirlo a YouTube o a tu editor)`}
+                onClick={() => revealSubs.mutate(name as "voz.srt" | "voz.vtt")}
+              >
+                {name.endsWith(".srt") ? "SRT" : "VTT"}
+              </Button>
+            ))}
+          </span>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -67,8 +86,68 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
     </div>
   );
 
+  // Motor: Piper (gratis, local) o ElevenLabs (nube, opcional).
+  const engineToggle = (
+    <div className="flex items-center gap-3">
+      <div role="radiogroup" aria-label="Motor de voz" className="inline-flex rounded-md border p-0.5">
+        {(
+          [
+            { id: "piper", label: "Piper", hint: "Gratis · en tu equipo" },
+            { id: "elevenlabs", label: "ElevenLabs", hint: "Profesional · en la nube" },
+          ] as const
+        ).map((e) => (
+          <button
+            key={e.id}
+            type="button"
+            role="radio"
+            aria-checked={ctl.engine === e.id}
+            disabled={ctl.running}
+            onClick={() => ctl.setEngine(e.id)}
+            className={cn(
+              "rounded px-3 py-1.5 text-left text-[12px] transition-colors",
+              ctl.engine === e.id ? "bg-active text-active-foreground" : "text-muted-foreground hover:bg-panel-2",
+            )}
+          >
+            <span className="block font-medium">{e.label}</span>
+            <span className="block text-[11px] opacity-80">{e.hint}</span>
+          </button>
+        ))}
+      </div>
+      {ctl.engine === "elevenlabs" && (
+        <span className="text-[12px] text-muted-foreground">
+          Los subtítulos salen con los tiempos exactos de ElevenLabs, sin Whisper.
+        </span>
+      )}
+    </div>
+  );
+
   // Ajustes de Piper: voz, velocidad y pausa entre segmentos.
-  const controls = (
+  const controls = ctl.engine === "elevenlabs" && ctl.eleven ? (
+    <div className="grid gap-3">
+      <ElevenLabsPanel
+        configured={state.elevenlabs_configured}
+        prefs={ctl.eleven}
+        onChange={ctl.setEleven}
+        characters={ctl.characters}
+        disabled={ctl.running}
+      />
+      <label className="grid max-w-60 gap-1.5 text-[12px] text-muted-foreground">
+        Pausa entre segmentos
+        <Select value={String(ctl.pause)} onValueChange={(v) => ctl.setPause(Number(v))} disabled={ctl.running}>
+          <SelectTrigger className="w-full" aria-label="Pausa">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAUSES.map((p) => (
+              <SelectItem key={p} value={String(p)}>
+                {p === 0 ? "Sin pausa" : `${p} s`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
+    </div>
+  ) : (
     <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-3">
       <label className="grid gap-1.5 text-[12px] text-muted-foreground">
         Voz de Piper
@@ -114,7 +193,11 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
         <JobProgress
           job={ctl.job}
           fallback="Preparando la voz…"
-          hint="Todo se hace en tu equipo. La primera vez se descarga el modelo de voz o de Whisper."
+          hint={
+            ctl.engine === "elevenlabs"
+              ? "ElevenLabs genera cada segmento en la nube; los subtítulos salen con sus tiempos exactos."
+              : "Todo se hace en tu equipo. La primera vez se descarga el modelo de voz o de Whisper."
+          }
         />
       </>
     );
@@ -140,6 +223,7 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
       )}
 
       <div className="grid gap-4 p-5">
+        {engineToggle}
         {controls}
         {audioUrl ? (
           <Waveform
@@ -152,7 +236,7 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
           <EmptyState
             icon={Mic}
             title="Todavía no hay voz"
-            description="Genérala con Piper (gratis y sin conexión) o sube tu propia grabación: Whisper la transcribe y alinea con el guion."
+            description="Genérala con Piper (gratis y sin conexión) o ElevenLabs (profesional, con subtítulos exactos), o sube tu propia grabación: Whisper la transcribe y alinea con el guion."
           />
         )}
 
@@ -180,7 +264,7 @@ export function VoiceStage({ ctl, onGoToScript }: { ctl: VoiceController; onGoTo
                 >
                   <Play />
                 </Button>
-                {state.source === "piper" && (
+                {(state.source === "piper" || state.source === "elevenlabs") && (
                   <Button
                     size="icon-xs"
                     variant="ghost"

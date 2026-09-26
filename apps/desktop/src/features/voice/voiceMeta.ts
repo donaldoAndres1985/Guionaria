@@ -15,7 +15,13 @@ export function timingLabel(state: VoiceState | undefined): string {
 }
 
 export const sourceLabel = (source: VoiceState["source"]) =>
-  source === "piper" ? "Voz generada con Piper" : source === "recorded" ? "Voz grabada" : "Sin voz";
+  source === "piper"
+    ? "Voz generada con Piper"
+    : source === "elevenlabs"
+      ? "Voz generada con ElevenLabs"
+      : source === "recorded"
+        ? "Voz grabada"
+        : "Sin voz";
 
 /** Segmento que suena en el instante t (para resaltarlo en la lista). */
 export function segmentAt(segments: SegmentVoice[], t: number): string | null {

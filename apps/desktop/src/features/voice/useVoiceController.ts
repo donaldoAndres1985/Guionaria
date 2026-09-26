@@ -1,8 +1,9 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { type VoiceAction, useUploadVoice, useVoiceJob, useVoiceState } from "@/hooks/useVoice";
-import type { Project } from "@/lib/api";
+import type { ElevenLabsPrefs, Project } from "@/lib/api";
 import { formatDuration } from "@/lib/project";
 
 export function useVoiceController(project: Project) {
@@ -10,11 +11,14 @@ export function useVoiceController(project: Project) {
   const mutation = useVoiceJob(project.id);
   const upload = useUploadVoice(project.id);
   const action = useRef<VoiceAction>({ kind: "transcribe" });
+  const queryClient = useQueryClient();
   const job = useProjectJob(
     project.id,
     "voice",
     () => mutation.mutateAsync(action.current),
     (done) => {
+      // Los créditos de ElevenLabs cambian tras generar.
+      void queryClient.invalidateQueries({ queryKey: ["elevenlabs", "account"] });
       const r = done.result ?? {};
       if (typeof r.words === "number") toast.success(`Tiempos alineados con ${r.words} palabras`);
       else toast.success(`Voz lista · ${formatDuration(r.duration_s as number | undefined)}`);
@@ -25,6 +29,8 @@ export function useVoiceController(project: Project) {
   const [voiceId, setVoiceId] = useState<string | null>(null);
   const [speed, setSpeed] = useState<number | null>(null);
   const [pause, setPause] = useState(0.3);
+  const [engineChoice, setEngine] = useState<"piper" | "elevenlabs" | null>(null);
+  const [elevenPatch, setElevenPatch] = useState<Partial<ElevenLabsPrefs>>({});
 
   const run = (a: VoiceAction) => {
     action.current = a;
@@ -32,6 +38,10 @@ export function useVoiceController(project: Project) {
   };
   const selectedVoice = voiceId ?? state?.voice_id ?? state?.default_voice ?? null;
   const selectedSpeed = speed ?? state?.speed ?? 1;
+  const engine = engineChoice ?? (state?.source === "elevenlabs" ? "elevenlabs" : "piper");
+  const eleven: ElevenLabsPrefs | null = state ? { ...state.elevenlabs, ...elevenPatch } : null;
+  const characters = state?.segments.reduce((n, s) => n + s.text.length, 0) ?? 0;
+  const canGenerate = engine === "piper" || (!!state?.elevenlabs_configured && !!eleven?.voice_id);
 
   return {
     state,
@@ -47,7 +57,33 @@ export function useVoiceController(project: Project) {
     setSpeed,
     pause,
     setPause,
-    generate: () => run({ kind: "generate", input: { voice_id: selectedVoice, speed: selectedSpeed, pause_s: pause } }),
+    engine,
+    setEngine,
+    eleven,
+    setEleven: (patch: Partial<ElevenLabsPrefs>) => setElevenPatch((p) => ({ ...p, ...patch })),
+    characters,
+    canGenerate,
+    generate: () =>
+      run({
+        kind: "generate",
+        input:
+          engine === "elevenlabs" && eleven
+            ? {
+                voice_id: null,
+                speed: eleven.speed,
+                pause_s: pause,
+                engine,
+                elevenlabs: {
+                  voice_id: eleven.voice_id,
+                  model_id: eleven.model_id,
+                  stability: eleven.stability,
+                  similarity_boost: eleven.similarity_boost,
+                  style: eleven.style,
+                  speed: eleven.speed,
+                },
+              }
+            : { voice_id: selectedVoice, speed: selectedSpeed, pause_s: pause, engine: "piper" },
+      }),
     regenerate: (segKey: string) => run({ kind: "regenerate", segKey }),
     transcribe: () => run({ kind: "transcribe" }),
     upload: (file: File) =>
