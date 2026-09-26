@@ -4,8 +4,6 @@ import {
   CircleCheck,
   CircleX,
   Copy,
-  Eye,
-  EyeOff,
   FolderOpen,
   KeyRound,
   Plug,
@@ -29,20 +27,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useHealth, useRefreshDependencies, useSaveSettings, useSettings } from "@/hooks/useCore";
-import type { ApiKeys, AppSettings, DependencyStatus } from "@/lib/api";
+import type { AppSettings, DependencyStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ApiKeysSettings, KEYED_PROVIDERS } from "@/features/settings/ApiKeysSettings";
 import { ClaudeSettings } from "@/features/settings/ClaudeSettings";
 import { McpSettings } from "@/features/settings/McpSettings";
 import { VoiceSelect } from "@/features/voice/VoiceSelect";
 
 type CategoryId = "deps" | "claude" | "mcp" | "folders" | "keys" | "prefs";
-
-const API_KEYS: { id: keyof ApiKeys; label: string; hint: string }[] = [
-  { id: "pexels", label: "Pexels", hint: "Fotos y videos de stock · pexels.com/api" },
-  { id: "pixabay", label: "Pixabay", hint: "Fotos, ilustraciones y videos · pixabay.com/api/docs" },
-  { id: "unsplash", label: "Unsplash", hint: "Fotos · unsplash.com/developers" },
-  { id: "freesound", label: "Freesound", hint: "Efectos de sonido · freesound.org/apiv2/apply" },
-];
 
 export function SettingsPage() {
   const health = useHealth();
@@ -58,7 +50,7 @@ export function SettingsPage() {
   const deps = health.data?.dependencies ?? [];
   const required = deps.filter((d) => d.required);
   const missingRequired = required.filter((d) => !d.ok).length;
-  const keysConfigured = current ? API_KEYS.filter((k) => current.api_keys[k.id]).length : 0;
+  const keysConfigured = current ? KEYED_PROVIDERS.filter((k) => current.api_keys[k.id]).length : 0;
 
   const update = (patch: Partial<AppSettings>) => current && setDraft({ ...current, ...patch });
 
@@ -82,13 +74,14 @@ export function SettingsPage() {
       id: "keys",
       icon: KeyRound,
       title: "Claves de API",
-      subtitle: `${keysConfigured}/${API_KEYS.length} configuradas`,
+      subtitle: "Fotos, videos y sonido",
+      value: `${keysConfigured}/${KEYED_PROVIDERS.length}`,
     },
     {
       id: "prefs",
       icon: SlidersHorizontal,
       title: "Preferencias",
-      subtitle: "Voz, búsqueda, transcripción, descargas y tema",
+      subtitle: "Voz, transcripción, descargas y tema",
     },
   ];
   const active = categories.find((c) => c.id === category)!;
@@ -202,21 +195,7 @@ export function SettingsPage() {
             )}
 
             {category === "keys" && current && (
-              <div className="flex flex-col gap-5 p-5">
-                <p className="text-[12px] text-muted-foreground">
-                  Todas son gratuitas. Se guardan solo en tu equipo, en settings.json.
-                </p>
-                {API_KEYS.map((k) => (
-                  <SecretField
-                    key={k.id}
-                    id={k.id}
-                    label={k.label}
-                    hint={k.hint}
-                    value={current.api_keys[k.id]}
-                    onChange={(v) => update({ api_keys: { ...current.api_keys, [k.id]: v } })}
-                  />
-                ))}
-              </div>
+              <ApiKeysSettings settings={current} saved={saved.data} onChange={update} />
             )}
 
             {category === "claude" && current && (
@@ -227,12 +206,6 @@ export function SettingsPage() {
 
             {category === "prefs" && current && (
               <div className="grid max-w-xl gap-5 p-5">
-                <Field label="URL de SearXNG" hint="Metabuscador en Docker para material real (Fase 2).">
-                  <Input
-                    value={current.searxng_url}
-                    onChange={(e) => update({ searxng_url: e.target.value })}
-                  />
-                </Field>
                 <Field
                   label="Voz por defecto"
                   hint="Voz de Piper para los canales sin voz propia. Se descarga la primera vez que se usa."
@@ -365,51 +338,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
       <Label className="text-[13px]">{label}</Label>
       {children}
       {hint && <p className="text-[12px] text-muted-foreground">{hint}</p>}
-    </div>
-  );
-}
-
-function SecretField({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [visible, setVisible] = useState(false);
-  return (
-    <div className="grid max-w-xl gap-1.5">
-      <Label htmlFor={`key-${id}`} className="text-[13px]">
-        {label}
-        {value && <CircleCheck className="size-3.5 text-success-foreground" />}
-      </Label>
-      <div className="flex gap-2">
-        <Input
-          id={`key-${id}`}
-          type={visible ? "text" : "password"}
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="Sin configurar"
-          value={value}
-          onChange={(e) => onChange(e.target.value.trim())}
-          className="font-mono"
-        />
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label={visible ? "Ocultar clave" : "Mostrar clave"}
-          onClick={() => setVisible((v) => !v)}
-        >
-          {visible ? <EyeOff /> : <Eye />}
-        </Button>
-      </div>
-      <p className="text-[12px] text-muted-foreground">{hint}</p>
     </div>
   );
 }

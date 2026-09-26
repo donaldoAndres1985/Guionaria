@@ -80,6 +80,18 @@ export interface ApiKeys {
   freesound: string;
 }
 
+export type KeyProvider = keyof ApiKeys | "searxng";
+
+export type KeyStatus = "valid" | "invalid" | "missing" | "rate_limited" | "unreachable" | "error";
+
+export interface KeyTestResult {
+  provider: KeyProvider;
+  status: KeyStatus;
+  message: string;
+  latency_ms: number | null;
+  quota_remaining: number | null;
+}
+
 export interface AppSettings {
   claude_model: string;
   searxng_url: string;

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type AppSettings, type Health } from "@/lib/api";
+import { api, type AppSettings, type Health, type KeyProvider, type KeyTestResult } from "@/lib/api";
 
 export function useHealth() {
   return useQuery({
@@ -34,5 +34,13 @@ export function useSaveSettings() {
       // La URL de SearXNG puede haber cambiado.
       void client.invalidateQueries({ queryKey: ["health"] });
     },
+  });
+}
+
+/** Prueba una clave (o la URL de SearXNG) antes de guardarla. */
+export function useTestKey(provider: KeyProvider) {
+  return useMutation({
+    mutationFn: (value: string) =>
+      api.post<KeyTestResult>(`/api/settings/keys/${provider}:test`, { value }),
   });
 }
