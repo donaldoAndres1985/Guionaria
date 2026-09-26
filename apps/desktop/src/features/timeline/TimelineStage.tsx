@@ -1,5 +1,6 @@
 import { AudioLines, FileCheck2, Film, FolderOpen, Music, Type, Volume2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { RenderPanel } from "./RenderPanel";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
 import { KINDS } from "@/features/scenes/sceneMeta";
@@ -132,6 +133,8 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
             </div>
           ))}
         </div>
+
+        <RenderPanel project={project} />
 
         {/* Archivos exportados */}
         <div className="grid grid-cols-3 gap-3">

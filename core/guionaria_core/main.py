@@ -18,6 +18,7 @@ from .api import (
     media,
     projects,
     prompts,
+    render,
     scenes,
     script,
     settings,
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
         storage,
         history,
         sounds,
+        render,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

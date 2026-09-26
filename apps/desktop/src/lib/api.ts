@@ -736,3 +736,26 @@ export interface SceneSounds {
   sfx: Sound | null;
   music: Sound | null;
 }
+
+export interface RenderFile {
+  kind: "final" | "draft" | "thumbnail";
+  name: string;
+  url: string;
+  size_bytes: number;
+  duration_s: number | null;
+  width: number | null;
+  height: number | null;
+  updated_at: string;
+}
+
+export interface RenderState {
+  project_id: number;
+  can_render: boolean;
+  reason: string | null;
+  has_voice: boolean;
+  has_subtitles: boolean;
+  default_burn_subtitles: boolean;
+  duration_s: number;
+  scenes: number;
+  files: RenderFile[];
+}

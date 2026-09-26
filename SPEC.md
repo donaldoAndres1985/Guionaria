@@ -869,6 +869,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] SFX (Freesound) y música.
 
 ### Fase 4 — Render automático
+- [x] Render con FFmpeg: efectos por escena, texto, voz + SFX + música con ducking, subtítulos quemados, borrador 720p y miniatura.
 ### Fase 5 — Publicación y analítica
 
 ---
