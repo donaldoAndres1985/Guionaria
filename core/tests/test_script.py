@@ -83,6 +83,29 @@ def test_prompt_includes_channel_project_and_notes(client, fake_claude, project)
     assert str(call["cwd"]).endswith("_el-secuestro_reel")
 
 
+def test_topic_counts_as_research_source(client, fake_claude, channel):
+    """Quien pega el caso completo en «Tema» no debe recibir todo marcado para verificar."""
+    project = client.post(
+        "/api/projects",
+        json={
+            "channel_id": channel["id"],
+            "title": "D. B. Cooper",
+            "format": "reel",
+            "topic": "El 24 de noviembre de 1971 un hombre secuestró el vuelo 305.",
+        },
+    ).json()
+    generate(client, fake_claude, project)
+    prompt = fake_claude.calls[0]["prompt"]
+    assert "Datos del tema (también son fuente válida):" in prompt
+    assert "sin notas: marca como verificar_dato" not in prompt
+
+    no_topic = client.post(
+        "/api/projects", json={"channel_id": channel["id"], "title": "Sin datos", "format": "reel"}
+    ).json()
+    generate(client, fake_claude, no_topic)
+    assert "sin notas: marca como verificar_dato" in fake_claude.calls[-1]["prompt"]
+
+
 def test_generation_failure_keeps_project_in_idea(client, fake_claude, project):
     fake_claude.queue(ClaudeError("Se alcanzó el límite de uso de tu plan de Claude."))
     job = client.post(url(project, ":generate")).json()

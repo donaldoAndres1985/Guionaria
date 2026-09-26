@@ -154,5 +154,44 @@ def test_keyless_sources_rate_limit(client, media_project, web, provider):
     assert by_provider(body["scene"]["candidates"], "searxng")
 
 
+def test_broader_queries_try_leading_words():
+    from guionaria_core.services.media.service import broader_queries
+
+    assert broader_queries("D. B. Cooper retrato robot FBI") == [
+        "D. B. Cooper retrato robot FBI",
+        "D. B. Cooper",
+        "D. B.",
+    ]
+    assert broader_queries("Boeing 727") == ["Boeing 727"]
+
+
+def test_empty_results_retry_with_shorter_query(client, media_project, web):
+    """Openverse/Wikimedia exigen todas las palabras: sin resultados se acorta la consulta."""
+    web.respond("https://api.openverse.org", httpx.Response(200, json={"results": []}))
+    body = search(
+        client,
+        real_scene(media_project),
+        query="Florence Schaffner azafata 1971",
+        providers=["openverse"],
+    ).json()
+    queries = [r.url.params["q"] for r in web.requests if r.url.host == "api.openverse.org"]
+    assert queries == ["Florence Schaffner azafata 1971", "Florence Schaffner azafata"]
+    assert len(by_provider(body["scene"]["candidates"], "openverse")) == 2
+    assert body["warnings"] == [
+        "Openverse: sin resultados para «Florence Schaffner azafata 1971»; "
+        "se muestran los de «Florence Schaffner azafata»"
+    ]
+
+
+def test_empty_search_is_not_cached(client, media_project, web):
+    scene = real_scene(media_project)
+    web.respond("https://api.openverse.org", *[httpx.Response(200, json={"results": []})] * 3)
+    body = search(client, scene, query="nada aqui hoy", providers=["openverse"]).json()
+    assert body["scene"]["candidates"] == []
+    # La segunda vez vuelve a preguntar (y ahora sí hay resultados).
+    body = search(client, scene, query="nada aqui hoy", providers=["openverse"]).json()
+    assert len(by_provider(body["scene"]["candidates"], "openverse")) == 2
+
+
 def test_job_waiter_import_is_used():
     assert wait_job

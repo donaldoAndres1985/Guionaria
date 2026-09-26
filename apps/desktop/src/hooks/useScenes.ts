@@ -8,9 +8,15 @@ export function useScenes(projectId: number) {
   return useQuery({ queryKey: key(projectId), queryFn: () => api.get<ScenesState>(base(projectId)) });
 }
 
+/** Las escenas definen qué medios hacen falta: cualquier cambio refresca también la vista de medios. */
+const mediaOverviewKey = (pid: number) => ["media", pid] as const;
+
 function useSetScenes(projectId: number) {
   const client = useQueryClient();
-  return (state: ScenesState) => client.setQueryData(key(projectId), state);
+  return (state: ScenesState) => {
+    client.setQueryData(key(projectId), state);
+    void client.invalidateQueries({ queryKey: mediaOverviewKey(projectId) });
+  };
 }
 
 /** Edición de una celda: se ve al instante y se revierte si el núcleo la rechaza. */
@@ -39,7 +45,10 @@ export function useUpdateScene(projectId: number) {
       );
     },
     // Contadores (por revisar, etc.) los recalcula el núcleo.
-    onSettled: () => client.invalidateQueries({ queryKey: key(projectId) }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: key(projectId) });
+      void client.invalidateQueries({ queryKey: mediaOverviewKey(projectId) });
+    },
   });
 }
 

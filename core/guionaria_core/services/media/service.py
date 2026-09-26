@@ -318,6 +318,28 @@ def _interleave(groups: list[list[Candidate]]) -> list[Candidate]:
     return out
 
 
+# Reintentos con la consulta acortada cuando un proveedor no encuentra nada: las búsquedas de
+# material real suelen ser descriptivas («D. B. Cooper retrato robot FBI») y Openverse o Wikimedia
+# exigen todas las palabras. El nombre propio suele ir al principio: se prueban las 3 y las 2
+# primeras palabras (como mucho 3 peticiones por proveedor).
+def broader_queries(query: str) -> list[str]:
+    words = query.split()
+    out = [query]
+    for n in (3, 2):
+        if len(words) > n:
+            out.append(" ".join(words[:n]))
+    return out
+
+
+async def _search_broadening(provider, client, query, kind, orientation, page):
+    queries = broader_queries(query) if page == 1 else [query]
+    for q in queries:
+        found = await provider.search(client, q, kind, orientation, page, PER_PAGE)
+        if found:
+            return found, q
+    return [], query
+
+
 async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> SearchResult:
     scene = get_scene(session, scene_id)
     project = _open_project(session, scene.project_id)
@@ -350,7 +372,7 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
     to_fetch = []
     for name in active:
         cached = _cache_get(session, _cache_key(name, kind, orientation, req.page, query))
-        if cached is not None:
+        if cached:  # una búsqueda vacía se repite: puede que ahora sí haya resultados
             results[name] = cached
         else:
             to_fetch.append(name)
@@ -359,12 +381,21 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
         async with http_client() as client:
             fetched = await asyncio.gather(
                 *(
-                    make_provider(name).search(client, query, kind, orientation, req.page, PER_PAGE)
+                    _search_broadening(
+                        make_provider(name), client, query, kind, orientation, req.page
+                    )
                     for name in to_fetch
                 ),
                 return_exceptions=True,
             )
         for name, outcome in zip(to_fetch, fetched, strict=True):
+            if isinstance(outcome, tuple):
+                outcome, used_query = outcome
+                if used_query != query and outcome:
+                    warnings.append(
+                        f"{PROVIDERS[name].label}: sin resultados para «{query}»; "
+                        f"se muestran los de «{used_query}»"
+                    )
             if isinstance(outcome, ProviderError):
                 warnings.append(outcome.message)
             elif isinstance(outcome, httpx.HTTPError):
@@ -373,7 +404,10 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
                 raise outcome
             else:
                 results[name] = outcome
-                _cache_put(session, _cache_key(name, kind, orientation, req.page, query), outcome)
+                if outcome:
+                    _cache_put(
+                        session, _cache_key(name, kind, orientation, req.page, query), outcome
+                    )
 
     if req.page == 1:
         # Nueva búsqueda: se descartan los candidatos que no se eligieron ni descargaron.

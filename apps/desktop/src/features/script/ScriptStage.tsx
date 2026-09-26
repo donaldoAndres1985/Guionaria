@@ -41,6 +41,7 @@ export function ScriptStage({
   generation: ScriptGeneration;
 }) {
   const [manual, setManual] = useState(false);
+  const [hideFactHint, setHideFactHint] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
 
@@ -155,6 +156,41 @@ export function ScriptStage({
           )}
         </div>
       </div>
+
+      {ctl.factChecks > 0 && !hideFactHint && (
+        <div
+          role="note"
+          className="flex shrink-0 items-start gap-2.5 border-b bg-warning/10 px-5 py-2.5 text-[12px]"
+        >
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          <p className="min-w-0 flex-1 text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {ctl.factChecks} {ctl.factChecks === 1 ? "segmento con un dato" : "segmentos con datos"} por verificar.
+            </span>{" "}
+            Claude no los encontró en el tema ni en las notas de investigación: compruébalos antes de publicar.{" "}
+            {ctl.locked
+              ? "Desbloquea el guion para quitar las marcas."
+              : "Haz clic en ⚠ para quitar la marca de un segmento ya comprobado."}
+          </p>
+          {!ctl.locked && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => ctl.editor?.chain().focus().selectAll().setFactCheck(false).run()}
+            >
+              Quitar todas
+            </Button>
+          )}
+          <button
+            type="button"
+            aria-label="Ocultar aviso"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => setHideFactHint(true)}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Editor */}
       <div className="min-h-0 flex-1 overflow-y-auto">

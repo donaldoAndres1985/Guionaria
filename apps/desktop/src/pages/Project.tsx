@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
+import { StagePanel, useStagePanelCompact } from "@/components/projects/StagePanel";
 import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -125,7 +126,7 @@ function ProjectView({ project }: { project: Project }) {
   };
 
   const stage = currentStage(project.status);
-  const compactStages = view === "escenas" || view === "medios";
+  const compactStages = useStagePanelCompact(view === "escenas" || view === "medios");
   return (
     <PageLayout
       title={project.title}
@@ -179,12 +180,7 @@ function ProjectView({ project }: { project: Project }) {
     >
       <div className="flex min-h-0 flex-1">
         {/* Etapas del proyecto (referencia 03, columna central) */}
-        <div
-          className={cn(
-            "shrink-0 overflow-y-auto border-r p-2 transition-[width] duration-200",
-            compactStages ? "w-14" : "w-72",
-          )}
-        >
+        <StagePanel compact={compactStages}>
           <StageButton
             compact={compactStages}
             active={view === "resumen"}
@@ -232,7 +228,7 @@ function ProjectView({ project }: { project: Project }) {
               />
             );
           })}
-        </div>
+        </StagePanel>
 
         <div className="flex min-w-0 flex-1 flex-col">
           {view !== "guion" && view !== "escenas" && view !== "medios" && view !== "voz" && view !== "timeline" && (

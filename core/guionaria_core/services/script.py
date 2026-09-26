@@ -378,9 +378,22 @@ def build_script_prompt(project: Project, channel: Channel) -> str:
         idioma=channel.language,
         titulo=project.title,
         tema=project.topic or project.title,
-        notas=project.research_notes or "(sin notas: marca como verificar_dato todo dato concreto)",
+        notas=research_sources(project),
         fecha=date.today().isoformat(),
     )
+
+
+def research_sources(project: Project) -> str:
+    """Fuentes para no marcar datos como «verificar»: las notas y también el tema, porque muchos
+    usuarios pegan ahí el caso completo con fechas y nombres."""
+    notes = (project.research_notes or "").strip()
+    topic = (project.topic or "").strip()
+    parts = [notes] if notes else []
+    if topic:
+        parts.append(f"Datos del tema (también son fuente válida):\n{topic}")
+    if not parts:
+        return "(sin notas: marca como verificar_dato todo dato concreto)"
+    return "\n\n".join(parts)
 
 
 async def generate_script(
@@ -444,7 +457,7 @@ async def rewrite_fragment(
         estilo=channel.style_prompt or "Claro y directo.",
         idioma=channel.language,
         guion="\n".join(s.text for s in script.segments),
-        notas=project.research_notes or "(sin notas)",
+        notas=research_sources(project),
         fragmento=target,
         instruccion=instruction.strip(),
     )

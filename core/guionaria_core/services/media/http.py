@@ -4,7 +4,9 @@ from collections.abc import Callable
 
 import httpx
 
-USER_AGENT = "Guionaria/0.1 (app de escritorio local)"
+USER_AGENT = (
+    "Guionaria/0.1 (app de escritorio local; https://github.com/donaldoAndres1985/Guionaria)"
+)
 
 
 def _default_client() -> httpx.AsyncClient:
