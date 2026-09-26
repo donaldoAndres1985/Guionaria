@@ -1,15 +1,20 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  mediaKeys,
   useApproveAsset,
   useDownloadCandidates,
+  useDownloadSelected,
   useMediaOverview,
   useSceneMedia,
   useSearchMedia,
+  useSelectCandidate,
   useSuggestQueries,
   useUnapproveAsset,
 } from "@/hooks/useMedia";
 import { type ImportSource, useImportMedia, useVideoFromUrl } from "@/hooks/useManualMedia";
+import { useProjectJob } from "@/hooks/useProjectJob";
 import { isVideoSite } from "./dropUtils";
 import type { Project } from "@/lib/api";
 
@@ -45,7 +50,6 @@ export function useMediaController(project: Project) {
     null;
   const { data: scene, isFetching: loadingScene } = useSceneMedia(sceneId);
 
-  const [selection, setSelection] = useState<Record<number, number[]>>({});
   const [searchState, setSearchState] = useState<Record<number, SceneSearchState>>({});
   // Fuentes elegidas por escena; sin elección, las de su tipo (sección 5.5).
   const [providersByScene, setProvidersByScene] = useState<Record<number, string[]>>({});
@@ -54,6 +58,28 @@ export function useMediaController(project: Project) {
   const searchMutation = useSearchMedia(project.id);
   const suggestMutation = useSuggestQueries();
   const downloadMutation = useDownloadCandidates(project.id);
+  const selectMutation = useSelectCandidate(project.id);
+  const downloadSelectedMutation = useDownloadSelected(project.id);
+  const queryClient = useQueryClient();
+  // «Descargar y aprobar»: todas las escenas a la vez; al terminar se refresca todo.
+  const downloadAll = useProjectJob(
+    project.id,
+    "download_selected",
+    () => downloadSelectedMutation.mutateAsync(),
+    (job) => {
+      void queryClient.invalidateQueries({ queryKey: mediaKeys.overview(project.id) });
+      void queryClient.invalidateQueries({ queryKey: ["scene-media"] });
+      void queryClient.invalidateQueries({ queryKey: ["project", project.id] });
+      const r = (job.result ?? {}) as { downloaded?: number; failed?: number; approved?: number };
+      if (r.failed) {
+        toast.warning(`${r.approved ?? 0} escenas con medio · ${r.failed} descargas fallaron`, {
+          description: "Siguen elegidas: reinténtalo o arrastra el archivo a la escena.",
+        });
+      } else {
+        toast.success(`Listo: ${r.approved ?? 0} escenas quedaron con medio`);
+      }
+    },
+  );
   const approveMutation = useApproveAsset(project.id);
   const unapproveMutation = useUnapproveAsset(project.id);
   const importMutation = useImportMedia(project.id);
@@ -84,19 +110,16 @@ export function useMediaController(project: Project) {
       [id]: { ...(all[id] ?? { ...state, query: state.query }), ...patch },
     }));
 
-  const selected = (sceneId != null && selection[sceneId]) || [];
+  // Elegidos por descargar de la escena abierta, en el orden en que se eligieron (se guardan en
+  // el núcleo: cerrar la app no los pierde).
+  const selected = (scene?.scene_id === sceneId ? scene.candidates : [])
+    .filter((c) => c.selected && (c.download_status === "none" || c.download_status === "failed"))
+    .sort((a, b) => (a.selection_order ?? 0) - (b.selection_order ?? 0))
+    .map((c) => c.id);
 
   function toggle(candidateId: number) {
     if (sceneId == null) return;
-    setSelection((all) => {
-      const current = all[sceneId] ?? [];
-      return {
-        ...all,
-        [sceneId]: current.includes(candidateId)
-          ? current.filter((id) => id !== candidateId)
-          : [...current, candidateId],
-      };
-    });
+    selectMutation.mutate({ sceneId, candidateId, selected: !selected.includes(candidateId) });
   }
 
   async function search(options: { query?: string; page?: number } = {}) {
@@ -137,16 +160,14 @@ export function useMediaController(project: Project) {
     }
   }
 
-  async function download(explicit?: number[]) {
-    if (sceneId == null) return;
-    const ids = explicit ?? selected;
-    if (!ids.length) return;
-    setSelection((all) => ({ ...all, [sceneId]: (all[sceneId] ?? []).filter((id) => !ids.includes(id)) }));
+  /** Descarga candidatos concretos de la escena abierta (p. ej. desde la vista grande). */
+  async function download(ids: number[]) {
+    if (sceneId == null || !ids.length) return;
     try {
       await downloadMutation.mutateAsync({ sceneId, ids });
       toast.success(`Descargando ${ids.length} ${ids.length === 1 ? "medio" : "medios"}…`);
     } catch {
-      setSelection((all) => ({ ...all, [sceneId]: ids }));
+      // el aviso lo muestra la caché de mutaciones
     }
   }
 
@@ -267,6 +288,10 @@ export function useMediaController(project: Project) {
     download,
     downloadAndApprove,
     downloading: downloadMutation.isPending,
+    selectedPending: overview?.selected_pending ?? 0,
+    downloadAll: downloadAll.start,
+    downloadingAll: downloadAll.running,
+    downloadAllJob: downloadAll.job,
     importMedia,
     importing: importMutation.isPending,
     available,

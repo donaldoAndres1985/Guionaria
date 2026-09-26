@@ -335,6 +335,8 @@ export interface Candidate {
   license: string | null;
   query: string | null;
   selected: boolean;
+  /** Orden en que se eligió: el 1 queda como principal al descargar. */
+  selection_order?: number | null;
   download_status: DownloadStatus;
   error: string | null;
   asset: Asset | null;
@@ -414,6 +416,8 @@ export interface SceneMediaSummary {
   needs_media: boolean;
   candidate_count: number;
   downloaded_count: number;
+  /** Elegidos que aún no se descargaron. */
+  selected_count: number;
   approved_thumb_url: string | null;
 }
 
@@ -426,6 +430,8 @@ export interface MediaOverview {
   scenes: SceneMediaSummary[];
   needing_media: number;
   with_media: number;
+  /** Elegidos por descargar en todo el proyecto. */
+  selected_pending: number;
 }
 
 export interface SearchResult {

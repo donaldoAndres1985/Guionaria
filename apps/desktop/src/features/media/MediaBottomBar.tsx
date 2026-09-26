@@ -1,4 +1,4 @@
-import { Download, FolderOpen, Package, Unlock } from "lucide-react";
+import { Download, FolderOpen, LoaderCircle, Package, Unlock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -48,13 +48,16 @@ export function MediaBottomBar({ project, ctl }: { project: Project; ctl: MediaC
   }
 
   const complete = overview.with_media >= overview.needing_media;
+  const missing = overview.needing_media - overview.with_media;
+  const pending = ctl.selectedPending;
+  const progress = ctl.downloadAllJob?.progress ?? 0;
   const stats = [
     {
       label: "Escenas con medio",
       value: `${overview.with_media}/${overview.needing_media}`,
       highlight: true,
     },
-    { label: "Seleccionados", value: ctl.selected.length },
+    { label: "Elegidos", value: pending },
   ];
 
   if (overview.approved) {
@@ -87,18 +90,31 @@ export function MediaBottomBar({ project, ctl }: { project: Project; ctl: MediaC
     <BottomBar stats={stats}>
       {folderButton}
       {packageButton}
+      {!complete && !ctl.downloadingAll && (
+        <span className="hidden max-w-52 text-right text-[12px] leading-tight text-muted-foreground xl:block">
+          {pending
+            ? "Descarga lo elegido para dejar esas escenas con medio"
+            : `Faltan ${missing} ${missing === 1 ? "escena" : "escenas"}: elige un medio en cada una`}
+        </span>
+      )}
       <Button
-        variant="outline"
-        disabled={!ctl.editable || ctl.selected.length === 0 || ctl.downloading}
-        onClick={() => void ctl.download()}
+        variant={complete ? "outline" : "default"}
+        size="lg"
+        disabled={!ctl.editable || pending === 0 || ctl.downloadingAll}
+        title="Descarga lo elegido en todas las escenas y deja el primero de cada una como principal"
+        onClick={() => void ctl.downloadAll()}
       >
-        <Download /> Descargar seleccionados{ctl.selected.length ? ` (${ctl.selected.length})` : ""}
+        {ctl.downloadingAll ? <LoaderCircle className="animate-spin" /> : <Download />}
+        {ctl.downloadingAll
+          ? `Descargando… ${Math.round(progress * 100)}%`
+          : `Descargar y aprobar${pending ? ` (${pending})` : ""}`}
       </Button>
       <Button
         size="lg"
         className="min-w-40"
         disabled={!ctl.editable || !complete || approve.isPending}
-        title={complete ? undefined : "Aprueba un medio principal en cada escena de video, imagen o material real"}
+        variant={complete ? "default" : "outline"}
+        title={complete ? "Cerrar la etapa de medios y pasar a la voz" : `Faltan ${missing} escenas con medio principal`}
         onClick={() => approve.mutate(undefined, { onSuccess: () => toast.success("Medios aprobados") })}
       >
         Aprobar medios

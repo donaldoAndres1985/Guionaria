@@ -185,6 +185,7 @@ def _candidate_read(session: Session, c: SceneCandidate) -> CandidateRead:
         license=c.license,
         query=c.query,
         selected=bool(c.selected),
+        selection_order=c.selected or None,
         download_status=c.download_status,
         error=c.error,
         asset=asset_read(asset) if asset else None,
@@ -270,6 +271,7 @@ def media_overview(session: Session, project_id: int) -> MediaOverview:
                 needs_media=needs_media(scene),
                 candidate_count=len(candidates),
                 downloaded_count=sum(1 for c in candidates if c.download_status == "done"),
+                selected_count=sum(1 for c in candidates if _pending_selection(c)),
                 approved_thumb_url=thumb,
             )
         )
@@ -283,6 +285,7 @@ def media_overview(session: Session, project_id: int) -> MediaOverview:
         scenes=summaries,
         needing_media=len(needing),
         with_media=sum(1 for s in needing if s.status in ("approved", "manual")),
+        selected_pending=sum(s.selected_count for s in needing),
     )
 
 
@@ -681,8 +684,11 @@ async def download_candidates(
         if any(c is None or c.scene_id != scene_id for c in candidates):
             raise DomainError("Algún candidato no pertenece a la escena")
         pending = [c.id for c in candidates if c.download_status != "done"]
+        order = _next_selection(session, scene_id)
         for c in candidates:
-            c.selected = 1
+            if not c.selected:
+                c.selected = order
+                order += 1
             if c.download_status != "done":
                 c.download_status = "queued"
         _enter_media_stage(project)
@@ -720,6 +726,106 @@ async def download_candidates(
         )
         session.commit()
     return {"requested": total, "downloaded": ok, "failed": total - ok}
+
+
+# --- selección («elegir = usar») ---
+
+
+def _pending_selection(c: SceneCandidate) -> bool:
+    return bool(c.selected) and c.download_status in ("none", "failed")
+
+
+def _next_selection(session: Session, scene_id: int) -> int:
+    return max((c.selected for c in _candidates(session, scene_id)), default=0) + 1
+
+
+def select_candidate(
+    session: Session, scene_id: int, candidate_id: int, selected: bool
+) -> SceneMediaRead:
+    """Marca o desmarca un candidato. Se guarda: cerrar la app no pierde lo elegido."""
+    scene = get_scene(session, scene_id)
+    _open_project(session, scene.project_id)
+    c = session.get(SceneCandidate, candidate_id)
+    if c is None or c.scene_id != scene_id:
+        raise NotFound("Ese candidato no pertenece a la escena")
+    if selected and not c.selected:
+        c.selected = _next_selection(session, scene_id)
+    elif not selected and c.download_status in ("none", "failed"):
+        c.selected = 0  # los descargados siguen disponibles para aprobar
+    session.commit()
+    return scene_media(session, scene_id)
+
+
+def _auto_approve(session: Session, scene: Scene) -> bool:
+    """Sin principal aprobado, el primer elegido ya descargado pasa a serlo."""
+    if scene.approved_asset_id or not needs_media(scene):
+        return False
+    chosen = sorted(
+        (c for c in _candidates(session, scene.id) if c.selected and c.asset_id),
+        key=lambda c: c.selected,
+    )
+    for c in chosen:
+        try:
+            approve_asset(session, scene.id, c.asset_id, "main")
+            return True
+        except DomainError:
+            continue
+    return False
+
+
+async def download_selected(session_factory, project_id: int, ctx: JobContext) -> dict:
+    """«Descargar y aprobar»: baja lo elegido en todas las escenas y deja como principal el
+    primer elegido de cada escena que aún no tiene medio."""
+    with session_factory() as session:
+        project = _open_project(session, project_id)
+        scenes = session.exec(
+            select(Scene).where(Scene.project_id == project_id).order_by(col(Scene.position))
+        ).all()
+        pending: list[int] = []
+        for scene in scenes:
+            if not needs_media(scene):
+                continue
+            for c in _candidates(session, scene.id):
+                if _pending_selection(c):
+                    c.download_status = "queued"
+                    pending.append(c.id)
+        _enter_media_stage(project)
+        session.commit()
+        scene_ids = [s.id for s in scenes]
+
+    total = len(pending)
+    done = ok = 0
+    ctx.progress(0.02, f"Descargando {total} medios…")
+    async with http_client() as client:
+
+        async def one(cid: int) -> None:
+            nonlocal done, ok
+            succeeded = await _download_one(session_factory, cid, client)
+            ok += succeeded
+            done += 1
+            ctx.progress(0.02 + 0.93 * done / max(total, 1), f"Descargados {done} de {total}")
+
+        await asyncio.gather(*(one(cid) for cid in pending))
+
+    approved = 0
+    with session_factory() as session:
+        for scene_id in scene_ids:
+            scene = get_scene(session, scene_id)
+            if scene.status == "pending" and any(
+                c.download_status == "done" for c in _candidates(session, scene_id)
+            ):
+                scene.status = "candidates"
+            approved += _auto_approve(session, scene)
+        log_operation(
+            session,
+            "download",
+            "project",
+            project_id,
+            {"requested": total, "ok": ok, "approved": approved},
+            actor="system",
+        )
+        session.commit()
+    return {"requested": total, "downloaded": ok, "failed": total - ok, "approved": approved}
 
 
 # --- aprobación de medios por escena ---

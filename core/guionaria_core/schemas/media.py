@@ -41,6 +41,7 @@ class CandidateRead(BaseModel):
     license: str | None
     query: str | None
     selected: bool
+    selection_order: int | None = None  # orden en que se eligió (1 = el que será principal)
     download_status: DownloadStatus
     error: str | None
     asset: AssetRead | None
@@ -88,6 +89,7 @@ class SceneMediaSummary(BaseModel):
     needs_media: bool
     candidate_count: int
     downloaded_count: int
+    selected_count: int = 0  # elegidos que aún no se descargaron
     approved_thumb_url: str | None
 
 
@@ -100,6 +102,7 @@ class MediaOverview(BaseModel):
     scenes: list[SceneMediaSummary]
     needing_media: int
     with_media: int
+    selected_pending: int = 0  # elegidos por descargar en todo el proyecto
 
 
 class SearchRequest(BaseModel):
@@ -116,6 +119,10 @@ class SearchResult(BaseModel):
     warnings: list[str]
     page: int
     has_more: bool
+
+
+class SelectRequest(BaseModel):
+    selected: bool
 
 
 class DownloadRequest(BaseModel):
