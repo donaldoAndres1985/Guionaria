@@ -123,6 +123,12 @@ def asset_file(asset_id: int, session: SessionDep) -> FileResponse:
     return FileResponse(svc.asset_file(session, asset_id))
 
 
+@router.get("/api/assets/{asset_id}/filmstrip")
+def asset_filmstrip(asset_id: int, session: SessionDep, frames: int = 12) -> FileResponse:
+    """Fotogramas repartidos por el video para elegir el tramo visualmente."""
+    return FileResponse(svc.filmstrip(session, asset_id, max(4, min(frames, 30))))
+
+
 @router.get("/api/assets/{asset_id}/thumb")
 def asset_thumb(asset_id: int, session: SessionDep) -> FileResponse:
     return FileResponse(svc.asset_file(session, asset_id, thumb=True))

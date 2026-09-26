@@ -70,6 +70,7 @@ class FramingRead(BaseModel):
     source_width: int | None
     source_height: int | None
     source_duration_s: float | None
+    scene_duration_s: float | None  # lo que dura la escena en el guion (el tramo ideal)
     target_width: int
     target_height: int
     orientation_mismatch: bool  # el original no tiene la orientación del formato
@@ -96,6 +97,25 @@ def _mismatch(sw: int | None, sh: int | None, tw: int, th: int) -> bool:
     if not sw or not sh:
         return False
     return (sw >= sh) != (tw >= th)
+
+
+def scene_duration(scene: Scene | None) -> float | None:
+    if not scene or scene.start_s is None or scene.end_s is None:
+        return None
+    return round(max(scene.end_s - scene.start_s, 0), 2) or None
+
+
+def needs_trim(session: Session, scene: Scene) -> bool:
+    """El video principal dura bastante más que la escena y todavía no se eligió el tramo."""
+    if not scene.approved_asset_id:
+        return False
+    row = session.get(SceneAsset, (scene.id, scene.approved_asset_id))
+    asset = session.get(Asset, scene.approved_asset_id)
+    wanted = scene_duration(scene)
+    if not row or not asset or asset.kind != "video" or not asset.duration_s or not wanted:
+        return False
+    untouched = row.trim_in_s is None and row.trim_out_s is None
+    return untouched and asset.duration_s > wanted + 0.5
 
 
 def load(row: SceneAsset) -> dict:
@@ -129,6 +149,7 @@ def framing_read(session: Session, project: Project, row: SceneAsset, asset: Ass
         source_width=sw,
         source_height=sh,
         source_duration_s=asset.duration_s,
+        scene_duration_s=scene_duration(session.get(Scene, row.scene_id)),
         target_width=tw,
         target_height=th,
         orientation_mismatch=_mismatch(sw, sh, tw, th),

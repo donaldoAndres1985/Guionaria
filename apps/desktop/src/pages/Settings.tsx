@@ -19,6 +19,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -230,6 +231,22 @@ export function SettingsPage() {
                     </SelectContent>
                   </Select>
                 </Field>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="grid gap-1">
+                    <Label htmlFor="trim-after-download" className="text-[13px]">
+                      Ajustar el tramo de los videos después de descargar
+                    </Label>
+                    <p className="text-[12px] text-muted-foreground">
+                      Tras «Descargar y aprobar», abre «Ajustar tramo» en cada video que dure más que su escena para
+                      elegir el momento exacto. Siempre puedes hacerlo después con el botón «Ajustar tramo».
+                    </p>
+                  </div>
+                  <Switch
+                    id="trim-after-download"
+                    checked={current.trim_after_download}
+                    onCheckedChange={(v) => update({ trim_after_download: v })}
+                  />
+                </div>
                 <Field label="Descargas en paralelo" hint="Entre 1 y 16.">
                   <Input
                     type="number"
