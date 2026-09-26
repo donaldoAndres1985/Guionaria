@@ -14,7 +14,7 @@ from pathlib import Path
 from sqlmodel import Session, col, select
 
 from ...config import get_paths
-from ...models import Asset, Project, Scene, SceneAsset
+from ...models import Asset, Project, Scene, SceneAsset, Sound
 from ...schemas.scene import TIPO_FROM_KIND
 from ..voice.service import latest_track
 
@@ -64,6 +64,8 @@ class TimelineModel:
     voice: Clip | None
     markers: list[Marker]
     warnings: list[str] = field(default_factory=list)
+    sfx: list[Clip] = field(default_factory=list)  # efectos al inicio de su escena
+    music: list[Clip] = field(default_factory=list)  # cada tema hasta el siguiente cambio
 
     def video_items(self) -> list[tuple[int, int, Clip | None]]:
         """Pista de video como (inicio, duración, clip); None es un hueco. Los huecos seguidos
@@ -203,5 +205,50 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
             )
         )
 
+    sfx, music = _sound_tracks(session, scenes, spans, total, warnings)
     width, height = (1920, 1080) if project.format == "video" else (1080, 1920)
-    return TimelineModel(project.title, FPS, width, height, total, spans, voice, markers, warnings)
+    return TimelineModel(
+        project.title, FPS, width, height, total, spans, voice, markers, warnings, sfx, music
+    )
+
+
+def _sound_tracks(
+    session: Session, scenes: list[Scene], spans: list[SceneSpan], total: int, warnings: list[str]
+) -> tuple[list[Clip], list[Clip]]:
+    """Pistas de SFX (cada efecto en el inicio de su escena, sin pisar al siguiente) y de
+    música (cada tema desde su escena hasta el siguiente cambio o el final)."""
+    home = get_paths().home
+    ids = {s.sfx_sound_id for s in scenes} | {s.music_sound_id for s in scenes}
+    ids.discard(None)
+    sounds = (
+        {s.id: s for s in session.exec(select(Sound).where(col(Sound.id).in_(ids)))} if ids else {}
+    )
+
+    def clip(sound: Sound, start: int, limit: int, position: int) -> Clip | None:
+        path = home / sound.file_path
+        if not path.exists():
+            warnings.append(f"Escena {position}: falta el archivo del sonido «{sound.title}»")
+            return None
+        media_len = frames(sound.duration_s) if sound.duration_s else None
+        duration = min(limit, media_len) if media_len else limit
+        return Clip(path.name, path, "audio", start, max(duration, 1), 0, media_len, position)
+
+    sfx: list[Clip] = []
+    sfx_starts = [(spans[i].start, s) for i, s in enumerate(scenes) if s.sfx_sound_id in sounds]
+    for n, (start, scene) in enumerate(sfx_starts):
+        nxt = sfx_starts[n + 1][0] if n + 1 < len(sfx_starts) else total
+        if c := clip(sounds[scene.sfx_sound_id], start, nxt - start, scene.position):
+            sfx.append(c)
+
+    music: list[Clip] = []
+    changes = []
+    for i, scene in enumerate(scenes):
+        if scene.music_sound_id in sounds and (
+            not changes or changes[-1][1] != scene.music_sound_id
+        ):
+            changes.append((spans[i].start, scene.music_sound_id, scene.position))
+    for n, (start, sound_id, position) in enumerate(changes):
+        end = changes[n + 1][0] if n + 1 < len(changes) else total
+        if c := clip(sounds[sound_id], start, end - start, position):
+            music.append(c)
+    return sfx, music

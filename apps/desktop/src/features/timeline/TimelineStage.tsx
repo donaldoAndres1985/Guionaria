@@ -1,4 +1,4 @@
-import { AudioLines, FileCheck2, Film, FolderOpen, Type } from "lucide-react";
+import { AudioLines, FileCheck2, Film, FolderOpen, Music, Type, Volume2 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { KINDS } from "@/features/scenes/sceneMeta";
 import { formatSceneTime } from "@/features/scenes/sceneMeta";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { useTimeline } from "@/hooks/useTimeline";
-import { coreUrl, type Project, type TimelineScene } from "@/lib/api";
+import { coreUrl, type Project, type TimelineScene, type TimelineSound } from "@/lib/api";
 import { formatDuration } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import {
@@ -94,6 +94,12 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
                 />
               ))}
             </div>
+
+            <TrackLabel icon={Volume2} label="SFX" />
+            <SoundTrack clips={state.sfx ?? []} duration={d} testId="track-sfx" tone="bg-[#b58be0]/25 text-[#c7a6ea]" empty="Sin efectos" />
+
+            <TrackLabel icon={Music} label="Música" />
+            <SoundTrack clips={state.music ?? []} duration={d} testId="track-music" tone="bg-[#5aa6d6]/20 text-[#7fbde4]" empty="Sin música" />
 
             <TrackLabel icon={AudioLines} label="Voz" />
             <div className="relative h-10">
@@ -186,6 +192,38 @@ function SceneBlock({ scene, duration }: { scene: TimelineScene; duration: numbe
           <span className="relative block truncate px-1 text-[11px] italic text-[#e8c374]">«{scene.text}»</span>
         )}
       </div>
+    </div>
+  );
+}
+
+function SoundTrack({
+  clips,
+  duration,
+  testId,
+  tone,
+  empty,
+}: {
+  clips: TimelineSound[];
+  duration: number;
+  testId: string;
+  tone: string;
+  empty: string;
+}) {
+  return (
+    <div className="relative h-8 border-b" data-testid={testId}>
+      {clips.length === 0 && (
+        <span className="absolute inset-y-0 left-2 flex items-center text-[11px] text-subtle">{empty}</span>
+      )}
+      {clips.map((c) => (
+        <div
+          key={`${c.start_s}-${c.name}`}
+          title={`${c.name} · ${formatSceneTime(c.start_s)}`}
+          className={cn("absolute inset-y-1.5 truncate rounded-sm px-1.5 text-[10px] leading-5", tone)}
+          style={{ left: `${pct(c.start_s, duration)}%`, width: `max(${pct(c.duration_s, duration)}%, 4px)` }}
+        >
+          {c.name}
+        </div>
+      ))}
     </div>
   );
 }

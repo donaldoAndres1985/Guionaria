@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white" alt="React 19">
   <img src="https://img.shields.io/badge/n%C3%BAcleo-Python%203.12-3776ab?logo=python&logoColor=white" alt="Núcleo Python 3.12">
   <img src="https://img.shields.io/badge/IA-Claude%20Code%20%2B%20MCP-d97757?logo=claude&logoColor=white" alt="Claude Code + MCP">
-  <img src="https://img.shields.io/badge/pruebas-370-2ea44f" alt="370 pruebas">
+  <img src="https://img.shields.io/badge/pruebas-380-2ea44f" alt="380 pruebas">
 </p>
 
 <p align="center">
@@ -83,7 +83,7 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **3B — Biblioteca** | Biblioteca global de medios · deduplicado por hash · reutilización sin duplicar archivos | ✅ Completa |
 | **3C — Almacenamiento** | Espacio por canal, proyecto y tipo con treemap · limpieza de candidatos sin usar | ✅ Completa |
 | **3D — Historial y papelera** | Historial de operaciones · papelera de 30 días con restauración · registro de derechos | ✅ Completa |
-| 3E — SFX y música | Freesound y biblioteca local de efectos y música | ⏳ Siguiente |
+| **3E — SFX y música** | Biblioteca de efectos y música · Freesound · sonidos por escena en el timeline | ✅ Completa |
 | 4 / 5 | Render automático · publicación y analítica | ⏳ |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -176,6 +176,14 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 - **Tablero** por etapa. Las etapas de producción avanzan aprobando dentro del proyecto; las finales (*Para editar → Renderizado → Programado → Publicado*) se mueven arrastrando, porque el render y la publicación todavía se hacen fuera de la app.
 - **Recordatorios:** notificación del sistema para las publicaciones de hoy y de mañana, una vez al día.
 
+### SFX y música
+
+- Biblioteca de **efectos de sonido** y **música**, con etiquetas (whoosh, impact, static, riser…), mood y BPM, para escuchar, buscar y filtrar por etiqueta.
+- **Importar** archivos sueltos o packs: la etiqueta se sugiere desde el nombre (*golpe_seco.wav* queda como *impact*) y el mismo contenido no se duplica.
+- **Buscar en Freesound** con la clave gratuita: escuchas la vista previa y la guardas en la biblioteca con autor y licencia.
+- En cada escena, dentro de la pantalla de medios, eliges el **SFX** (suena al inicio) y la **música** (sigue hasta el siguiente cambio), con sugerencias según lo que pide la escena.
+- El timeline suma pistas de SFX y de música en OTIO y FCPXML. En el EDL, la música va en A2 y cada SFX como nota. Los créditos incluyen los sonidos.
+
 ### Historial, papelera y derechos
 
 - **Historial de operaciones** en frases claras (*«Encuadre del medio: fondo desenfocado (escena 1)»*, *«Voz transcrita con Whisper (412 palabras)»*), agrupado por día, con quién lo hizo (tú, Claude por MCP o el sistema) y filtros por tipo.
@@ -204,11 +212,11 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 
 - El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
 - **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
-- Herramientas para todo el flujo (29):
+- Herramientas para todo el flujo (31):
   - canales, proyectos e ideas (`list_ideas`, `add_ideas`, `convert_idea`);
   - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
   - medios (`search_media`, `search_library`, `reuse_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
-  - voz (`generate_voice`, `import_voice`, `transcribe_voice`);
+  - voz y sonido (`generate_voice`, `import_voice`, `transcribe_voice`, `search_sounds`, `assign_sound`);
   - salida (`export_timeline`, `get_credits`) y `job_status`.
 - Recursos de solo lectura: el guion y las escenas de un proyecto, y el estilo de un canal.
 - **Sin doble consumo:** Claude redacta el guion y las escenas con tu plan y los guarda. Las herramientas nunca vuelven a llamar a la CLI, y las escenas se validan con las mismas reglas que las generadas en la app.
@@ -312,7 +320,7 @@ Guionaria/
 
 ## Pruebas
 
-- **370 pruebas automáticas:** 245 del núcleo y 125 de la app.
+- **380 pruebas automáticas:** 251 del núcleo y 129 de la app.
 - Nunca llaman a la CLI real de Claude ni a internet: Claude, las APIs, las descargas, Piper y Whisper se simulan.
 - Hay pruebas con archivos reales: imágenes generadas con Pillow y videos con FFmpeg.
 - Cada entrega se validó además con llamadas reales:

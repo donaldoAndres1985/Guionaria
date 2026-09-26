@@ -21,6 +21,8 @@ class Scene(SQLModel, table=True):
     music_cue: str | None = None
     status: str  # pending|candidates|approved|manual|review
     approved_asset_id: int | None = Field(default=None, foreign_key="asset.id")
+    sfx_sound_id: int | None = None  # efecto de la biblioteca que suena al inicio de la escena
+    music_sound_id: int | None = None  # tema que empieza en la escena (hasta el siguiente)
 
 
 class SceneCandidate(SQLModel, table=True):

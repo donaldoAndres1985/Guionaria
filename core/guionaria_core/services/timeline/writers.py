@@ -48,6 +48,17 @@ def to_otio(m: TimelineModel) -> str:
         audio = otio.schema.Track(name="Voz", kind=otio.schema.TrackKind.Audio)
         audio.append(clip(m.voice))
         timeline.tracks.append(audio)
+    for name, clips in (("SFX", m.sfx), ("Música", m.music)):
+        if not clips:
+            continue
+        track = otio.schema.Track(name=name, kind=otio.schema.TrackKind.Audio)
+        cursor = 0
+        for c in clips:
+            if c.start > cursor:
+                track.append(otio.schema.Gap(source_range=tr(0, c.start - cursor)))
+            track.append(clip(c))
+            cursor = c.start + c.duration
+        timeline.tracks.append(track)
     return otio.adapters.write_to_string(timeline, "otio_json")
 
 
@@ -149,6 +160,23 @@ def to_fcpxml(m: TimelineModel) -> str:
             audioRole="dialogue",
         )
 
+    # SFX y música: clips conectados debajo de la voz (carriles -2 y -3).
+    if items:
+        first, first_start, local = items[0]
+        for lane, role, clips in (("-2", "effects", m.sfx), ("-3", "music", m.music)):
+            for c in clips:
+                ET.SubElement(
+                    first,
+                    "asset-clip",
+                    ref=asset(c),
+                    name=c.name,
+                    lane=lane,
+                    offset=t(local + c.start - first_start),
+                    start="0s",
+                    duration=t(c.duration),
+                    audioRole=role,
+                )
+
     # Los marcadores van dentro del elemento que cubre su instante, en tiempo local.
     for mk in m.markers:
         for el, start, local in reversed(items):
@@ -196,10 +224,20 @@ def to_edl(m: TimelineModel) -> str:
                 ev[5].append(f"* LOC: {tc(mk.frame)} {mk.color:<7} {text}")
                 break
 
+    # CMX 3600 no tiene más pistas de audio útiles: los SFX quedan como notas en su evento.
+    for c in m.sfx:
+        for ev in reversed(events):
+            if ev[3] <= c.start:
+                ev[5].append(f"* SFX: {tc(c.start)} {c.name}")
+                break
+
     if m.voice:
         v = m.voice
         notes = [f"* FROM CLIP NAME: {v.path.name}", f"* SOURCE FILE: {v.path}"]
         events.append(("AX", "A", 0, 0, v.duration, notes))
+    for c in m.music:
+        notes = [f"* FROM CLIP NAME: {c.name}", f"* SOURCE FILE: {c.path}", "* MÚSICA"]
+        events.append(("AX", "A2", 0, c.start, c.duration, notes))
 
     for n, (reel, track, src, rec, dur, notes) in enumerate(events, start=1):
         lines.append(

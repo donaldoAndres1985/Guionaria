@@ -13,6 +13,7 @@ from .project import Project
 from .publication import Publication
 from .scene import Scene, SceneAsset, SceneCandidate
 from .script import ScriptVersion, Segment
+from .sound import Sound
 from .voice import VoiceTrack
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "ScriptVersion",
     "SearchCache",
     "Segment",
+    "Sound",
     "VoiceTrack",
 ]

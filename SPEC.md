@@ -866,7 +866,7 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 - [x] Almacenamiento con treemap y limpieza.
 - [x] Calendario, kanban, banco de ideas.
 - [x] Créditos automáticos, historial y papelera.
-- [ ] SFX (Freesound) y música.
+- [x] SFX (Freesound) y música.
 
 ### Fase 4 — Render automático
 ### Fase 5 — Publicación y analítica
