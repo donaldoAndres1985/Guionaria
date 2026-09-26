@@ -19,7 +19,7 @@ export function VideoUrlDialog({ ctl }: { ctl: MediaController }) {
   const open = ctl.videoDialogUrl !== null;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && ctl.closeVideoDialog()}>
-      <DialogContent className="bg-panel sm:max-w-lg">
+      <DialogContent dismissOnOutsideClick={false} className="bg-panel sm:max-w-lg">
         {open && <VideoUrlForm ctl={ctl} initialUrl={ctl.videoDialogUrl ?? ""} />}
       </DialogContent>
     </Dialog>

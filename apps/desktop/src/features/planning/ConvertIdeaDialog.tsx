@@ -25,7 +25,7 @@ const FORMATS: { id: ProjectFormat; title: string; hint: string; unit: string; d
 export function ConvertIdeaDialog({ idea, onClose }: { idea: Idea | null; onClose: () => void }) {
   return (
     <Dialog open={idea !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-panel sm:max-w-lg">{idea && <ConvertForm idea={idea} onClose={onClose} />}</DialogContent>
+      <DialogContent dismissOnOutsideClick={false} className="bg-panel sm:max-w-lg">{idea && <ConvertForm idea={idea} onClose={onClose} />}</DialogContent>
     </Dialog>
   );
 }

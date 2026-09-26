@@ -43,7 +43,7 @@ export function FramingDialog({
   const { data: state } = useFraming(target?.sceneId ?? 0, target?.assetId ?? null);
   return (
     <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-panel sm:max-w-3xl">
+      <DialogContent dismissOnOutsideClick={false} className="bg-panel sm:max-w-3xl">
         {target && state && state.asset_id === target.assetId && (
           <FramingForm projectId={projectId} state={state} fileUrl={target.fileUrl} onClose={onClose} />
         )}
