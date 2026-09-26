@@ -67,6 +67,19 @@ class ApiKeys(BaseModel):
     pixabay: str = ""
     unsplash: str = ""
     freesound: str = ""
+    elevenlabs: str = ""
+
+
+class ElevenLabsPrefs(BaseModel):
+    """Últimos ajustes usados con ElevenLabs (se proponen al volver a generar)."""
+
+    voice_id: str = ""
+    voice_name: str = ""
+    model_id: str = "eleven_multilingual_v2"
+    stability: float = 0.5
+    similarity_boost: float = 0.75
+    style: float = 0.0
+    speed: float = 1.0
 
 
 class AppSettings(BaseModel):
@@ -79,6 +92,7 @@ class AppSettings(BaseModel):
     ui_language: str = "es"
     theme: str = "dark"
     api_keys: ApiKeys = Field(default_factory=ApiKeys)
+    elevenlabs: ElevenLabsPrefs = Field(default_factory=ElevenLabsPrefs)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

@@ -14,6 +14,8 @@ export function VoiceBottomBar({ ctl }: { ctl: VoiceController }) {
     { label: "Subtítulos", value: state?.subtitles.length ? "SRT · VTT" : "—" },
   ];
   const disabled = action === "none" || ctl.running || ctl.uploading;
+  const engineName = ctl.engine === "elevenlabs" ? "ElevenLabs" : "Piper";
+  const again = state?.source === ctl.engine;
 
   return (
     <BottomBar stats={stats}>
@@ -32,11 +34,12 @@ export function VoiceBottomBar({ ctl }: { ctl: VoiceController }) {
         variant={action === "generate" ? "default" : "outline"}
         size={action === "generate" ? "lg" : "default"}
         className={action === "generate" ? "min-w-40" : undefined}
-        disabled={disabled}
+        disabled={disabled || !ctl.canGenerate}
+        title={ctl.canGenerate ? undefined : "Elige una voz de ElevenLabs (y agrega la clave en Ajustes)"}
         onClick={ctl.generate}
       >
         {ctl.running && action === "generate" ? <LoaderCircle className="animate-spin" /> : <AudioLines />}
-        {state?.source === "piper" ? "Generar la voz otra vez" : "Generar voz con Piper"}
+        {again ? `Generar otra vez con ${engineName}` : `Generar voz con ${engineName}`}
       </Button>
     </BottomBar>
   );

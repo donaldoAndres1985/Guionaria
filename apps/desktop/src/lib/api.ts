@@ -78,6 +78,43 @@ export interface ApiKeys {
   pixabay: string;
   unsplash: string;
   freesound: string;
+  elevenlabs: string;
+}
+
+/** Últimos ajustes usados con ElevenLabs. */
+export interface ElevenLabsPrefs {
+  voice_id: string;
+  voice_name: string;
+  model_id: string;
+  stability: number;
+  similarity_boost: number;
+  style: number;
+  speed: number;
+}
+
+export interface ElevenVoice {
+  voice_id: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  labels: Record<string, string>;
+  preview_url: string | null;
+}
+
+export interface ElevenModel {
+  id: string;
+  label: string;
+  hint: string;
+  credits_per_char: number;
+}
+
+export interface ElevenAccount {
+  tier: string | null;
+  used: number | null;
+  limit: number | null;
+  remaining: number | null;
+  resets_at: number | null;
+  can_read: boolean;
 }
 
 export type KeyProvider = keyof ApiKeys | "searxng";
@@ -102,6 +139,7 @@ export interface AppSettings {
   ui_language: string;
   theme: "dark" | "light";
   api_keys: ApiKeys;
+  elevenlabs: ElevenLabsPrefs;
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -476,7 +514,7 @@ export interface VoiceState {
   project_id: number;
   can_edit: boolean;
   reason: string | null;
-  source: "piper" | "recorded" | null;
+  source: "piper" | "elevenlabs" | "recorded" | null;
   voice_id: string | null;
   speed: number | null;
   duration_s: number | null;
@@ -488,6 +526,8 @@ export interface VoiceState {
   subtitles: string[];
   default_voice: string;
   whisper_model: string;
+  elevenlabs: ElevenLabsPrefs;
+  elevenlabs_configured: boolean;
 }
 
 export type TimelineFormat = "otio" | "fcpxml" | "edl";

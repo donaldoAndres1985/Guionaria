@@ -14,7 +14,11 @@ const baseSettings = (keys: Partial<AppSettings["api_keys"]> = {}): AppSettings 
   download_parallelism: 4,
   ui_language: "es",
   theme: "dark",
-  api_keys: { pexels: "", pixabay: "", unsplash: "", freesound: "", ...keys },
+  api_keys: { pexels: "", pixabay: "", unsplash: "", freesound: "", elevenlabs: "", ...keys },
+  elevenlabs: {
+    voice_id: "", voice_name: "", model_id: "eleven_multilingual_v2",
+    stability: 0.5, similarity_boost: 0.75, style: 0, speed: 1,
+  },
 });
 
 const health = {

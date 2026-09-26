@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import FileResponse
@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from ..db import get_engine, get_session
+from ..services import system
 from ..services.errors import DomainError
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.projects import get_project
+from ..services.voice import elevenlabs as eleven_api
 from ..services.voice import models
 from ..services.voice import service as voice
 
@@ -25,10 +27,27 @@ class GenerateRequest(BaseModel):
     voice_id: str | None = None  # por defecto: la del canal o la de Ajustes
     speed: float = Field(1.0, ge=0.7, le=1.4)
     pause_s: float = Field(voice.DEFAULT_PAUSE_S, ge=0, le=2)
+    engine: Literal["piper", "elevenlabs"] = "piper"
+    elevenlabs: eleven_api.ElevenSettings | None = None
 
 
 def _factory() -> Session:
     return Session(get_engine())
+
+
+@router.get("/api/voice/elevenlabs/voices", response_model=list[eleven_api.ElevenVoice])
+async def elevenlabs_voices() -> list[eleven_api.ElevenVoice]:
+    return await eleven_api.list_voices()
+
+
+@router.get("/api/voice/elevenlabs/models", response_model=list[eleven_api.ElevenModel])
+def elevenlabs_models() -> list[eleven_api.ElevenModel]:
+    return eleven_api.MODELS
+
+
+@router.get("/api/voice/elevenlabs/account", response_model=eleven_api.ElevenAccount)
+async def elevenlabs_account() -> eleven_api.ElevenAccount:
+    return await eleven_api.account()
 
 
 @router.get("/api/voice/voices", response_model=list[models.VoiceInfo])
@@ -51,7 +70,14 @@ async def generate(project_id: int, data: GenerateRequest, session: SessionDep) 
 
     async def work(ctx: JobContext) -> dict:
         return await voice.generate_voice(
-            _factory, project_id, data.voice_id, data.speed, data.pause_s, ctx
+            _factory,
+            project_id,
+            data.voice_id,
+            data.speed,
+            data.pause_s,
+            ctx,
+            engine=data.engine,
+            eleven=data.elevenlabs,
         )
 
     return jobs.submit("voice", work, project_id=project_id, payload={"action": "generate"})
@@ -109,6 +135,17 @@ async def transcribe(project_id: int, session: SessionDep) -> JobRead:
 @router.get("/api/projects/{project_id}/voice/audio")
 def audio(project_id: int, session: SessionDep) -> FileResponse:
     return FileResponse(voice.audio_file(session, project_id))
+
+
+@router.post("/api/projects/{project_id}/voice/subtitles/{name}:reveal", status_code=204)
+def reveal_subtitles(project_id: int, name: str, session: SessionDep) -> None:
+    """Abre la carpeta con el SRT o VTT seleccionado para subirlo a YouTube o al editor."""
+    if name not in ("voz.srt", "voz.vtt"):
+        raise DomainError("Subtítulo desconocido")
+    path = voice.project_dir(get_project(session, project_id)) / "subs" / name
+    if not path.exists():
+        raise DomainError("Todavía no hay subtítulos: genera o transcribe la voz")
+    system.reveal(path)
 
 
 @router.get("/api/projects/{project_id}/voice/segments/{seg_key}/audio")

@@ -37,6 +37,11 @@ const voiceState = (over: Partial<VoiceState> = {}): VoiceState => ({
   subtitles: [],
   default_voice: "es_MX-claude-high",
   whisper_model: "small",
+  elevenlabs: {
+    voice_id: "", voice_name: "", model_id: "eleven_multilingual_v2",
+    stability: 0.5, similarity_boost: 0.75, style: 0, speed: 1,
+  },
+  elevenlabs_configured: false,
   ...over,
 });
 
@@ -164,7 +169,7 @@ describe("etapa de voz", () => {
     fireEvent.click(screen.getByText("Generar voz con Piper"));
     await waitFor(() => expect(requests.some((r) => r.path === "/api/projects/7/voice:generate")).toBe(true));
     const post = requests.find((r) => r.path === "/api/projects/7/voice:generate")!;
-    expect(post.body).toEqual({ voice_id: "es_MX-claude-high", speed: 1, pause_s: 0.3 });
+    expect(post.body).toEqual({ voice_id: "es_MX-claude-high", speed: 1, pause_s: 0.3, engine: "piper" });
     expect(await screen.findByText("Generando…")).toBeTruthy(); // progreso del trabajo
   });
 
@@ -176,7 +181,7 @@ describe("etapa de voz", () => {
     expect(screen.getByText("0:01.8 – 0:04.3")).toBeTruthy();
     expect(screen.getByText("Reales · voz generada")).toBeTruthy();
     expect(screen.getByText("SRT · VTT")).toBeTruthy();
-    expect(screen.getByText("Generar la voz otra vez")).toBeTruthy();
+    expect(screen.getByText("Generar otra vez con Piper")).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText("Regenerar el segmento 2"));
     await waitFor(() =>
@@ -187,12 +192,13 @@ describe("etapa de voz", () => {
   it("vuelve a generar con la voz y velocidad de la última vez", async () => {
     server = piperState();
     renderStage();
-    fireEvent.click(await screen.findByText("Generar la voz otra vez"));
+    fireEvent.click(await screen.findByText("Generar otra vez con Piper"));
     await waitFor(() => expect(requests.some((r) => r.path.endsWith(":generate"))).toBe(true));
     expect(requests.find((r) => r.path.endsWith(":generate"))!.body).toEqual({
       voice_id: "es_MX-ald-medium",
       speed: 1.1,
       pause_s: 0.3,
+      engine: "piper",
     });
   });
 

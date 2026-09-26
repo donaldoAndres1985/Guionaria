@@ -16,7 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from sqlmodel import Session, col, delete, select
 
-from ...config import get_paths, load_settings
+from ...config import ElevenLabsPrefs, get_paths, load_settings, save_settings
 from ...domain.states import ORDER, ProjectStatus
 from ...models import Project, VoiceTrack
 from ...models._base import now_iso
@@ -24,10 +24,11 @@ from ..channels import get_channel
 from ..errors import Conflict, DomainError, NotFound
 from ..jobs import JobContext
 from ..media import process
+from ..media.http import http_client
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
 from ..script import current_version, read_script, text_hash
-from . import engines, models
+from . import elevenlabs, engines, models
 from .align import SegmentTiming, Word, align_segments
 from .subtitles import cues_from_segments, cues_from_words, to_srt, to_vtt
 
@@ -47,7 +48,7 @@ class VoiceState(BaseModel):
     project_id: int
     can_edit: bool
     reason: str | None  # por qué no se puede todavía
-    source: str | None  # piper | recorded
+    source: str | None  # piper | elevenlabs | recorded
     voice_id: str | None
     speed: float | None
     duration_s: float | None
@@ -59,6 +60,9 @@ class VoiceState(BaseModel):
     subtitles: list[str]
     default_voice: str
     whisper_model: str
+    # Ajustes de ElevenLabs de la voz actual (o los últimos usados) y si hay clave.
+    elevenlabs: ElevenLabsPrefs
+    elevenlabs_configured: bool
 
 
 # --- utilidades ---
@@ -162,6 +166,10 @@ def voice_state(session: Session, project_id: int) -> VoiceState:
         subtitles=[p.name for p in (subs_dir / "voz.srt", subs_dir / "voz.vtt") if p.exists()],
         default_voice=_default_voice(session, project),
         whisper_model=load_settings().whisper_model,
+        elevenlabs=ElevenLabsPrefs(**data["elevenlabs"])
+        if data.get("elevenlabs")
+        else load_settings().elevenlabs,
+        elevenlabs_configured=bool(load_settings().api_keys.elevenlabs),
     )
 
 
@@ -256,6 +264,8 @@ async def generate_voice(
     pause_s: float,
     ctx: JobContext,
     only_segment: str | None = None,
+    engine: str = "piper",
+    eleven: "elevenlabs.ElevenSettings | None" = None,
 ) -> dict:
     with session_factory() as session:
         project = get_project(session, project_id)
@@ -267,31 +277,75 @@ async def generate_voice(
                 raise Conflict("Primero genera la voz completa")
             if only_segment not in dict(segments):
                 raise NotFound(f"No existe el segmento {only_segment}")
+            # Un segmento se regenera con el mismo motor y ajustes que el resto.
+            engine = previous.get("engine", "piper")
             voice_id, speed = previous["voice_id"], previous.get("speed", 1.0)
             pause_s = previous.get("pause_s", DEFAULT_PAUSE_S)
+            if engine == "elevenlabs":
+                eleven = elevenlabs.ElevenSettings(**previous["elevenlabs"])
+        if engine == "elevenlabs":
+            if eleven is None:
+                raise DomainError("Elige una voz de ElevenLabs")
+            voice_id, speed = eleven.voice_id, eleven.speed
         voice_id = voice_id or _default_voice(session, project)
         audio_dir = project_dir(project) / "audio"
 
-    model = await models.ensure_voice(voice_id, ctx)
-    synth = await asyncio.to_thread(engines.synthesizer_factory, model)
     seg_dir = audio_dir / "segments"
     old_files = previous.get("segment_files", {}) if only_segment else {}
+    old_words = previous.get("segment_words", {}) if only_segment else {}
+    seg_words: dict[str, list[dict]] = {}
     files: list[Path] = []
-    for i, (seg_key, text) in enumerate(segments):
-        path = seg_dir / f"{seg_key}.wav"
-        reuse = only_segment and seg_key != only_segment and seg_key in old_files and path.exists()
-        if not reuse:
-            ctx.progress(
-                0.1 + 0.8 * i / len(segments),
-                f"Generando la voz: segmento {i + 1} de {len(segments)}…",
-            )
-            await asyncio.to_thread(synth.synthesize, text, path, speed)
-        files.append(path)
+
+    def reusable(seg_key: str, path: Path) -> bool:
+        return (
+            bool(only_segment)
+            and seg_key != only_segment
+            and seg_key in old_files
+            and path.exists()
+        )
+
+    def step(i: int) -> None:
+        ctx.progress(
+            0.1 + 0.8 * i / len(segments), f"Generando la voz: segmento {i + 1} de {len(segments)}…"
+        )
+
+    if engine == "elevenlabs":
+        key = elevenlabs.api_key()
+        async with http_client() as client:
+            for i, (seg_key, text) in enumerate(segments):
+                path = seg_dir / f"{seg_key}.wav"
+                if reusable(seg_key, path):
+                    seg_words[seg_key] = old_words.get(seg_key, [])
+                else:
+                    step(i)
+                    words = await elevenlabs.synthesize(
+                        client,
+                        key,
+                        text,
+                        eleven,
+                        path,
+                        previous_text=segments[i - 1][1] if i > 0 else None,
+                        next_text=segments[i + 1][1] if i + 1 < len(segments) else None,
+                    )
+                    seg_words[seg_key] = [
+                        {"text": w.text, "start": w.start, "end": w.end} for w in words
+                    ]
+                files.append(path)
+    else:
+        model = await models.ensure_voice(voice_id, ctx)
+        synth = await asyncio.to_thread(engines.synthesizer_factory, model)
+        for i, (seg_key, text) in enumerate(segments):
+            path = seg_dir / f"{seg_key}.wav"
+            if not reusable(seg_key, path):
+                step(i)
+                await asyncio.to_thread(synth.synthesize, text, path, speed)
+            files.append(path)
 
     ctx.progress(0.92, "Uniendo la voz y aplicando los tiempos reales…")
     out = audio_dir / "voz.wav"
     spans = await asyncio.to_thread(concat_wavs, files, out, pause_s)
     data = {
+        "engine": engine,
         "voice_id": voice_id,
         "speed": speed,
         "pause_s": pause_s,
@@ -303,9 +357,27 @@ async def generate_voice(
         "segment_files": {k: _rel(seg_dir / f"{k}.wav") for k, _ in segments},
         "hashes": {k: text_hash(t) for k, t in segments},
     }
+    if engine == "elevenlabs":
+        # Tiempos por palabra de ElevenLabs, desplazados a su lugar en la voz completa: los
+        # subtítulos salen exactos sin Whisper.
+        data["elevenlabs"] = eleven.model_dump()
+        data["segment_words"] = seg_words
+        data["words"] = [
+            {"text": w["text"], "start": round(w["start"] + s, 3), "end": round(w["end"] + s, 3)}
+            for (k, _t), (s, _e) in zip(segments, spans, strict=True)
+            for w in seg_words.get(k, [])
+        ]
+        settings = load_settings()
+        settings.elevenlabs = ElevenLabsPrefs(
+            **{
+                **settings.elevenlabs.model_dump(),
+                **eleven.model_dump(exclude={"use_speaker_boost"}),
+            }
+        )
+        save_settings(settings)
     with session_factory() as session:
         project = get_project(session, project_id)
-        track = _save_track(session, project, "piper", out, data)
+        track = _save_track(session, project, engine, out, data)
         _apply(session, project, data)
         log_operation(
             session,

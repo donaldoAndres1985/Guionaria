@@ -15,15 +15,16 @@ from ..config import load_settings
 from .errors import NotFound
 from .media.http import http_client
 
-KeyProvider = Literal["pexels", "pixabay", "unsplash", "freesound", "searxng"]
+KeyProvider = Literal["pexels", "pixabay", "unsplash", "freesound", "elevenlabs", "searxng"]
 KeyStatus = Literal["valid", "invalid", "missing", "rate_limited", "unreachable", "error"]
 
-PROVIDERS: tuple[str, ...] = ("pexels", "pixabay", "unsplash", "freesound", "searxng")
+PROVIDERS: tuple[str, ...] = ("pexels", "pixabay", "unsplash", "freesound", "elevenlabs", "searxng")
 LABELS = {
     "pexels": "Pexels",
     "pixabay": "Pixabay",
     "unsplash": "Unsplash",
     "freesound": "Freesound",
+    "elevenlabs": "ElevenLabs",
     "searxng": "SearXNG",
 }
 
@@ -63,10 +64,19 @@ def _request(provider: str, value: str) -> tuple[str, dict, dict]:
             {"query": "rain", "page_size": 1, "fields": "id", "token": value},
             {},
         )
+    if provider == "elevenlabs":
+        return "https://api.elevenlabs.io/v1/user/subscription", {}, {"xi-api-key": value}
     return f"{value.rstrip('/')}/search", {"q": "test", "format": "json"}, {}
 
 
 def _quota(resp: httpx.Response) -> int | None:
+    if resp.url.host == "api.elevenlabs.io":
+        # Créditos (caracteres) que quedan este mes.
+        try:
+            data = resp.json()
+            return max(data["character_limit"] - data["character_count"], 0)
+        except (ValueError, KeyError, TypeError):
+            return None
     raw = resp.headers.get("x-ratelimit-remaining")
     try:
         return int(raw) if raw is not None else None
@@ -90,6 +100,9 @@ def _interpret(provider: str, resp: httpx.Response) -> tuple[KeyStatus, str]:
         if resp.is_success:
             return "valid", "SearXNG responde y entrega resultados en JSON"
         return "error", f"SearXNG respondió con error {code}"
+    if provider == "elevenlabs" and code == 401 and "permission" in resp.text.lower():
+        # Claves con permisos limitados: válida, pero sin acceso a la suscripción.
+        return "valid", "Clave válida (sin permiso para ver los créditos)"
     # Pixabay responde 400 "Invalid or missing API key" cuando la clave no existe.
     if code in (401, 403) or (provider == "pixabay" and code == 400 and "key" in resp.text.lower()):
         return "invalid", f"{label} rechazó la clave: revisa que la copiaste completa"
