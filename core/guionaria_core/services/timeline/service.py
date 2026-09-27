@@ -32,6 +32,10 @@ class TimelineScene(BaseModel):
     file_name: str | None
     thumb_url: str | None
     text: str | None
+    # Para «Ajustar tramo» desde el timeline (solo clips de video).
+    scene_id: int | None = None
+    asset_id: int | None = None
+    is_video: bool = False
 
 
 class TimelineMarker(BaseModel):
@@ -130,6 +134,9 @@ def timeline_state(session: Session, project_id: int) -> TimelineState:
                 file_name=s.clip.name if s.clip else None,
                 thumb_url=f"/api/assets/{s.asset_id}/thumb" if s.clip and s.asset_id else None,
                 text=s.text,
+                scene_id=s.scene_id,
+                asset_id=s.asset_id if s.clip else None,
+                is_video=bool(s.clip and s.clip.kind == "video"),
             )
             for s in m.scenes
         ],

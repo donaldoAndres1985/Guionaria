@@ -100,3 +100,27 @@ def test_filmstrip_rejects_images(client, media_project, web):
 
 def test_trim_after_download_setting_defaults_off(client):
     assert client.get("/api/settings").json()["trim_after_download"] is False
+
+
+def test_trim_still_editable_after_media_approval_but_framing_is_not(client, media_project, web):
+    pid = media_project["id"]
+    video, image, real, _text = media_project["scenes"]
+    for scene in (video, image, real):
+        choose_and_download(client, pid, scene)
+    assert client.post(f"/api/projects/{pid}/media:approve").status_code == 200
+
+    asset = client.get(f"/api/scenes/{video}/media").json()["approved"][0]["asset"]["id"]
+    url = f"/api/scenes/{video}/assets/{asset}/framing"
+    # Solo el tramo: permitido (lo que se ve en el timeline).
+    resp = client.put(url, json={"mode": "none", "trim_in_s": 4.0, "trim_out_s": 6.0})
+    assert resp.status_code == 200, resp.text
+    assert client.get(f"/api/projects/{pid}").json()["status"] == "MEDIOS_APROBADOS"
+    # Cambiar el encuadre sigue exigiendo desbloquear los medios.
+    assert client.put(url, json={"mode": "blur", "trim_in_s": 4.0}).status_code == 409
+
+    # El timeline expone lo necesario para abrir «Ajustar tramo».
+    scenes = client.get(f"/api/projects/{pid}/timeline").json()["scenes"]
+    first = next(s for s in scenes if s["position"] == 1)
+    assert (first["scene_id"], first["asset_id"], first["is_video"]) == (video, asset, True)
+    photo = next(s for s in scenes if s["position"] == 2)
+    assert photo["is_video"] is False

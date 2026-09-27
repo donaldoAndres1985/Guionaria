@@ -52,6 +52,7 @@ class SceneSpan:
     text: str | None
     asset_id: int | None
     effect: str | None = None
+    scene_id: int | None = None
 
 
 @dataclass
@@ -204,6 +205,7 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 scene.on_screen_text,
                 pair[1].id if pair else None,
                 scene.effect,
+                scene.id,
             )
         )
 

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
 from ...config import get_paths
+from ...domain.states import ORDER, ProjectStatus
 from ...models import Asset, Project, Scene, SceneAsset
 from ...models._base import now_iso
 from ...util.paths import check_path_length
@@ -116,6 +117,13 @@ def needs_trim(session: Session, scene: Scene) -> bool:
         return False
     untouched = row.trim_in_s is None and row.trim_out_s is None
     return untouched and asset.duration_s > wanted + 0.5
+
+
+def _trim_only(data: FramingIn, row: SceneAsset) -> bool:
+    """El cambio conserva el modo y el recorte actuales: solo mueve el tramo."""
+    current = load(row)
+    same_crop = (data.crop.model_dump() if data.crop else None) == current.get("crop")
+    return data.mode == current.get("mode", "none") and same_crop
 
 
 def load(row: SceneAsset) -> dict:
@@ -299,7 +307,13 @@ def save_framing(
     from .service import _open_project
 
     scene, row, asset = _row(session, scene_id, asset_id)
-    project = _open_project(session, scene.project_id)
+    project = get_project(session, scene.project_id)
+    # Con los medios aprobados sigue pudiéndose afinar el tramo (solo cambia el timeline); el
+    # encuadre sí exige desbloquear los medios.
+    if not _trim_only(data, row) or ORDER.index(project.status) >= ORDER.index(
+        ProjectStatus.PROGRAMADO
+    ):
+        project = _open_project(session, scene.project_id)
     tw, th = target_size(project)
     _validate(data, asset, tw, th)
     source = _abs(asset.file_path)

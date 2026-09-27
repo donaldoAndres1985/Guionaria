@@ -387,7 +387,7 @@ export function MediaStage({
                             </div>
                           )}
                         </div>
-                        {ctl.editable && a.asset.kind === "video" && (
+                        {a.asset.kind === "video" && (ctl.editable || ctl.overview?.approved) && (
                           <Button
                             size="xs"
                             variant="outline"

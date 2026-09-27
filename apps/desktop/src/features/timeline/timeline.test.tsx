@@ -19,7 +19,7 @@ const timeline = (over: Partial<TimelineState> = {}): TimelineState => ({
   has_voice: true,
   voice_duration_s: 4.9,
   scenes: [
-    { position: 1, kind: "video", start_s: 0, duration_s: 1.3, clip_duration_s: 1.3, file_name: "001_0000_video_a.mp4", thumb_url: "/api/assets/1/thumb", text: null },
+    { position: 1, kind: "video", start_s: 0, duration_s: 1.3, clip_duration_s: 1.3, file_name: "001_0000_video_a.mp4", thumb_url: "/api/assets/1/thumb", text: null, scene_id: 11, asset_id: 1, is_video: true },
     { position: 2, kind: "image", start_s: 1.3, duration_s: 1.3, clip_duration_s: 1.3, file_name: "002_0001_imagen_b.jpg", thumb_url: null, text: null },
     { position: 3, kind: "text", start_s: 2.6, duration_s: 2.3, clip_duration_s: null, file_name: null, thumb_url: null, text: "SIN RESPUESTA" },
   ],
@@ -93,6 +93,14 @@ describe("etapa de timeline", () => {
           }
           return new Response(null, { status: 204 });
         }
+        if (path.endsWith("/framing")) {
+          return new Response(JSON.stringify({
+            scene_id: 11, asset_id: 1, kind: "video", mode: "none", crop: null, trim_in_s: null, trim_out_s: null,
+            source_width: 1080, source_height: 1920, source_duration_s: 12, scene_duration_s: 1.3,
+            target_width: 1080, target_height: 1920, orientation_mismatch: false, suggested_crop: null,
+            rendered: false, approved_url: "/x",
+          }));
+        }
         if (path === "/api/jobs") return new Response(JSON.stringify([]));
         if (path.startsWith("/api/jobs/")) return new Response(JSON.stringify(renderJob));
         if (path.endsWith("/render")) return new Response(JSON.stringify(renderState));
@@ -116,6 +124,16 @@ describe("etapa de timeline", () => {
     );
     return onGoToMedia;
   }
+
+  it("clic en un clip de video abre «Ajustar tramo»; las fotos no", async () => {
+    server = timeline();
+    renderStage();
+    expect(await screen.findByText(/Haz clic en un clip de video/)).toBeTruthy();
+    expect(screen.queryByLabelText("Ajustar tramo de la escena 2")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Ajustar tramo de la escena 1"));
+    expect(await screen.findByText(/Ajustar tramo · Escena 1/)).toBeTruthy();
+    expect(await screen.findByTestId("trim-window")).toBeTruthy();
+  });
 
   it("muestra pistas, marcadores y estadísticas", async () => {
     server = timeline();

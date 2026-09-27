@@ -1,14 +1,16 @@
-import { AudioLines, FileCheck2, Film, FolderOpen, Music, Type, Volume2 } from "lucide-react";
+import { AudioLines, FileCheck2, Film, FolderOpen, Music, Scissors, Type, Volume2 } from "lucide-react";
+import { useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { RenderPanel } from "./RenderPanel";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
+import { TrimDialog, type TrimTarget } from "@/features/media/TrimDialog";
 import { KINDS } from "@/features/scenes/sceneMeta";
 import { formatSceneTime } from "@/features/scenes/sceneMeta";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { useTimeline } from "@/hooks/useTimeline";
 import { coreUrl, type Project, type TimelineScene, type TimelineSound } from "@/lib/api";
-import { formatDuration } from "@/lib/project";
+import { formatDuration, STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import {
   exportedAt,
@@ -24,7 +26,16 @@ const TONE = Object.fromEntries(KINDS.map((k) => [k.id, k.tone]));
 export function TimelineStage({ project, onGoToMedia }: { project: Project; onGoToMedia: () => void }) {
   const { data: state } = useTimeline(project.id);
   const reveal = useRevealProject();
+  const [trim, setTrim] = useState<TrimTarget | null>(null);
   if (!state) return null;
+  // El tramo se afina hasta antes de programar la publicación.
+  const canTrim = STATUS_ORDER.indexOf(project.status) < STATUS_ORDER.indexOf("PROGRAMADO");
+  const openTrim = (s: TimelineScene) =>
+    canTrim &&
+    s.is_video &&
+    s.scene_id != null &&
+    s.asset_id != null &&
+    setTrim({ sceneId: s.scene_id, assetId: s.asset_id, fileUrl: `/api/assets/${s.asset_id}/file`, position: s.position });
   if (!state.scenes.length) {
     return <EmptyState icon={Film} title="Todavía no hay escenas" description="El timeline se arma con las escenas aprobadas." />;
   }
@@ -61,6 +72,12 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
       )}
 
       <div className="grid gap-5 p-5">
+        {canTrim && state.scenes.some((s) => s.is_video) && (
+          <p className="-mb-2 flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <Scissors className="size-3.5 text-brand" />
+            Haz clic en un clip de video para elegir el momento exacto que se usa en la escena («Ajustar tramo»).
+          </p>
+        )}
         {/* Pistas (vista previa de lo que se exporta) */}
         <div className="overflow-hidden rounded-md border bg-panel">
           <div className="grid grid-cols-[88px_minmax(0,1fr)]">
@@ -80,7 +97,12 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
             <TrackLabel icon={Film} label="Video" />
             <div className="relative h-16 border-b" data-testid="track-video">
               {state.scenes.map((s) => (
-                <SceneBlock key={s.position} scene={s} duration={d} />
+                <SceneBlock
+                  key={s.position}
+                  scene={s}
+                  duration={d}
+                  onTrim={canTrim && s.is_video ? () => openTrim(s) : undefined}
+                />
               ))}
             </div>
 
@@ -135,6 +157,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
         </div>
 
         <RenderPanel project={project} />
+        <TrimDialog projectId={project.id} target={trim} onClose={() => setTrim(null)} />
 
         {/* Archivos exportados */}
         <div className="grid grid-cols-3 gap-3">
@@ -167,14 +190,28 @@ function TrackLabel({ icon: Icon, label }: { icon: typeof Film; label: string })
   );
 }
 
-function SceneBlock({ scene, duration }: { scene: TimelineScene; duration: number }) {
+function SceneBlock({
+  scene,
+  duration,
+  onTrim,
+}: {
+  scene: TimelineScene;
+  duration: number;
+  onTrim?: () => void;
+}) {
   const clipPart = scene.clip_duration_s != null ? scene.clip_duration_s / scene.duration_s : 0;
   const thumb = coreUrl(scene.thumb_url);
+  const label = `Escena ${scene.position} · ${formatSceneTime(scene.start_s)} · ${scene.file_name ?? scene.text ?? "sin medio"}`;
   return (
     <div
-      className="absolute inset-y-1.5 px-px"
+      className={cn("group absolute inset-y-1.5 px-px", onTrim && "cursor-pointer")}
       style={{ left: `${pct(scene.start_s, duration)}%`, width: `${pct(scene.duration_s, duration)}%` }}
-      title={`Escena ${scene.position} · ${formatSceneTime(scene.start_s)} · ${scene.file_name ?? scene.text ?? "sin medio"}`}
+      title={onTrim ? `${label}\nClic: ajustar el tramo` : label}
+      role={onTrim ? "button" : undefined}
+      tabIndex={onTrim ? 0 : undefined}
+      aria-label={onTrim ? `Ajustar tramo de la escena ${scene.position}` : undefined}
+      onClick={onTrim}
+      onKeyDown={onTrim ? (e) => e.key === "Enter" && onTrim() : undefined}
     >
       <div
         className={cn(
@@ -191,6 +228,12 @@ function SceneBlock({ scene, duration }: { scene: TimelineScene; duration: numbe
         <span className="relative m-1 inline-block rounded bg-black/55 px-1 font-mono text-[10px] text-white">
           {scene.position}
         </span>
+        {onTrim && (
+          <Scissors
+            aria-hidden
+            className="absolute top-1 right-1 size-3 text-white/70 drop-shadow group-hover:text-brand"
+          />
+        )}
         {!scene.file_name && scene.text && (
           <span className="relative block truncate px-1 text-[11px] italic text-[#e8c374]">«{scene.text}»</span>
         )}
