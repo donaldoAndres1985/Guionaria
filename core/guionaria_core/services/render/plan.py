@@ -8,6 +8,7 @@ depende de un único filtro gigante.
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 FPS = 30
 ZOOM = 0.15  # zoom lento: 15 % a lo largo de la escena
@@ -21,19 +22,41 @@ class Quality:
     height: int
     preset: str
     crf: int
+    audio_bitrate: str = "192k"
 
     @property
     def size(self) -> str:
         return f"{self.width}x{self.height}"
 
 
-def quality(width: int, height: int, draft: bool) -> Quality:
-    """Final a la resolución del formato; borrador a 720p (lado corto) para revisar rápido."""
-    if not draft:
-        return Quality(width, height, "medium", 20)
-    scale = 720 / min(width, height)
+Level = Literal["draft", "standard", "high", "max"]
+LEVELS: tuple[Level, ...] = ("draft", "standard", "high", "max")
+
+
+def _scaled(width: int, height: int, short_side: int) -> tuple[int, int]:
+    scale = short_side / min(width, height)
     even = lambda v: int(round(v * scale / 2) * 2)  # noqa: E731
-    return Quality(even(width), even(height), "veryfast", 28)
+    return even(width), even(height)
+
+
+def quality(width: int, height: int, level: Level | bool) -> Quality:
+    """Niveles de render:
+    - draft: 720p (lado corto) y rápido, para revisar.
+    - standard: la resolución del formato (1080p), equilibrado.
+    - high: 1080p más nítido (crf 17, preset slow) y audio a 256 kbps; tarda más.
+    - max: reescalado a 4K (2160p): YouTube le asigna más bitrate y se ve mejor incluso en 1080p.
+    """
+    if isinstance(level, bool):  # compatibilidad: draft=True/False
+        level = "draft" if level else "standard"
+    if level == "draft":
+        w, h = _scaled(width, height, 720)
+        return Quality(w, h, "veryfast", 28)
+    if level == "high":
+        return Quality(width, height, "slow", 17, "256k")
+    if level == "max":
+        w, h = _scaled(width, height, 2160)
+        return Quality(w, h, "slow", 17, "320k")
+    return Quality(width, height, "medium", 20)
 
 
 def find_font() -> str | None:

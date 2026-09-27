@@ -254,7 +254,7 @@ export interface RewriteResult {
   verificar_dato: boolean;
 }
 
-export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: number;
@@ -267,6 +267,8 @@ export interface Job {
   error: string | null;
   created_at: string;
   finished_at: string | null;
+  /** Se puede detener ahora mismo (p. ej. el render). */
+  cancellable?: boolean;
 }
 
 export interface Prompt {
@@ -812,7 +814,10 @@ export interface RenderFile {
   width: number | null;
   height: number | null;
   updated_at: string;
+  quality?: RenderQuality | null;
 }
+
+export type RenderQuality = "draft" | "standard" | "high" | "max";
 
 export interface RenderState {
   project_id: number;

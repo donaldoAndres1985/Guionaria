@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, RenderState, TimelineState } from "@/lib/api";
+import { useUiStore } from "@/stores/ui";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
 import { clipCount, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
@@ -58,6 +59,7 @@ describe("etapa de timeline", () => {
 
   beforeEach(() => {
     posts = [];
+    useUiStore.setState({ renderQuality: "standard" });
     renderState = {
       project_id: 7,
       can_render: true,
@@ -68,7 +70,7 @@ describe("etapa de timeline", () => {
       duration_s: 4.9,
       scenes: 3,
       files: [
-        { kind: "final", name: "proyecto.mp4", url: "/api/projects/7/render/files/proyecto.mp4", size_bytes: 8 * 1024 * 1024, duration_s: 4.9, width: 1080, height: 1920, updated_at: "2026-09-26T10:00:00" },
+        { kind: "final", name: "proyecto.mp4", url: "/api/projects/7/render/files/proyecto.mp4", size_bytes: 8 * 1024 * 1024, duration_s: 4.9, width: 1080, height: 1920, updated_at: "2026-09-26T10:00:00", quality: "high" },
         { kind: "thumbnail", name: "miniatura.jpg", url: "/api/projects/7/render/files/miniatura.jpg", size_bytes: 90000, duration_s: null, width: 1080, height: 1920, updated_at: "2026-09-26T10:00:00" },
       ],
     };
@@ -181,19 +183,34 @@ describe("etapa de timeline", () => {
     expect(screen.getByText("Sin voz")).toBeTruthy();
   });
 
-  it("render: opciones, progreso y resultado", async () => {
+  it("render: calidad elegida, subtítulos, progreso y resultado", async () => {
     server = timeline();
     renderStage();
     const panel = await screen.findByLabelText("Render");
     expect(within(panel).getByText(/render\/proyecto\.mp4 · 8.00 MB/)).toBeTruthy();
+    expect(within(panel).getByText(/Final · Alta · 1080×1920/)).toBeTruthy();
     expect(within(panel).getByAltText("Miniatura sugerida")).toBeTruthy();
     const burn = within(panel).getByLabelText("Quemar subtítulos") as HTMLInputElement;
     expect(burn.checked).toBe(true); // reel: por defecto sí
     fireEvent.click(burn);
-    fireEvent.click(within(panel).getByText("Borrador 720p"));
+    fireEvent.click(within(panel).getByRole("radio", { name: /4K/ }));
+    expect(within(panel).getByText(/YouTube le da más bitrate/)).toBeTruthy();
+    expect(useUiStore.getState().renderQuality).toBe("max"); // se recuerda
+    fireEvent.click(within(panel).getByText("Renderizar"));
     await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
-    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ draft: true, burn_subtitles: false });
-    expect(await within(panel).findByText("Escena 2 de 3…")).toBeTruthy();
+    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ quality: "max", burn_subtitles: false });
+    expect(await within(panel).findByText("4K · Escena 2 de 3…")).toBeTruthy();
+    // Mientras renderiza no se cambia la calidad.
+    expect((within(panel).getByRole("radio", { name: /Alta/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("cancelar un render en curso", async () => {
+    server = timeline();
+    renderStage();
+    const panel = await screen.findByLabelText("Render");
+    fireEvent.click(within(panel).getByText("Renderizar"));
+    fireEvent.click(await within(panel).findByText("Cancelar render"));
+    await waitFor(() => expect(posts.some((p) => p.path === "/api/jobs/9:cancel")).toBe(true));
   });
 
   it("render bloqueado hasta aprobar los medios", async () => {
@@ -202,6 +219,6 @@ describe("etapa de timeline", () => {
     renderStage();
     const panel = await screen.findByLabelText("Render");
     expect(within(panel).getByText("Aprueba los medios antes de renderizar")).toBeTruthy();
-    expect((within(panel).getByText("Render final").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((within(panel).getByText("Renderizar").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 });

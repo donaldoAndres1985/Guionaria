@@ -21,6 +21,12 @@ def get_job(job_id: int) -> svc.JobRead:
     return svc.get_job(job_id)
 
 
+@router.post("/api/jobs/{job_id}:cancel", response_model=svc.JobRead)
+def cancel_job(job_id: int) -> svc.JobRead:
+    """Detiene un trabajo en curso (por ahora, el render)."""
+    return svc.jobs.cancel(job_id)
+
+
 @router.websocket("/ws/jobs")
 async def jobs_socket(ws: WebSocket) -> None:
     """Envía cada cambio de un trabajo como JSON (JobRead)."""

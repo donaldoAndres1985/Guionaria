@@ -7,6 +7,7 @@ muestre el progreso en vivo.
 import asyncio
 import json
 import logging
+import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -21,6 +22,12 @@ from .errors import Conflict, DomainError, NotFound
 log = logging.getLogger(__name__)
 
 ACTIVE = ("queued", "running")
+# Tipos que saben detenerse a mitad (matan su proceso y limpian lo temporal).
+CANCELLABLE = frozenset({"render"})
+
+
+class JobCancelled(Exception):
+    """El usuario canceló el trabajo."""
 
 
 class JobRead(BaseModel):
@@ -34,6 +41,7 @@ class JobRead(BaseModel):
     error: str | None
     created_at: str
     finished_at: str | None
+    cancellable: bool = False  # se puede detener ahora mismo
 
 
 def to_read(job: Job) -> JobRead:
@@ -48,6 +56,7 @@ def to_read(job: Job) -> JobRead:
         error=job.error,
         created_at=job.created_at,
         finished_at=job.finished_at,
+        cancellable=job.type in CANCELLABLE and (job.status or "queued") in ACTIVE,
     )
 
 
@@ -57,6 +66,12 @@ class JobContext:
     def __init__(self, manager: "JobManager", job_id: int):
         self._manager = manager
         self.job_id = job_id
+        # Se marca al cancelar; el trabajo lo consulta (también desde hilos).
+        self.cancel_event = threading.Event()
+
+    def check_cancelled(self) -> None:
+        if self.cancel_event.is_set():
+            raise JobCancelled()
 
     def progress(self, progress: float, message: str | None = None) -> None:
         self._manager.update(self.job_id, progress=progress, message=message)
@@ -69,6 +84,7 @@ class JobManager:
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[JobRead]] = set()
         self._tasks: set[asyncio.Task[None]] = set()
+        self._contexts: dict[int, JobContext] = {}
 
     # --- suscripción (WebSocket) ---
 
@@ -143,10 +159,28 @@ class JobManager:
         self._publish(read)
         return read
 
+    def cancel(self, job_id: int) -> JobRead:
+        job = get_job(job_id)
+        if job.status not in ACTIVE:
+            raise Conflict("El trabajo ya terminó")
+        if job.type not in CANCELLABLE:
+            raise Conflict("Este trabajo no se puede cancelar")
+        ctx = self._contexts.get(job_id)
+        if ctx is None:  # quedó huérfano (p. ej. tras reiniciar): se da por cancelado
+            return self.update(
+                job_id, status="cancelled", message="Cancelado", finished_at=now_iso()
+            )
+        ctx.cancel_event.set()
+        return self.update(job_id, message="Cancelando…")
+
     async def _run(self, job_id: int, fn: JobFn) -> None:
         self.update(job_id, status="running", progress=0.02)
+        ctx = JobContext(self, job_id)
+        self._contexts[job_id] = ctx
         try:
-            result = await fn(JobContext(self, job_id))
+            result = await fn(ctx)
+        except JobCancelled:
+            self.update(job_id, status="cancelled", message="Cancelado", finished_at=now_iso())
         except DomainError as exc:
             self.update(job_id, status="failed", error=exc.message, finished_at=now_iso())
         except Exception as exc:  # error inesperado: se registra y se informa
@@ -156,6 +190,8 @@ class JobManager:
             )
         else:
             self.update(job_id, status="done", progress=1.0, result=result, finished_at=now_iso())
+        finally:
+            self._contexts.pop(job_id, None)
 
     async def wait_all(self) -> None:
         """Espera a que terminen los trabajos en curso (útil en tests)."""
