@@ -61,7 +61,7 @@ def group_words(words: list[Word], per_line: int, max_chars: int) -> list[list[W
 def build_ass(words: list[Word], style: SubtitleStyle, width: int, height: int) -> str:
     portrait = height > width
     per_line = style.words_per_line or (3 if portrait else 6)
-    max_chars = 22 if portrait else 42
+    max_chars = 18 if portrait else 42  # una sola línea legible en vertical
     base = (width * 0.078) if portrait else (height * 0.062)
     size = round(base * SIZE_FACTOR[style.size])
     outline = max(round(size * 0.09), 2)

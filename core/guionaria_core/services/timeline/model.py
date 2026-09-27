@@ -32,6 +32,7 @@ class Clip:
     source_in: int = 0  # cuadro de inicio dentro del archivo
     media_duration: int | None = None  # None: imagen fija (sin límite)
     scene_position: int | None = None
+    sound_id: int | None = None  # pistas de SFX y música
 
 
 @dataclass
@@ -235,7 +236,9 @@ def _sound_tracks(
             return None
         media_len = frames(sound.duration_s) if sound.duration_s else None
         duration = min(limit, media_len) if media_len else limit
-        return Clip(path.name, path, "audio", start, max(duration, 1), 0, media_len, position)
+        return Clip(
+            path.name, path, "audio", start, max(duration, 1), 0, media_len, position, sound.id
+        )
 
     sfx: list[Clip] = []
     sfx_starts = [(spans[i].start, s) for i, s in enumerate(scenes) if s.sfx_sound_id in sounds]

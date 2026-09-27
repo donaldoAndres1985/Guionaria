@@ -22,11 +22,14 @@ export function SubtitleStylePanel({
   onChange,
   portrait,
   disabled,
+  compact,
 }: {
   style: SubtitleStyle;
   onChange: (patch: Partial<SubtitleStyle>) => void;
   portrait: boolean;
   disabled?: boolean;
+  /** En la columna lateral: sin miniatura (la vista previa grande ya lo muestra) y en una columna. */
+  compact?: boolean;
 }) {
   const [active, setActive] = useState(0);
   useEffect(() => {
@@ -40,8 +43,12 @@ export function SubtitleStylePanel({
   const size = { small: 15, medium: 19, large: 24 }[style.size];
 
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 rounded-md border p-3" aria-label="Estilo de subtítulos">
+    <div
+      className={cn("grid gap-4", compact ? "grid-cols-1" : "grid-cols-[auto_minmax(0,1fr)] rounded-md border p-3")}
+      aria-label="Estilo de subtítulos"
+    >
       {/* Vista previa */}
+      {!compact && (
       <div
         data-testid="subtitle-preview"
         className={cn(
@@ -67,12 +74,15 @@ export function SubtitleStylePanel({
           ))}
         </span>
       </div>
+      )}
 
       <div className="grid content-start gap-3 text-[12px]">
-        <div className="flex items-center gap-2 font-medium">
-          <Captions className="size-4 text-brand" /> Estilo de los subtítulos
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+        {!compact && (
+          <div className="flex items-center gap-2 font-medium">
+            <Captions className="size-4 text-brand" /> Estilo de los subtítulos
+          </div>
+        )}
+        <div className={cn("grid gap-x-4 gap-y-2.5", compact ? "grid-cols-1" : "grid-cols-2")}>
           <Toggle label="Mayúsculas" checked={style.uppercase} disabled={disabled} onChange={(v) => onChange({ uppercase: v })} />
           <Toggle
             label="Resaltar la palabra que se dice"
@@ -103,8 +113,8 @@ export function SubtitleStylePanel({
           </label>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <label className="grid gap-1 text-muted-foreground">
+        <div className={cn("grid gap-3", compact ? "grid-cols-2" : "grid-cols-3")}>
+          <label className={cn("grid gap-1 text-muted-foreground", compact && "col-span-2")}>
             Fuente
             <Select value={style.font} onValueChange={(v) => onChange({ font: v as SubtitleStyle["font"] })} disabled={disabled}>
               <SelectTrigger size="sm" className="w-full" aria-label="Fuente">
@@ -142,7 +152,7 @@ export function SubtitleStylePanel({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className={cn("grid gap-3", compact ? "grid-cols-1" : "grid-cols-2")}>
           <Swatches
             label="Color del texto"
             colors={TEXT_COLORS}

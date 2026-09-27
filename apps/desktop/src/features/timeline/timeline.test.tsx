@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Project, RenderState, TimelineState } from "@/lib/api";
+import type { PreviewState, Project, RenderState, TimelineState } from "@/lib/api";
 import { useUiStore } from "@/stores/ui";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
@@ -34,6 +34,40 @@ const timeline = (over: Partial<TimelineState> = {}): TimelineState => ({
   ...over,
 });
 
+const previewState = (t: TimelineState): PreviewState => ({
+  project_id: 7,
+  width: t.width,
+  height: t.height,
+  fps: 30,
+  duration_s: t.duration_s,
+  scenes: [
+    { position: 1, scene_id: 11, kind: "video", start_s: 0, duration_s: 1.3, effect: "zoom_lento_in", text: null,
+      media: { kind: "video", url: "/api/scenes/11/assets/1/approved-file", source_in_s: 2, duration_s: 1.3 } },
+    { position: 2, scene_id: 12, kind: "image", start_s: 1.3, duration_s: 1.3, effect: null, text: null,
+      media: { kind: "image", url: "/api/scenes/12/assets/2/approved-file", source_in_s: 0, duration_s: 1.3 } },
+    { position: 3, scene_id: 13, kind: "text", start_s: 2.6, duration_s: 2.3, effect: null, text: "SIN RESPUESTA", media: null },
+  ],
+  voice_url: t.has_voice ? "/api/projects/7/voice/audio" : null,
+  sfx: [],
+  music: [],
+  words: t.has_voice
+    ? [
+        { text: "Esto", start: 0, end: 0.3 },
+        { text: "no", start: 0.3, end: 0.5 },
+        { text: "es", start: 0.5, end: 0.7 },
+        { text: "real.", start: 0.7, end: 1.2 },
+      ]
+    : [],
+  subtitle_style: {
+    uppercase: true, words_per_line: 0, font: "Arial", size: "medium", position: "bottom",
+    text_color: "#FFFFFF", outline_color: "#000000", highlight: true, highlight_color: "#FFD400", background: false,
+  },
+  default_burn_subtitles: true,
+  zoom: 0.15,
+  music_volume: 0.35,
+  sfx_volume: 0.9,
+});
+
 describe("utilidades del timeline", () => {
   it("regla con pasos legibles", () => {
     expect(rulerStep(4.9)).toBe(1);
@@ -60,6 +94,8 @@ describe("etapa de timeline", () => {
   beforeEach(() => {
     posts = [];
     useUiStore.setState({ renderQuality: "standard" });
+    HTMLMediaElement.prototype.play = vi.fn(async () => {});
+    HTMLMediaElement.prototype.pause = vi.fn();
     renderState = {
       project_id: 7,
       can_render: true,
@@ -67,11 +103,7 @@ describe("etapa de timeline", () => {
       has_voice: true,
       has_subtitles: true,
       default_burn_subtitles: true,
-      subtitle_style: {
-        uppercase: true, words_per_line: 0, font: "Arial", size: "medium", position: "bottom",
-        text_color: "#FFFFFF", outline_color: "#000000", highlight: true, highlight_color: "#FFD400",
-        background: false,
-      },
+      subtitle_style: previewState(timeline()).subtitle_style,
       duration_s: 4.9,
       scenes: 3,
       files: [
@@ -108,6 +140,7 @@ describe("etapa de timeline", () => {
             rendered: false, approved_url: "/x",
           }));
         }
+        if (path.endsWith("/timeline/preview")) return new Response(JSON.stringify(previewState(server)));
         if (path === "/api/jobs") return new Response(JSON.stringify([]));
         if (path.startsWith("/api/jobs/")) return new Response(JSON.stringify(renderJob));
         if (path.endsWith("/render")) return new Response(JSON.stringify(renderState));
@@ -132,27 +165,61 @@ describe("etapa de timeline", () => {
     return onGoToMedia;
   }
 
-  it("clic en un clip de video abre «Ajustar tramo»; las fotos no", async () => {
+  const panel = async () => screen.findByRole("region", { name: "Render" });
+  const openSection = (name: string) => fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${name}`) }));
+  const clock = () => screen.getByTestId("preview-clock").textContent;
+
+  it("reproductor: vista previa, pestaña Render y controles", async () => {
     server = timeline();
     renderStage();
-    expect(await screen.findByText(/Haz clic en un clip de video/)).toBeTruthy();
-    expect(screen.queryByLabelText("Ajustar tramo de la escena 2")).toBeNull();
+    expect(await screen.findByText("9:16 · 1080×1920 · 30 fps")).toBeTruthy();
+    expect(await screen.findByTestId("preview-canvas")).toBeTruthy();
+    expect(clock()).toBe("0:00.0 / 0:04.9");
+    expect(screen.getByText(/Escena 1 de 3/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Render" }));
+    expect(await screen.findByTestId("rendered-video")).toBeTruthy();
+  });
+
+  it("Espacio reproduce y pausa; ← → cambian de escena", async () => {
+    server = timeline();
+    renderStage();
+    await screen.findByTestId("preview-canvas");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(clock()).toBe("0:01.3 / 0:04.9");
+    expect(screen.getByText(/Escena 2 de 3/)).toBeTruthy();
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByLabelText("Pausar")).toBeTruthy();
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByLabelText("Reproducir")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(clock()).toBe("0:00.0 / 0:04.9");
+  });
+
+  it("pistas: clic en una escena mueve el cabezal; las tijeras abren «Ajustar tramo»", async () => {
+    server = timeline();
+    renderStage();
+    await screen.findByTestId("preview-canvas");
+    fireEvent.click(screen.getByLabelText("Ir a la escena 3"));
+    expect(clock()).toBe("0:02.6 / 0:04.9");
+    expect(screen.getByTestId("playhead").style.left).toMatch(/^53\.06/);
+    expect(screen.queryByLabelText("Ajustar tramo de la escena 2")).toBeNull(); // foto
     fireEvent.click(screen.getByLabelText("Ajustar tramo de la escena 1"));
     expect(await screen.findByText(/Ajustar tramo · Escena 1/)).toBeTruthy();
-    expect(await screen.findByTestId("trim-window")).toBeTruthy();
   });
 
   it("muestra pistas, marcadores y estadísticas", async () => {
     server = timeline();
     renderStage();
-    expect(await screen.findByText("9:16 · 1080×1920 · 30 fps")).toBeTruthy();
+    await screen.findByTestId("preview-canvas");
     const blocks = screen.getByTestId("track-video").children;
     expect(blocks).toHaveLength(3);
     expect((blocks[2] as HTMLElement).style.left).toMatch(/^53\.06/);
     expect(screen.getByText("«SIN RESPUESTA»")).toBeTruthy();
-    expect(screen.getByText("Texto: «SIN RESPUESTA»")).toBeTruthy();
     expect(screen.getByText("voz · 0:05")).toBeTruthy();
     expect(screen.getByText("2/3")).toBeTruthy();
+    openSection("Marcadores");
+    expect(screen.getByText(/Texto: «SIN RESPUESTA»/)).toBeTruthy();
+    openSection("Exportar a editor");
     expect(screen.getAllByText("Sin exportar")).toHaveLength(3);
   });
 
@@ -164,6 +231,7 @@ describe("etapa de timeline", () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({ path: "/api/projects/7/timeline:export", body: { formats: null } });
     expect(await screen.findByText("Exportar otra vez")).toBeTruthy();
+    openSection("Exportar a editor");
     expect(screen.getByText(/timeline\/proyecto\.fcpxml · 25\/9 15:40/)).toBeTruthy();
   });
 
@@ -188,58 +256,61 @@ describe("etapa de timeline", () => {
     expect(screen.getByText("Sin voz")).toBeTruthy();
   });
 
-  it("render: calidad elegida, subtítulos, progreso y resultado", async () => {
+  it("render: calidad elegida, progreso y archivos", async () => {
     server = timeline();
     renderStage();
-    const panel = await screen.findByLabelText("Render");
-    expect(within(panel).getByText(/render\/proyecto\.mp4 · 8.00 MB/)).toBeTruthy();
-    expect(within(panel).getByText(/Final · Alta · 1080×1920/)).toBeTruthy();
-    expect(within(panel).getByAltText("Miniatura sugerida")).toBeTruthy();
-    const burn = within(panel).getByLabelText("Quemar subtítulos") as HTMLInputElement;
-    expect(burn.checked).toBe(true); // reel: por defecto sí
-    fireEvent.click(burn);
-    fireEvent.click(within(panel).getByRole("radio", { name: /4K/ }));
-    expect(within(panel).getByText(/YouTube le da más bitrate/)).toBeTruthy();
+    const render = await panel();
+    fireEvent.click(within(render).getByRole("radio", { name: /4K/ }));
+    expect(within(render).getByText(/YouTube le da más bitrate/)).toBeTruthy();
     expect(useUiStore.getState().renderQuality).toBe("max"); // se recuerda
-    fireEvent.click(within(panel).getByText("Renderizar"));
+    fireEvent.click(within(render).getByText("Renderizar"));
     await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
-    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ quality: "max", burn_subtitles: false, subtitle_style: null });
-    expect(await within(panel).findByText("4K · Escena 2 de 3…")).toBeTruthy();
-    // Mientras renderiza no se cambia la calidad.
-    expect((within(panel).getByRole("radio", { name: /Alta/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toMatchObject({ quality: "max", burn_subtitles: true });
+    expect(await within(render).findByText("4K · Escena 2 de 3…")).toBeTruthy();
+    expect((within(render).getByRole("radio", { name: /Alta/ }) as HTMLButtonElement).disabled).toBe(true);
+    openSection("Archivos del render");
+    expect(screen.getByText(/render\/proyecto\.mp4 · 8.00 MB/)).toBeTruthy();
+    expect(screen.getByText(/Final · Alta · 1080×1920/)).toBeTruthy();
+    expect(screen.getByAltText("Miniatura sugerida")).toBeTruthy();
   });
 
-  it("estilo de subtítulos: vista previa y se envía con el render", async () => {
+  it("subtítulos: plegados por defecto; el estilo se ve en la vista previa y va con el render", async () => {
     server = timeline();
     renderStage();
-    const panel = await screen.findByLabelText("Render");
-    const styleBox = within(panel).getByLabelText("Estilo de subtítulos");
-    const preview = within(styleBox).getByTestId("subtitle-preview");
-    expect(preview.textContent).toBe("SE LANZÓ DEL"); // reel: 3 palabras, mayúsculas
+    await screen.findByTestId("preview-canvas");
+    expect(screen.queryByLabelText("Estilo de subtítulos")).toBeNull(); // plegado
+    // La vista previa ya muestra la primera frase (3 palabras, mayúsculas).
+    const subtitle = await screen.findByTestId("preview-subtitle");
+    expect(subtitle.textContent).toBe("ESTO NO ES");
+    fireEvent.click(subtitle); // clic en el subtítulo abre su estilo
+    const styleBox = screen.getByLabelText("Estilo de subtítulos");
     fireEvent.click(within(styleBox).getByLabelText("Mayúsculas"));
-    expect(preview.textContent).toBe("Se lanzó del");
+    expect(screen.getByTestId("preview-subtitle").textContent).toBe("Esto no es");
     fireEvent.click(within(styleBox).getByLabelText("Color del resaltado #22E36B"));
     fireEvent.click(within(styleBox).getByRole("radio", { name: "Centro" }));
-    fireEvent.click(within(panel).getByText("Renderizar"));
+    fireEvent.click(within(await panel()).getByText("Renderizar"));
     await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
     const body = posts.find((p) => p.path.endsWith("/render"))!.body as { subtitle_style: Record<string, unknown> };
-    expect(body.subtitle_style).toMatchObject({ uppercase: false, highlight_color: "#22E36B", position: "middle", highlight: true });
+    expect(body.subtitle_style).toMatchObject({ uppercase: false, highlight_color: "#22E36B", position: "middle" });
   });
 
-  it("sin quemar subtítulos no se muestra el estilo", async () => {
+  it("la pista de subtítulos abre su configuración; sin quemarlos no hay estilo ni subtítulo", async () => {
     server = timeline();
     renderStage();
-    const panel = await screen.findByLabelText("Render");
-    fireEvent.click(within(panel).getByLabelText("Quemar subtítulos"));
-    expect(within(panel).queryByLabelText("Estilo de subtítulos")).toBeNull();
+    await screen.findByTestId("preview-canvas");
+    fireEvent.click(within(screen.getByTestId("track-subtitles")).getAllByRole("button")[0]);
+    expect(screen.getByLabelText("Estilo de subtítulos")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Quemar subtítulos"));
+    expect(screen.queryByLabelText("Estilo de subtítulos")).toBeNull();
+    expect(screen.queryByTestId("preview-subtitle")).toBeNull();
   });
 
   it("cancelar un render en curso", async () => {
     server = timeline();
     renderStage();
-    const panel = await screen.findByLabelText("Render");
-    fireEvent.click(within(panel).getByText("Renderizar"));
-    fireEvent.click(await within(panel).findByText("Cancelar render"));
+    const render = await panel();
+    fireEvent.click(within(render).getByText("Renderizar"));
+    fireEvent.click(await within(render).findByText("Cancelar render"));
     await waitFor(() => expect(posts.some((p) => p.path === "/api/jobs/9:cancel")).toBe(true));
   });
 
@@ -247,8 +318,8 @@ describe("etapa de timeline", () => {
     server = timeline();
     renderState = { ...renderState, can_render: false, reason: "Aprueba los medios antes de renderizar", files: [] };
     renderStage();
-    const panel = await screen.findByLabelText("Render");
-    expect(within(panel).getByText("Aprueba los medios antes de renderizar")).toBeTruthy();
-    expect((within(panel).getByText("Renderizar").closest("button") as HTMLButtonElement).disabled).toBe(true);
+    const render = await panel();
+    expect(within(render).getByText("Aprueba los medios antes de renderizar")).toBeTruthy();
+    expect((within(render).getByText("Renderizar").closest("button") as HTMLButtonElement).disabled).toBe(true);
   });
 });

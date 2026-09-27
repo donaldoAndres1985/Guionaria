@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type TimelineExport, type TimelineFormat, type TimelineState } from "@/lib/api";
+import { api, type PreviewState, type TimelineExport, type TimelineFormat, type TimelineState } from "@/lib/api";
 
 export const timelineKey = (projectId: number) => ["timeline", projectId] as const;
 
@@ -21,5 +21,13 @@ export function useExportTimeline(projectId: number) {
       void client.invalidateQueries({ queryKey: ["project", projectId] });
       void client.invalidateQueries({ queryKey: ["projects"] });
     },
+  });
+}
+
+/** Vista previa en vivo: comparte la clave del timeline para refrescarse con él. */
+export function usePreview(projectId: number) {
+  return useQuery({
+    queryKey: [...timelineKey(projectId), "preview"],
+    queryFn: () => api.get<PreviewState>(`/api/projects/${projectId}/timeline/preview`),
   });
 }
