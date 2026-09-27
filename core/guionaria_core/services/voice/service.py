@@ -31,6 +31,7 @@ from ..script import current_version, read_script, text_hash
 from . import elevenlabs, engines, models
 from .align import SegmentTiming, Word, align_segments
 from .subtitles import cues_from_segments, cues_from_words, estimate_words, to_srt, to_vtt
+from .wordtiming import piper_words
 
 AUDIO_EXT = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}
 DEFAULT_PAUSE_S = 0.3
@@ -182,8 +183,18 @@ def timed_words(session: Session, project_id: int) -> list[Word]:
         return []
     if data.get("words"):
         return [Word(**w) for w in data["words"]]
-    texts = {s.seg_key: s.text for s in read_script(session, project_id).segments}
+    segments = [(s.seg_key, s.text) for s in read_script(session, project_id).segments]
+    if data.get("segment_files"):
+        # Voz de Piper anterior a guardar las palabras: se calculan desde sus WAV.
+        return _piper_words(segments, data)
+    texts = dict(segments)
     return estimate_words([SegmentTiming(**t) for t in data.get("timings", [])], texts)
+
+
+def _piper_words(segments: list[tuple[str, str]], data: dict) -> list[Word]:
+    timings = {t["seg_key"]: (t["start_s"], t["end_s"]) for t in data.get("timings", [])}
+    files = {k: _abs(v) for k, v in data.get("segment_files", {}).items()}
+    return piper_words(segments, timings, files)
 
 
 # --- escritura común ---
@@ -370,6 +381,13 @@ async def generate_voice(
         "segment_files": {k: _rel(seg_dir / f"{k}.wav") for k, _ in segments},
         "hashes": {k: text_hash(t) for k, t in segments},
     }
+    if engine != "elevenlabs":
+        # Piper no da tiempos por palabra: se sacan del propio audio (silencios y puntuación).
+        data["words"] = [
+            {"text": w.text, "start": w.start, "end": w.end}
+            for w in await asyncio.to_thread(_piper_words, segments, data)
+        ]
+        data["word_timing"] = "audio"
     if engine == "elevenlabs":
         # Tiempos por palabra de ElevenLabs, desplazados a su lugar en la voz completa: los
         # subtítulos salen exactos sin Whisper.
