@@ -51,7 +51,7 @@ def wait_job(client, job_id, timeout=10):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         job = client.get(f"/api/jobs/{job_id}").json()
-        if job["status"] in ("done", "failed"):
+        if job["status"] in ("done", "failed", "cancelled"):
             return job
         time.sleep(0.05)
     raise AssertionError(f"El trabajo {job_id} no terminó en {timeout}s")

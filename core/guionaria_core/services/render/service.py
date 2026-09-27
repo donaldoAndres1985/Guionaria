@@ -7,9 +7,12 @@
 
 import asyncio
 import contextlib
+import json
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -20,7 +23,7 @@ from sqlmodel import Session
 from ...domain.states import ORDER, ProjectStatus
 from ...models._base import now_iso
 from ..errors import Conflict, DomainError, NotFound
-from ..jobs import JobContext
+from ..jobs import JobCancelled, JobContext
 from ..media import process
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
@@ -31,6 +34,7 @@ from .thumbnail import make_thumbnail
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 OUTPUTS = {"final": "proyecto.mp4", "draft": "proyecto_borrador.mp4"}
 THUMBNAIL = "miniatura.jpg"
+QUALITY_FILE = ".calidad.json"  # qué nivel de calidad tiene cada archivo del render
 
 
 class RenderFile(BaseModel):
@@ -42,6 +46,7 @@ class RenderFile(BaseModel):
     width: int | None
     height: int | None
     updated_at: str
+    quality: str | None = None  # draft | standard | high | max
 
 
 class RenderState(BaseModel):
@@ -66,10 +71,23 @@ def _srt(project) -> Path:
     return project_dir(project) / "subs" / "voz.srt"
 
 
+def _load_quality(folder: Path) -> dict[str, str]:
+    try:
+        return json.loads((folder / QUALITY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_quality(folder: Path, name: str, level: str) -> None:
+    data = {**_load_quality(folder), name: level}
+    (folder / QUALITY_FILE).write_text(json.dumps(data), encoding="utf-8")
+
+
 def render_state(session: Session, project_id: int) -> RenderState:
     project = get_project(session, project_id)
     m = build_timeline(session, project)
     folder = project_dir(project) / "render"
+    levels = _load_quality(folder)
     files = []
     for kind, name in (
         ("final", OUTPUTS["final"]),
@@ -92,6 +110,7 @@ def render_state(session: Session, project_id: int) -> RenderState:
                 updated_at=datetime.fromtimestamp(path.stat().st_mtime).isoformat(
                     timespec="seconds"
                 ),
+                quality=levels.get(name) if kind != "thumbnail" else None,
             )
         )
     reason = _reason(project) or (None if m.scenes else "El proyecto no tiene escenas")
@@ -139,46 +158,78 @@ def _segments(m: TimelineModel) -> list[plan.Segment]:
     return out
 
 
-def _run(args: list[str], cwd: Path | None = None) -> None:
+def _popen(args: list[str], cwd: Path | None, stdout=subprocess.DEVNULL) -> subprocess.Popen:
     try:
-        proc = subprocess.run(
-            args, capture_output=True, cwd=cwd, timeout=3600, creationflags=_NO_WINDOW
+        return subprocess.Popen(
+            args, stdout=stdout, stderr=subprocess.PIPE, cwd=cwd, creationflags=_NO_WINDOW
         )
     except FileNotFoundError as exc:
         raise DomainError("No se encontró FFmpeg. Revisa Ajustes → Dependencias.") from exc
+
+
+def _stop(proc: subprocess.Popen) -> None:
+    proc.kill()
+    with contextlib.suppress(Exception):
+        proc.communicate(timeout=10)
+
+
+def _failed(stderr: bytes | str) -> DomainError:
+    text = stderr.decode("utf-8", errors="replace") if isinstance(stderr, bytes) else stderr
+    lines = text.strip().splitlines()
+    return DomainError("FFmpeg falló" + (f": {lines[-1]}" if lines else ""))
+
+
+def _run(args: list[str], cwd: Path | None = None, cancel: threading.Event | None = None) -> None:
+    """Ejecuta FFmpeg; si se cancela el trabajo, lo mata al momento."""
+    proc = _popen(args, cwd)
+    deadline = time.monotonic() + 3600
+    while True:
+        try:
+            _out, err = proc.communicate(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel is not None and cancel.is_set():
+                _stop(proc)
+                raise JobCancelled() from None
+            if time.monotonic() > deadline:
+                _stop(proc)
+                raise DomainError("FFmpeg tardó más de una hora en una escena") from None
     if proc.returncode != 0:
-        lines = proc.stderr.decode("utf-8", errors="replace").strip().splitlines()
-        raise DomainError("FFmpeg falló" + (f": {lines[-1]}" if lines else ""))
+        raise _failed(err)
 
 
-def _run_with_progress(args: list[str], total_s: float, cwd: Path, on_progress) -> None:
+def _run_with_progress(
+    args: list[str], total_s: float, cwd: Path, on_progress, cancel: threading.Event | None = None
+) -> None:
     """Como _run, pero leyendo `-progress pipe:1` para informar el avance del paso final."""
-    try:
-        proc = subprocess.Popen(
-            [*args[:1], "-progress", "pipe:1", "-nostats", *args[1:]],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-            creationflags=_NO_WINDOW,
-        )
-    except FileNotFoundError as exc:
-        raise DomainError("No se encontró FFmpeg. Revisa Ajustes → Dependencias.") from exc
+    proc = _popen([*args[:1], "-progress", "pipe:1", "-nostats", *args[1:]], cwd, subprocess.PIPE)
     assert proc.stdout is not None
     for raw in proc.stdout:
+        if cancel is not None and cancel.is_set():
+            _stop(proc)
+            raise JobCancelled()
         line = raw.decode("utf-8", errors="replace").strip()
         if line.startswith("out_time_us=") and total_s > 0:
             with contextlib.suppress(ValueError):
                 on_progress(min(int(line.split("=", 1)[1]) / 1e6 / total_s, 1.0))
-    stderr = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+    stderr = proc.stderr.read() if proc.stderr else b""
+    if cancel is not None and cancel.is_set():
+        _stop(proc)
+        raise JobCancelled()
     if proc.wait() != 0:
-        lines = stderr.strip().splitlines()
-        raise DomainError("FFmpeg falló" + (f": {lines[-1]}" if lines else ""))
+        raise _failed(stderr)
 
 
 def _render_sync(
-    m: TimelineModel, folder: Path, srt: Path | None, draft: bool, report
+    m: TimelineModel,
+    folder: Path,
+    srt: Path | None,
+    level: plan.Level,
+    report,
+    cancel: threading.Event | None = None,
 ) -> tuple[Path, Path | None]:
-    q = plan.quality(m.width, m.height, draft)
+    draft = level == "draft"
+    q = plan.quality(m.width, m.height, level)
     font = plan.find_font()
     tmp = folder / (".tmp-borrador" if draft else ".tmp-final")
     shutil.rmtree(tmp, ignore_errors=True)
@@ -193,7 +244,10 @@ def _render_sync(
                 textfile = tmp / f"texto_{i:03d}.txt"
                 textfile.write_text(seg.text, encoding="utf-8")
             out = tmp / f"seg_{i:03d}.mp4"
-            _run(plan.segment_command(seg, q, out, textfile, font if textfile else None))
+            _run(
+                plan.segment_command(seg, q, out, textfile, font if textfile else None),
+                cancel=cancel,
+            )
             files.append(out)
 
         report(0.82, "Uniendo las escenas…")
@@ -217,6 +271,7 @@ def _render_sync(
                 video.name,
             ],
             cwd=tmp,
+            cancel=cancel,
         )
 
         total = m.duration / m.fps
@@ -240,7 +295,7 @@ def _render_sync(
             args += ["-filter_complex", ";".join(filters)]
         args += ["-map", "[vout]" if srt else "0:v"]
         if afilter:
-            args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
+            args += ["-map", "[aout]", "-c:a", "aac", "-b:a", q.audio_bitrate]
         if srt:
             args += [
                 "-c:v",
@@ -258,7 +313,7 @@ def _render_sync(
         partial = tmp / "salida.mp4"
         args += ["-t", f"{total:.3f}", "-movflags", "+faststart", partial.name]
         report(0.85, "Mezclando el audio" + (" y quemando los subtítulos…" if srt else "…"))
-        _run_with_progress(args, total, tmp, lambda f: report(0.85 + 0.12 * f, None))
+        _run_with_progress(args, total, tmp, lambda f: report(0.85 + 0.12 * f, None), cancel)
         output.unlink(missing_ok=True)
         partial.replace(output)
 
@@ -270,8 +325,15 @@ def _render_sync(
 
 
 async def render_project(
-    session_factory, project_id: int, draft: bool, burn_subtitles: bool | None, ctx: JobContext
+    session_factory,
+    project_id: int,
+    level: plan.Level | bool,
+    burn_subtitles: bool | None,
+    ctx: JobContext,
 ) -> dict:
+    if isinstance(level, bool):
+        level = "draft" if level else "standard"
+    draft = level == "draft"
     with session_factory() as session:
         project = get_project(session, project_id)
         reason = _reason(project)
@@ -290,7 +352,10 @@ async def render_project(
     def report(fraction: float, message: str | None) -> None:
         loop.call_soon_threadsafe(ctx.progress, fraction, message)
 
-    output, thumb = await asyncio.to_thread(_render_sync, m, folder, srt, draft, report)
+    output, thumb = await asyncio.to_thread(
+        _render_sync, m, folder, srt, level, report, ctx.cancel_event
+    )
+    _save_quality(folder, output.name, level)
 
     with session_factory() as session:
         project = get_project(session, project_id)
@@ -304,7 +369,7 @@ async def render_project(
             "render",
             "project",
             project_id,
-            {"draft": draft, "subtitles": bool(srt), "file": output.name},
+            {"quality": level, "subtitles": bool(srt), "file": output.name},
             actor="system",
         )
         session.commit()
@@ -316,4 +381,5 @@ async def render_project(
         "height": info.height,
         "thumbnail": thumb.name if thumb else None,
         "subtitles": bool(srt),
+        "quality": level,
     }
