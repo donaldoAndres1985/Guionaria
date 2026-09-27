@@ -142,6 +142,7 @@ export interface AppSettings {
   elevenlabs: ElevenLabsPrefs;
   /** Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena. */
   trim_after_download: boolean;
+  subtitle_style?: SubtitleStyle;
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -819,6 +820,20 @@ export interface RenderFile {
 
 export type RenderQuality = "draft" | "standard" | "high" | "max";
 
+/** Estilo de los subtítulos quemados en el render. */
+export interface SubtitleStyle {
+  uppercase: boolean;
+  words_per_line: number; // 0 = automático
+  font: "Arial" | "Impact" | "Verdana" | "Segoe UI";
+  size: "small" | "medium" | "large";
+  position: "bottom" | "middle";
+  text_color: string;
+  outline_color: string;
+  highlight: boolean;
+  highlight_color: string;
+  background: boolean;
+}
+
 export interface RenderState {
   project_id: number;
   can_render: boolean;
@@ -826,6 +841,8 @@ export interface RenderState {
   has_voice: boolean;
   has_subtitles: boolean;
   default_burn_subtitles: boolean;
+  /** Último estilo de subtítulos usado. */
+  subtitle_style?: SubtitleStyle;
   duration_s: number;
   scenes: number;
   files: RenderFile[];

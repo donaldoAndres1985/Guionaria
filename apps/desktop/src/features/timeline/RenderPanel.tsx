@@ -7,10 +7,11 @@ import { formatSize } from "@/features/storage/treemap";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { useCancelJob, useRenderState, useStartRender } from "@/hooks/useRender";
-import { coreUrl, type Project, type RenderQuality } from "@/lib/api";
+import { coreUrl, type Project, type RenderQuality, type SubtitleStyle } from "@/lib/api";
 import { formatDuration } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
+import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { exportedAt } from "./timelineMeta";
 
 export const QUALITIES: { id: RenderQuality; label: string; detail: string; hint: string }[] = [
@@ -32,10 +33,16 @@ export function RenderPanel({ project }: { project: Project }) {
   const quality = useUiStore((s) => s.renderQuality);
   const setQuality = useUiStore((s) => s.setRenderQuality);
   const chosen = useRef<RenderQuality>(quality);
+  const [stylePatch, setStylePatch] = useState<Partial<SubtitleStyle>>({});
   const job = useProjectJob(
     project.id,
     "render",
-    () => start.mutateAsync({ quality: chosen.current, burn_subtitles: burnSubtitles }),
+    () =>
+      start.mutateAsync({
+        quality: chosen.current,
+        burn_subtitles: burnSubtitles,
+        subtitle_style: burnSubtitles && subtitleStyle ? subtitleStyle : null,
+      }),
     (done) => toast.success(`Render listo: ${String(done.result?.file ?? "")}`),
   );
 
@@ -51,6 +58,7 @@ export function RenderPanel({ project }: { project: Project }) {
 
   if (!state) return null;
   const burnSubtitles = state.has_subtitles ? (burn ?? state.default_burn_subtitles) : false;
+  const subtitleStyle: SubtitleStyle | null = state.subtitle_style ? { ...state.subtitle_style, ...stylePatch } : null;
   const final = state.files.find((f) => f.kind === "final");
   const preview = final ?? state.files.find((f) => f.kind === "draft");
   const thumb = state.files.find((f) => f.kind === "thumbnail");
@@ -123,6 +131,15 @@ export function RenderPanel({ project }: { project: Project }) {
         )}
       </div>
       <p className="text-[12px] text-muted-foreground">{QUALITIES.find((q) => q.id === quality)?.hint}</p>
+
+      {burnSubtitles && subtitleStyle && (
+        <SubtitleStylePanel
+          style={subtitleStyle}
+          onChange={(patch) => setStylePatch((p) => ({ ...p, ...patch }))}
+          portrait={project.format === "reel"}
+          disabled={job.running}
+        />
+      )}
 
       {state.reason && <p className="text-[12px] text-muted-foreground">{state.reason}</p>}
       {!state.has_voice && state.can_render && (

@@ -7,7 +7,7 @@ import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
 import { clipCount, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
 
-const project = { id: 7, status: "VOZ_LISTA", title: "P" } as Project;
+const project = { id: 7, status: "VOZ_LISTA", title: "P", format: "reel" } as Project;
 
 const timeline = (over: Partial<TimelineState> = {}): TimelineState => ({
   project_id: 7,
@@ -67,6 +67,11 @@ describe("etapa de timeline", () => {
       has_voice: true,
       has_subtitles: true,
       default_burn_subtitles: true,
+      subtitle_style: {
+        uppercase: true, words_per_line: 0, font: "Arial", size: "medium", position: "bottom",
+        text_color: "#FFFFFF", outline_color: "#000000", highlight: true, highlight_color: "#FFD400",
+        background: false,
+      },
       duration_s: 4.9,
       scenes: 3,
       files: [
@@ -198,10 +203,35 @@ describe("etapa de timeline", () => {
     expect(useUiStore.getState().renderQuality).toBe("max"); // se recuerda
     fireEvent.click(within(panel).getByText("Renderizar"));
     await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
-    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ quality: "max", burn_subtitles: false });
+    expect(posts.find((p) => p.path.endsWith("/render"))!.body).toEqual({ quality: "max", burn_subtitles: false, subtitle_style: null });
     expect(await within(panel).findByText("4K · Escena 2 de 3…")).toBeTruthy();
     // Mientras renderiza no se cambia la calidad.
     expect((within(panel).getByRole("radio", { name: /Alta/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("estilo de subtítulos: vista previa y se envía con el render", async () => {
+    server = timeline();
+    renderStage();
+    const panel = await screen.findByLabelText("Render");
+    const styleBox = within(panel).getByLabelText("Estilo de subtítulos");
+    const preview = within(styleBox).getByTestId("subtitle-preview");
+    expect(preview.textContent).toBe("SE LANZÓ DEL"); // reel: 3 palabras, mayúsculas
+    fireEvent.click(within(styleBox).getByLabelText("Mayúsculas"));
+    expect(preview.textContent).toBe("Se lanzó del");
+    fireEvent.click(within(styleBox).getByLabelText("Color del resaltado #22E36B"));
+    fireEvent.click(within(styleBox).getByRole("radio", { name: "Centro" }));
+    fireEvent.click(within(panel).getByText("Renderizar"));
+    await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
+    const body = posts.find((p) => p.path.endsWith("/render"))!.body as { subtitle_style: Record<string, unknown> };
+    expect(body.subtitle_style).toMatchObject({ uppercase: false, highlight_color: "#22E36B", position: "middle", highlight: true });
+  });
+
+  it("sin quemar subtítulos no se muestra el estilo", async () => {
+    server = timeline();
+    renderStage();
+    const panel = await screen.findByLabelText("Render");
+    fireEvent.click(within(panel).getByLabelText("Quemar subtítulos"));
+    expect(within(panel).queryByLabelText("Estilo de subtítulos")).toBeNull();
   });
 
   it("cancelar un render en curso", async () => {

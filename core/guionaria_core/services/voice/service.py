@@ -30,7 +30,7 @@ from ..projects import get_project, project_dir
 from ..script import current_version, read_script, text_hash
 from . import elevenlabs, engines, models
 from .align import SegmentTiming, Word, align_segments
-from .subtitles import cues_from_segments, cues_from_words, to_srt, to_vtt
+from .subtitles import cues_from_segments, cues_from_words, estimate_words, to_srt, to_vtt
 
 AUDIO_EXT = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}
 DEFAULT_PAUSE_S = 0.3
@@ -171,6 +171,19 @@ def voice_state(session: Session, project_id: int) -> VoiceState:
         else load_settings().elevenlabs,
         elevenlabs_configured=bool(load_settings().api_keys.elevenlabs),
     )
+
+
+def timed_words(session: Session, project_id: int) -> list[Word]:
+    """Palabras de la voz vigente con sus tiempos: exactos (ElevenLabs, Whisper) o estimados
+    (Piper). Vacío si no hay voz o quedó desactualizada."""
+    track = latest_track(session, project_id)
+    data = _data(track)
+    if not track or data.get("hashes") != _current_hashes(session, project_id):
+        return []
+    if data.get("words"):
+        return [Word(**w) for w in data["words"]]
+    texts = {s.seg_key: s.text for s in read_script(session, project_id).segments}
+    return estimate_words([SegmentTiming(**t) for t in data.get("timings", [])], texts)
 
 
 # --- escritura común ---

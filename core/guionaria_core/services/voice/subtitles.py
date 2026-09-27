@@ -44,7 +44,28 @@ def cues_from_words(words: list[Word]) -> list[Cue]:
 
 
 def cues_from_segments(timings: list[SegmentTiming], texts: dict[str, str]) -> list[Cue]:
-    return [Cue(t.start_s, t.end_s, texts[t.seg_key]) for t in timings if texts.get(t.seg_key)]
+    """Sin tiempos por palabra (voz de Piper): se estiman y se agrupan en frases cortas, en vez
+    de un subtítulo por segmento (que en un reel ocupaba 4 líneas)."""
+    return cues_from_words(estimate_words(timings, texts))
+
+
+def estimate_words(timings: list[SegmentTiming], texts: dict[str, str]) -> list[Word]:
+    """Reparte el tiempo de cada segmento entre sus palabras según su largo (más una pausa
+    pequeña por palabra). Sirve para la voz de Piper, que solo da el tiempo de cada segmento."""
+    words: list[Word] = []
+    for t in timings:
+        tokens = (texts.get(t.seg_key) or "").split()
+        if not tokens or t.end_s <= t.start_s:
+            continue
+        weights = [len(tok) + 1 for tok in tokens]
+        span = t.end_s - t.start_s
+        total = sum(weights)
+        at = t.start_s
+        for tok, weight in zip(tokens, weights, strict=True):
+            end = at + span * weight / total
+            words.append(Word(tok, round(at, 3), round(end, 3)))
+            at = end
+    return words
 
 
 def _clock(seconds: float, sep: str) -> str:

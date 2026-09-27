@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from ..config import SubtitleStyle
 from ..db import get_engine, get_session
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.projects import get_project
@@ -20,6 +21,7 @@ SessionDep = Annotated[Session, Depends(get_session)]
 class RenderRequest(BaseModel):
     draft: bool = False  # borrador a 720p (compatibilidad: usa `quality`)
     quality: plan.Level | None = None  # draft | standard | high | max
+    subtitle_style: SubtitleStyle | None = None  # por defecto: el último usado
     burn_subtitles: bool | None = None  # por defecto: sí en reels, no en videos
 
 
@@ -39,7 +41,12 @@ async def start_render(project_id: int, data: RenderRequest, session: SessionDep
 
     async def work(ctx: JobContext) -> dict:
         return await render.render_project(
-            lambda: Session(get_engine()), project_id, level, data.burn_subtitles, ctx
+            lambda: Session(get_engine()),
+            project_id,
+            level,
+            data.burn_subtitles,
+            ctx,
+            style=data.subtitle_style,
         )
 
     return jobs.submit(
