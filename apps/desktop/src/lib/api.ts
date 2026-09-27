@@ -554,6 +554,56 @@ export interface TimelineScene {
   is_video?: boolean;
 }
 
+/** Receta de la vista previa en vivo (sin renderizar). */
+export interface PreviewMedia {
+  kind: "image" | "video";
+  url: string;
+  source_in_s: number;
+  duration_s: number;
+}
+
+export interface PreviewScene {
+  position: number;
+  scene_id: number | null;
+  kind: MediaKind;
+  start_s: number;
+  duration_s: number;
+  media: PreviewMedia | null;
+  effect: string | null;
+  text: string | null;
+}
+
+export interface PreviewSound {
+  name: string;
+  url: string;
+  start_s: number;
+  duration_s: number;
+}
+
+export interface PreviewWord {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface PreviewState {
+  project_id: number;
+  width: number;
+  height: number;
+  fps: number;
+  duration_s: number;
+  scenes: PreviewScene[];
+  voice_url: string | null;
+  sfx: PreviewSound[];
+  music: PreviewSound[];
+  words: PreviewWord[];
+  subtitle_style: SubtitleStyle;
+  default_burn_subtitles: boolean;
+  zoom: number;
+  music_volume: number;
+  sfx_volume: number;
+}
+
 export interface TimelineMarker {
   time_s: number;
   name: string;

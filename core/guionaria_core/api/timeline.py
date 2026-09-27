@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..db import get_session
+from ..services.projects import get_project
+from ..services.timeline import preview
 from ..services.timeline import service as timeline
 
 router = APIRouter(tags=["timeline"])
@@ -15,6 +17,12 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 class ExportRequest(BaseModel):
     formats: list[timeline.Format] | None = None  # por defecto, los tres
+
+
+@router.get("/api/projects/{project_id}/timeline/preview", response_model=preview.PreviewState)
+def get_preview(project_id: int, session: SessionDep) -> preview.PreviewState:
+    """Receta de la vista previa en vivo (escenas, audio, subtítulos) sin renderizar."""
+    return preview.preview_state(session, get_project(session, project_id))
 
 
 @router.get("/api/projects/{project_id}/timeline", response_model=timeline.TimelineState)
