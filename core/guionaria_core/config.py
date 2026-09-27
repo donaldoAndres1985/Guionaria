@@ -8,6 +8,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -82,6 +83,24 @@ class ElevenLabsPrefs(BaseModel):
     speed: float = 1.0
 
 
+HEX = r"^#[0-9A-Fa-f]{6}$"
+
+
+class SubtitleStyle(BaseModel):
+    """Estilo de los subtítulos quemados en el render (se recuerda el último usado)."""
+
+    uppercase: bool = True
+    words_per_line: int = Field(0, ge=0, le=12)  # 0 = automático (3 en vertical, 6 en horizontal)
+    font: Literal["Arial", "Impact", "Verdana", "Segoe UI"] = "Arial"
+    size: Literal["small", "medium", "large"] = "medium"
+    position: Literal["bottom", "middle"] = "bottom"
+    text_color: str = Field("#FFFFFF", pattern=HEX)
+    outline_color: str = Field("#000000", pattern=HEX)
+    highlight: bool = True  # resaltar la palabra que se está diciendo
+    highlight_color: str = Field("#FFD400", pattern=HEX)
+    background: bool = False  # caja semitransparente detrás del texto
+
+
 class AppSettings(BaseModel):
     claude_model: str = ""  # vacío = el modelo por defecto de la CLI (alias: sonnet, opus, haiku)
     searxng_url: str = "http://127.0.0.1:8888"
@@ -95,6 +114,7 @@ class AppSettings(BaseModel):
     elevenlabs: ElevenLabsPrefs = Field(default_factory=ElevenLabsPrefs)
     # Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena.
     trim_after_download: bool = False
+    subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

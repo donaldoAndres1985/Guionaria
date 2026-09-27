@@ -20,6 +20,7 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from ...config import SubtitleStyle, load_settings, save_settings
 from ...domain.states import ORDER, ProjectStatus
 from ...models._base import now_iso
 from ..errors import Conflict, DomainError, NotFound
@@ -28,7 +29,9 @@ from ..media import process
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
 from ..timeline.model import TimelineModel, build_timeline
-from . import plan
+from ..voice.align import Word
+from ..voice.service import timed_words
+from . import captions, plan
 from .thumbnail import make_thumbnail
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -56,6 +59,7 @@ class RenderState(BaseModel):
     has_voice: bool
     has_subtitles: bool
     default_burn_subtitles: bool  # reels: sí; videos: no (se suben aparte a YouTube)
+    subtitle_style: SubtitleStyle  # el último estilo usado
     duration_s: float
     scenes: int
     files: list[RenderFile]
@@ -121,6 +125,7 @@ def render_state(session: Session, project_id: int) -> RenderState:
         has_voice=m.voice is not None,
         has_subtitles=_srt(project).exists(),
         default_burn_subtitles=project.format == "reel",
+        subtitle_style=load_settings().subtitle_style,
         duration_s=round(m.duration / m.fps, 2),
         scenes=len(m.scenes),
         files=files,
@@ -227,6 +232,8 @@ def _render_sync(
     level: plan.Level,
     report,
     cancel: threading.Event | None = None,
+    words: list[Word] | None = None,
+    style: SubtitleStyle | None = None,
 ) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
@@ -245,7 +252,9 @@ def _render_sync(
                 textfile.write_text(seg.text, encoding="utf-8")
             out = tmp / f"seg_{i:03d}.mp4"
             _run(
-                plan.segment_command(seg, q, out, textfile, font if textfile else None),
+                plan.segment_command(
+                    seg, q, out, textfile, font if textfile else None, raise_text=bool(srt)
+                ),
                 cancel=cancel,
             )
             files.append(out)
@@ -287,7 +296,12 @@ def _render_sync(
         filters = []
         if afilter:
             filters.append(afilter)
-        if srt:
+        if srt and words:
+            # Subtítulos con estilo: frases cortas y la palabra que se dice resaltada.
+            ass = captions.build_ass(words, style or SubtitleStyle(), q.width, q.height)
+            (tmp / "subs.ass").write_text(ass, encoding="utf-8")
+            filters.append("[0:v]ass=subs.ass[vout]")
+        elif srt:
             shutil.copy2(srt, tmp / "subs.srt")  # nombre simple: evita escapar la ruta en Windows
             portrait = m.height > m.width
             filters.append(f"[0:v]{plan.subtitle_filter('subs.srt', portrait)}[vout]")
@@ -330,6 +344,7 @@ async def render_project(
     level: plan.Level | bool,
     burn_subtitles: bool | None,
     ctx: JobContext,
+    style: SubtitleStyle | None = None,
 ) -> dict:
     if isinstance(level, bool):
         level = "draft" if level else "standard"
@@ -345,6 +360,12 @@ async def render_project(
         folder = project_dir(project) / "render"
         burn = project.format == "reel" if burn_subtitles is None else burn_subtitles
         srt = _srt(project) if burn and _srt(project).exists() else None
+        words = timed_words(session, project_id) if srt else []
+    if style is not None:
+        settings = load_settings()
+        settings.subtitle_style = style  # se recuerda para la próxima vez
+        save_settings(settings)
+    style = style or load_settings().subtitle_style
 
     folder.mkdir(parents=True, exist_ok=True)
     loop = asyncio.get_running_loop()
@@ -353,7 +374,7 @@ async def render_project(
         loop.call_soon_threadsafe(ctx.progress, fraction, message)
 
     output, thumb = await asyncio.to_thread(
-        _render_sync, m, folder, srt, level, report, ctx.cancel_event
+        _render_sync, m, folder, srt, level, report, ctx.cancel_event, words, style
     )
     _save_quality(folder, output.name, level)
 

@@ -105,14 +105,17 @@ def effect_filter(effect: str | None, q: Quality, frames: int, duration: float) 
     return out
 
 
-def text_filter(textfile: Path, font: str | None, q: Quality, centered: bool) -> str:
-    """Texto en pantalla con borde, abajo sobre el medio o centrado en las escenas de texto."""
+def text_filter(
+    textfile: Path, font: str | None, q: Quality, centered: bool, raised: bool = False
+) -> str:
+    """Texto en pantalla con borde, abajo sobre el medio o centrado en las escenas de texto.
+    Con subtítulos quemados (`raised`) sube a la parte de arriba para no taparse con ellos."""
     size = (
         int(q.height / (9 if centered else 16))
         if q.height < q.width
         else int(q.width / (9 if centered else 13))
     )
-    y = "(h-text_h)/2" if centered else "h*0.78-text_h/2"
+    y = "(h-text_h)/2" if centered else ("h*0.16-text_h/2" if raised else "h*0.78-text_h/2")
     font_opt = f"fontfile='{ff_path(font)}':" if font else ""
     return (
         f"drawtext={font_opt}textfile='{ff_path(textfile)}':fontsize={size}:fontcolor=white:"
@@ -134,7 +137,12 @@ class Segment:
 
 
 def segment_command(
-    seg: Segment, q: Quality, out: Path, textfile: Path | None, font: str | None
+    seg: Segment,
+    q: Quality,
+    out: Path,
+    textfile: Path | None,
+    font: str | None,
+    raise_text: bool = False,
 ) -> list[str]:
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
@@ -158,7 +166,9 @@ def segment_command(
     else:
         chain += effect_filter(None if fast else seg.effect, q, frames, frames / FPS)
     if textfile:
-        chain.append(text_filter(textfile, font, q, centered=seg.kind == "color"))
+        chain.append(
+            text_filter(textfile, font, q, centered=seg.kind == "color", raised=raise_text)
+        )
     # Un video más corto que la escena se congela en su último cuadro.
     chain += [f"tpad=stop_mode=clone:stop_duration={dur}", f"trim=duration={dur}", "format=yuv420p"]
     args += [
