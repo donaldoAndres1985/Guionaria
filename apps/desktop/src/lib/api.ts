@@ -545,6 +545,10 @@ export interface TimelineScene {
   file_name: string | null;
   thumb_url: string | null;
   text: string | null;
+  /** Para «Ajustar tramo» desde el timeline (solo clips de video). */
+  scene_id?: number | null;
+  asset_id?: number | null;
+  is_video?: boolean;
 }
 
 export interface TimelineMarker {
