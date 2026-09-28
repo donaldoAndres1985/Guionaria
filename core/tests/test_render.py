@@ -260,3 +260,38 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
         False,
     )
     assert client.get(f"/api/projects/{pid}").json()["status"] == "RENDERIZADO"
+
+
+def test_render_file_names_from_title_and_renamed_files(client, project):
+    from sqlmodel import Session
+
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Project
+    from guionaria_core.services.projects import project_dir
+    from guionaria_core.services.render.service import find_output, output_names, slug_name
+
+    assert slug_name(
+        "María Marta García Belsunce: el asesinato que parecía un accidente (Argentina, 2002)"
+    ) == ("maria-marta-garcia-belsunce-el-asesinato-que-parecia-un-accidente")
+    assert slug_name("¿?") == "video"
+    pid = project["id"]
+    with Session(get_engine()) as s:
+        p = s.get(Project, pid)
+        assert output_names(p) == {
+            "final": "el-secuestro.mp4",
+            "draft": "el-secuestro_borrador.mp4",
+        }
+        folder = project_dir(p) / "render"
+        folder.mkdir(parents=True, exist_ok=True)
+        assert find_output(p) is None
+        # El antiguo proyecto.mp4 se sigue encontrando…
+        (folder / "proyecto.mp4").write_bytes(b"0")
+        assert find_output(p).name == "proyecto.mp4"
+        # …y si el usuario lo renombra, también (el borrador no cuenta como final).
+        (folder / "proyecto.mp4").rename(folder / "Mi video final.mp4")
+        (folder / "el-secuestro_borrador.mp4").write_bytes(b"0")
+        assert find_output(p).name == "Mi video final.mp4"
+        assert find_output(p, "draft").name == "el-secuestro_borrador.mp4"
+    # Se sirve con su nombre (espacios incluidos), pero nada fuera de la carpeta del render.
+    assert client.get(f"/api/projects/{pid}/render/files/Mi%20video%20final.mp4").status_code == 200
+    assert client.get(f"/api/projects/{pid}/render/files/..%2F..%2Fguionaria.db").status_code == 404
