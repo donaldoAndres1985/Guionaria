@@ -312,7 +312,8 @@ def render(design: DisenoClaude, frame: Image.Image, size: tuple[int, int]) -> I
         td = ImageDraw.Draw(tape)
         # Del lado contrario al foco, para no tapar el círculo.
         left_side = fx > w / 2
-        y = int(h * (0.12 if not portrait else 0.55))
+        # En vertical, el texto va en la mitad contraria al foco para no tapar el círculo.
+        y = int(h * (0.12 if not portrait or fy > h * 0.5 else 0.6))
         for line in lines:
             lw = int(font.getlength(line))
             x = margin if left_side else w - margin - lw - fs // 2

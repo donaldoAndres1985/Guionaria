@@ -632,3 +632,30 @@ def test_mcp_title_guide(client):
     from tests.test_mcp import Mcp
 
     assert "Tipos de gancho" in Mcp(client).call("get_title_guide")
+
+
+def test_expediente_text_avoids_the_circle_in_portrait():
+    from PIL import Image
+
+    from guionaria_core.schemas.publishing import DisenoClaude
+    from guionaria_core.services.publishing.cover import render
+
+    frame = Image.new("RGB", (1080, 1920), (40, 50, 60))
+    base = {
+        "cuadro": 1,
+        "plantilla": "expediente",
+        "texto": "La prueba que tiraron",
+        "color": "#FFD400",
+    }
+
+    def yellow_rows(img):
+        rows = [
+            y
+            for y in range(0, img.height, 8)
+            if any(img.getpixel((x, y)) == (255, 212, 0) for x in range(0, img.width, 8))
+        ]
+        return sum(rows) / len(rows)
+
+    low = render(DisenoClaude(**base, foco_x=0.5, foco_y=0.6), frame, (1080, 1920))
+    high = render(DisenoClaude(**base, foco_x=0.5, foco_y=0.3), frame, (1080, 1920))
+    assert yellow_rows(low) < 1920 * 0.5 < yellow_rows(high)  # la cinta, en la otra mitad
