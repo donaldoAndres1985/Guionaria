@@ -659,3 +659,22 @@ def test_expediente_text_avoids_the_circle_in_portrait():
     low = render(DisenoClaude(**base, foco_x=0.5, foco_y=0.6), frame, (1080, 1920))
     high = render(DisenoClaude(**base, foco_x=0.5, foco_y=0.3), frame, (1080, 1920))
     assert yellow_rows(low) < 1920 * 0.5 < yellow_rows(high)  # la cinta, en la otra mitad
+
+
+def test_manual_kit_caption_and_files(client, pub_project, fake_claude, no_browser):
+    pid = pub_project["id"]
+    fake_claude.queue(METADATA)
+    wait_job(client, client.post(f"/api/projects/{pid}/publishing:generate").json()["id"])
+    yt, tt = state_of(client, pid)["publications"]
+    # TikTok no tiene campo de título: va en la primera línea del texto.
+    assert tt["caption"].startswith("El secuestro que nadie vio\n\nNadie vio nada. ¿O sí?")
+    assert tt["caption"].endswith("#truecrime #fyp")
+    assert yt["caption"] == yt["full_text"]  # YouTube: el título va en su campo
+
+    # Mostrar en la carpeta el video (seleccionado); sin subtítulos, un aviso claro.
+    assert client.post(f"/api/projects/{pid}/publishing:reveal?file=video").status_code == 204
+    assert no_browser[-1].endswith("proyecto.mp4")
+    missing = client.post(f"/api/projects/{pid}/publishing:reveal?file=subtitles")
+    assert missing.status_code == 404 and "subtítulos" in missing.json()["detail"]
+    assert client.post(f"/api/projects/{pid}/publishing:reveal").status_code == 204
+    assert no_browser[-1].endswith("publicacion")

@@ -111,6 +111,8 @@ class PublicationRead(BaseModel):
     checklist: list[CheckItem]
     limits: dict[str, int]
     full_text: str  # listo para copiar: descripción + hashtags (+ créditos)
+    # Texto único para las plataformas sin campo de título (TikTok, Instagram): título arriba.
+    caption: str
     upload_url: str  # dónde se publica a mano
     thumbnail_url: str | None
 

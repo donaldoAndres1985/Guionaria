@@ -1,4 +1,4 @@
-import { CalendarClock, Check, Copy, ExternalLink, FolderOpen, ImageIcon, LoaderCircle, Send, Sparkles, TriangleAlert, Upload } from "lucide-react";
+import { CalendarClock, Check, Copy, FolderOpen, ImageIcon, LoaderCircle, Send, Sparkles, TriangleAlert, Upload } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { PLATFORM_TONE, STATUS_TEXT, fromLocalInput, splitList, toLocalInput } from "./publishingMeta";
 import { CoverDesigner } from "./CoverDesigner";
 import { ImagePreviewProvider, useImagePreview } from "./ImagePreview";
+import { ManualKit } from "./ManualKit";
 import { YouTubeSetup } from "./YouTubeSetup";
 import { useNavigate } from "react-router";
 
@@ -301,7 +302,6 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
   const hashtags = useField(pub.meta.hashtags.map((h) => `#${h}`).join(" "), (v) => save({ hashtags: splitList(v) }));
   const tags = useField(pub.tags.join(", "), (v) => save({ tags: splitList(v, ",") }));
   const pinned = useField(pub.meta.pinned_comment ?? "", (v) => save({ pinned_comment: v || null }));
-  const [url, setUrl] = useState("");
   const [when, setWhen] = useState(toLocalInput(pub.scheduled_at));
   const youtube = pub.platform === "youtube";
   const playlists = usePlaylists(state.channel_id, youtube && state.youtube.connected);
@@ -572,23 +572,7 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
             {ctl.upload.error && <p className="text-[12px] text-danger">{ctl.upload.error}</p>}
           </div>
         )}
-        {pub.status !== "published" && (
-          <div className="flex flex-wrap items-center gap-2 text-[12px]">
-            <Button size="sm" variant="outline" onClick={() => openUrl.mutate(pub.upload_url)}>
-              <ExternalLink /> Abrir {pub.label}
-            </Button>
-            <Input aria-label={`Dirección publicada en ${pub.label}`} placeholder="Pega aquí la dirección cuando lo publiques" value={url} onChange={(e) => setUrl(e.target.value)} className="min-w-64 flex-1" />
-            <Button
-              size="sm"
-              disabled={!url.trim() || ctl.actions.markPublished.isPending}
-              onClick={() =>
-                ctl.actions.markPublished.mutate({ id: pub.id, url: url.trim() }, { onSuccess: () => toast.success(`Marcado como publicado en ${pub.label}`) })
-              }
-            >
-              <Check /> Marcar como publicado
-            </Button>
-          </div>
-        )}
+        {pub.status !== "published" && <ManualKit pub={pub} state={state} ctl={ctl} />}
         {state.video_file && <p className="font-mono text-[11px] text-subtle">Video: {state.video_file}</p>}
       </div>
     </div>

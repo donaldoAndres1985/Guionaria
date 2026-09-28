@@ -1078,6 +1078,8 @@ export interface Publication {
   checklist: CheckItem[];
   limits: { title: number; description: number; tags: number; hashtags: number };
   full_text: string;
+  /** Texto único para TikTok e Instagram (título en la primera línea); en YouTube/Facebook = full_text. */
+  caption: string;
   upload_url: string;
   thumbnail_url: string | null;
 }

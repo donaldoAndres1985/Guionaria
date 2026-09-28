@@ -178,6 +178,31 @@ def full_text(pub: Publication, credits: str, fmt: str) -> str:
     return _clip(text, PLATFORMS[pub.platform]["limits"]["description"])
 
 
+SINGLE_TEXT = ("tiktok", "instagram")  # un solo texto: el título va en la primera línea
+
+
+def caption(pub: Publication, credits: str, fmt: str) -> str:
+    """Lo que se pega en una plataforma de texto único (TikTok, Instagram); en YouTube y
+    Facebook es la descripción, porque el título va en su propio campo."""
+    text = full_text(pub, credits, fmt)
+    if pub.platform not in SINGLE_TEXT:
+        return text
+    title = (pub.title or "").strip()
+    joined = f"{title}\n\n{text}".strip() if title else text
+    return _clip(joined, PLATFORMS[pub.platform]["limits"]["description"])
+
+
+def files_for(project: Project) -> dict[str, Path | None]:
+    """Archivos que se suben a mano: el video, la miniatura y los subtítulos."""
+    srt = subtitles_file(project)
+    video = final_video(project)
+    return {
+        "video": video if video.exists() else None,
+        "thumbnail": cover_path(project),
+        "subtitles": srt if srt.exists() else None,
+    }
+
+
 # --- filas por plataforma ---
 
 
@@ -316,6 +341,7 @@ def _read(pub: Publication, channel, project, credits, engine) -> PublicationRea
         checklist=checklist(pub, channel, project, credits, engine),
         limits=info["limits"],
         full_text=full_text(pub, credits, project.format),
+        caption=caption(pub, credits, project.format),
         upload_url=info["upload_url"],
         thumbnail_url=(
             f"/api/projects/{project.id}/publishing/thumbnail?v={cover.stat().st_mtime_ns}"
