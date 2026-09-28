@@ -17,6 +17,7 @@ import { coreUrl, type Project, type Publication, type PublicationUpdate, type P
 import { cn } from "@/lib/utils";
 import { PLATFORM_TONE, STATUS_TEXT, fromLocalInput, splitList, toLocalInput } from "./publishingMeta";
 import { CoverDesigner } from "./CoverDesigner";
+import { ImagePreviewProvider, useImagePreview } from "./ImagePreview";
 import { YouTubeSetup } from "./YouTubeSetup";
 import { useNavigate } from "react-router";
 
@@ -107,15 +108,20 @@ export function PublishStage({ project, ctl, onGoToTimeline }: { project: Projec
     );
   }
   return (
-    <div className="flex min-h-0 flex-1">
-      <aside className="grid w-72 shrink-0 content-start gap-4 overflow-y-auto border-r p-4" aria-label="Plataformas">
-        <PlatformList state={state} ctl={ctl} />
-        <CoverDesigner state={state} ctl={ctl} />
-        <Cover state={state} ctl={ctl} project={project} />
-        <Credits credits={state.credits} />
-      </aside>
-      <div className="min-w-0 flex-1 overflow-y-auto">{pub && <PublicationEditor key={pub.id} pub={pub} state={state} ctl={ctl} />}</div>
-    </div>
+    <ImagePreviewProvider>
+      <div className="flex min-h-0 flex-1">
+        <aside
+          className="grid w-80 shrink-0 grid-cols-[minmax(0,1fr)] content-start gap-4 overflow-x-hidden overflow-y-auto border-r p-4"
+          aria-label="Plataformas"
+        >
+          <PlatformList state={state} ctl={ctl} />
+          <CoverDesigner state={state} ctl={ctl} />
+          <Cover state={state} ctl={ctl} project={project} />
+          <Credits credits={state.credits} />
+        </aside>
+        <div className="min-w-0 flex-1 overflow-y-auto">{pub && <PublicationEditor key={pub.id} pub={pub} state={state} ctl={ctl} />}</div>
+      </div>
+    </ImagePreviewProvider>
   );
 }
 
@@ -160,6 +166,7 @@ function Cover({ state, ctl, project }: { state: PublishingState; ctl: PublishCo
   const [over, setOver] = useState(false);
   const thumb = state.publications.find((p) => p.thumbnail_url)?.thumbnail_url;
   const upload = ctl.actions.uploadCover;
+  const preview = useImagePreview();
   const send = useCallback(
     (file: File | null | undefined) => {
       if (!file) return;
@@ -205,7 +212,13 @@ function Cover({ state, ctl, project }: { state: PublishingState; ctl: PublishCo
         )}
       >
         {thumb ? (
-          <img src={coreUrl(thumb) ?? ""} alt="Miniatura" className="max-h-48 w-fit rounded" />
+          <img
+            src={coreUrl(thumb) ?? ""}
+            alt="Miniatura"
+            title="Doble clic: ver grande"
+            onDoubleClick={() => preview({ url: coreUrl(thumb) ?? "", title: "Miniatura actual" })}
+            className="max-h-64 max-w-full cursor-zoom-in rounded object-contain"
+          />
         ) : (
           <ImageIcon className="size-6 text-subtle" />
         )}
@@ -229,7 +242,7 @@ function Cover({ state, ctl, project }: { state: PublishingState; ctl: PublishCo
       </div>
       <h4 className="text-[11px] text-muted-foreground">O elige un cuadro del video a mano:</h4>
       {state.video_url && (
-        <video ref={video} src={coreUrl(state.video_url) ?? ""} controls muted preload="metadata" className="max-h-44 rounded bg-black" />
+        <video ref={video} src={coreUrl(state.video_url) ?? ""} controls muted preload="metadata" className="max-h-44 max-w-full rounded bg-black" />
       )}
       <Input aria-label="Texto de la miniatura" placeholder="Texto encima (vacío = sin texto)" value={text} onChange={(e) => setText(e.target.value)} />
       <Button

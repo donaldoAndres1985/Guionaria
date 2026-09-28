@@ -320,6 +320,17 @@ describe("títulos con gancho y miniatura con Claude", () => {
     expect(await screen.findByText("ajustes abiertos")).toBeTruthy();
   });
 
+  it("doble clic en una propuesta la abre en grande", async () => {
+    renderStage();
+    const designer = await screen.findByLabelText("Miniatura con Claude");
+    fireEvent.doubleClick(within(designer).getByRole("radio", { name: "Propuesta 2: Nadie vio nada" }));
+    const big = await screen.findByTestId("image-preview");
+    expect(big.getAttribute("src")).toContain("/api/projects/7/publishing/cover/2");
+    expect(screen.getByText("Propuesta 2: Nadie vio nada")).toBeTruthy();
+    fireEvent.keyDown(big, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("image-preview")).toBeNull());
+  });
+
   it("miniatura: Claude diseña, se elige una propuesta, se retoca y se usa", async () => {
     renderStage();
     const designer = await screen.findByLabelText("Miniatura con Claude");
