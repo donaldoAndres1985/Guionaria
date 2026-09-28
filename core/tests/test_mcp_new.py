@@ -81,17 +81,22 @@ def test_render_with_quality_and_preset(client, mcp, media_project, monkeypatch)
     calls = {}
 
     async def fake_render(
-        session_factory, project_id, level, burn, ctx, style=None, text_style=None
+        session_factory, project_id, level, burn, ctx, style=None, text_style=None, look=None
     ):
-        calls.update(level=level, burn=burn, style=style, text_style=text_style)
+        calls.update(level=level, burn=burn, style=style, text_style=text_style, look=look)
         return {"file": "proyecto.mp4"}
 
     monkeypatch.setattr(render_svc, "render_project", fake_render)
     job = mcp.call(
-        "render_video", project_id=media_project["id"], quality="max", subtitle_preset="reel"
+        "render_video",
+        project_id=media_project["id"],
+        quality="max",
+        subtitle_preset="reel",
+        look_preset="crimen",
     )
     assert wait(client, job)["status"] == "done"
     assert calls["level"] == "max"
+    assert (calls["look"].preset, calls["look"].saturation) == ("crimen", 40)
     style = calls["style"]
     assert (style.font, style.italic, style.edge, style.animation) == (
         "Montserrat",

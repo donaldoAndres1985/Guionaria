@@ -2,7 +2,7 @@
  * Cálculos de la vista previa en vivo. Replican los del render (services/render/plan.py y
  * captions.py) para que lo que se ve se parezca lo más posible al MP4 final.
  */
-import type { PreviewScene, PreviewWord, SubtitleStyle, TextStyle } from "@/lib/api";
+import type { PreviewScene, PreviewWord, SubtitleStyle, TextStyle, VideoLook } from "@/lib/api";
 
 /** Escena que se ve en el instante t (la última si t está al final). */
 export function sceneIndexAt(scenes: PreviewScene[], t: number): number {
@@ -317,4 +317,88 @@ export function transitionLook(kind: string, p: number): TransitionLook {
     default: // fade, dissolve
       return cross;
   }
+}
+
+// --- look del video (como services/render/look.py) ---
+
+export const NEUTRAL_LOOK: VideoLook = {
+  preset: "none",
+  saturation: 100,
+  contrast: 0,
+  brightness: 0,
+  blacks: 0,
+  temperature: 0,
+  vignette: 0,
+  grain: 0,
+  soften_photos: 0,
+  zoom_photos: false,
+  lut: null,
+  lut_strength: 100,
+};
+
+/** Estilos rápidos: los mismos valores que LOOK_PRESETS del núcleo. */
+export const LOOK_PRESETS: { id: string; label: string; hint: string; look: Partial<VideoLook> }[] = [
+  { id: "none", label: "Sin look", hint: "El color original de cada clip", look: {} },
+  {
+    id: "crimen",
+    label: "Crimen oscuro",
+    hint: "Desaturado, negros profundos, frío, viñeta y grano",
+    look: { saturation: 40, contrast: 20, brightness: -15, blacks: 60, temperature: -80, vignette: 75, grain: 40, soften_photos: 30, zoom_photos: true },
+  },
+  {
+    id: "documental",
+    label: "Documental",
+    hint: "Color contenido y un poco frío",
+    look: { saturation: 75, contrast: 10, blacks: 30, temperature: -20, vignette: 40, grain: 20, soften_photos: 20, zoom_photos: true },
+  },
+  {
+    id: "nostalgico",
+    label: "Cálido nostálgico",
+    hint: "Tonos cálidos y grano de película",
+    look: { saturation: 80, contrast: 5, brightness: 5, blacks: 20, temperature: 60, vignette: 50, grain: 45, soften_photos: 20, zoom_photos: true },
+  },
+  {
+    id: "byn",
+    label: "Blanco y negro",
+    hint: "Sin color, contraste y grano",
+    look: { saturation: 0, contrast: 25, brightness: -5, blacks: 50, vignette: 60, grain: 50, soften_photos: 20, zoom_photos: true },
+  },
+  { id: "vivo", label: "Vivo", hint: "Más color (canales infantiles)", look: { saturation: 125, contrast: 10, brightness: 5, temperature: 10 } },
+];
+
+export const presetLook = (id: string): VideoLook => ({ ...NEUTRAL_LOOK, ...LOOK_PRESETS.find((p) => p.id === id)?.look, preset: id });
+
+export interface LookCss {
+  /** Filtro CSS para todo lo que está debajo del texto (clip de ajuste). */
+  filter: string;
+  tint: { color: string; opacity: number } | null;
+  vignette: number; // 0–1
+  grain: number; // 0–1
+  /** Desenfoque de las fotos, en px del video. */
+  photoBlur: number;
+}
+
+/** Aproximación en CSS del look (el LUT solo se ve en el render). */
+export function lookCss(look: VideoLook): LookCss {
+  const f: string[] = [];
+  if (look.saturation !== 100) f.push(`saturate(${look.saturation / 100})`);
+  const contrast = 1 + look.contrast / 100 + look.blacks / 400;
+  if (contrast !== 1) f.push(`contrast(${Math.round(contrast * 1000) / 1000})`);
+  const bright = 1 + look.brightness / 200 - look.blacks / 800;
+  if (bright !== 1) f.push(`brightness(${Math.round(bright * 1000) / 1000})`);
+  const t = look.temperature;
+  return {
+    filter: f.join(" ") || "none",
+    tint: t ? { color: t < 0 ? "rgb(0, 110, 160)" : "rgb(255, 140, 20)", opacity: (Math.abs(t) / 100) * 0.35 } : null,
+    vignette: look.vignette / 100,
+    grain: look.grain / 100,
+    photoBlur: (look.soften_photos / 100) * 1.5,
+  };
+}
+
+/** Efecto de la escena; con «zoom lento en fotos», las fotos sin efecto lo llevan (como el render). */
+export function sceneEffect(effect: string | null, mediaKind: string | undefined, look: VideoLook | undefined): string | null {
+  const chosen = effect && effect !== "ninguno" ? effect : null;
+  if (!chosen && mediaKind === "image" && look?.zoom_photos) return "zoom_lento_in";
+  return chosen;
 }

@@ -13,6 +13,9 @@ import {
   SUBTITLE_PRESETS,
   subtitleFontPx,
   subtitleTextCss,
+  lookCss,
+  presetLook,
+  sceneEffect,
   textLook,
   transitionLook,
   zoomAmount,
@@ -103,6 +106,26 @@ describe("vista previa: cálculos", () => {
     expect(transitionLook("circleopen", 1).incoming.clipPath).toBe("circle(75% at 50% 50%)");
     expect(transitionLook("circleclose", 0.5).outgoingOnTop).toBe(true);
     expect(transitionLook("desconocida", 0.5).incoming.opacity).toBe(0.5); // como un fundido
+  });
+
+  it("look del video: CSS aproximado, estilos rápidos y zoom en fotos", () => {
+    const neutral = lookCss(presetLook("none"));
+    expect(neutral).toEqual({ filter: "none", tint: null, vignette: 0, grain: 0, photoBlur: 0 });
+    const crimen = presetLook("crimen");
+    expect(crimen).toMatchObject({ preset: "crimen", saturation: 40, temperature: -80, zoom_photos: true, lut: null });
+    const css = lookCss(crimen);
+    expect(css.filter).toBe("saturate(0.4) contrast(1.35) brightness(0.85)");
+    expect(css.tint?.color).toBe("rgb(0, 110, 160)");
+    expect(css.tint?.opacity).toBeCloseTo(0.28);
+    expect([css.vignette, css.grain]).toEqual([0.75, 0.4]);
+    expect(css.photoBlur).toBeCloseTo(0.45);
+    expect(lookCss({ ...crimen, temperature: 50 }).tint?.color).toBe("rgb(255, 140, 20)");
+    // Zoom lento en las fotos sin efecto (como el render); el efecto elegido se respeta.
+    expect(sceneEffect(null, "image", crimen)).toBe("zoom_lento_in");
+    expect(sceneEffect("ninguno", "image", crimen)).toBe("zoom_lento_in");
+    expect(sceneEffect("ken_burns", "image", crimen)).toBe("ken_burns");
+    expect(sceneEffect(null, "video", crimen)).toBeNull();
+    expect(sceneEffect(null, "image", presetLook("none"))).toBeNull();
   });
 
   it("tamaños como en el render y ducking de la música", () => {

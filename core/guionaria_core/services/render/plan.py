@@ -172,6 +172,7 @@ def segment_command(
     font: str | None,
     raise_text: bool = False,
     draft: bool = False,
+    soften: float = 0.0,
 ) -> list[str]:
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
@@ -193,7 +194,11 @@ def segment_command(
     if seg.kind == "color":
         chain.append("setsar=1")
     else:
-        chain += effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft)
+        effect = effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft)
+        if soften and seg.kind == "image":
+            # Look: las fotos, más nítidas que los videos de stock, se suavizan un poco.
+            effect.insert(1, f"gblur=sigma={soften:g}")
+        chain += effect
     if textfile:
         chain.append(
             text_filter(textfile, font, q, centered=seg.kind == "color", raised=raise_text)

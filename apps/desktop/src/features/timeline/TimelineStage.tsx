@@ -36,12 +36,13 @@ import {
 } from "./RenderPanel";
 import { TextStylePanel, textStyleSummary } from "./TextStylePanel";
 import { CutMarkers, TransitionsPanel, transitionsSummary } from "./TransitionsPanel";
+import { LookPanel, lookSummary } from "./LookPanel";
 import { useTransitions } from "@/hooks/useTransitions";
 import { exportedAt, FORMAT_FILES, MARKER_TONE, pct, resolutionLabel, rulerTicks } from "./timelineMeta";
 
 const TONE = Object.fromEntries(KINDS.map((k) => [k.id, k.tone]));
 
-type SectionId = "subtitles" | "text" | "transitions" | "files" | "markers" | "exports";
+type SectionId = "look" | "subtitles" | "text" | "transitions" | "files" | "markers" | "exports";
 
 export function TimelineStage({ project, onGoToMedia }: { project: Project; onGoToMedia: () => void }) {
   const { data: state } = useTimeline(project.id);
@@ -52,6 +53,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
   const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [tab, setTab] = useState<"preview" | "render">("preview");
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
+    look: false,
     subtitles: false,
     text: false,
     transitions: false,
@@ -183,6 +185,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
                   burnSubtitles={render.burnSubtitles}
                   style={render.style}
                   textStyle={render.textStyle}
+                  look={render.look}
                   onSubtitlesClick={editSubtitles}
                 />
               ) : null
@@ -227,6 +230,15 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
         {/* Panel lateral */}
         <aside className="w-[340px] shrink-0 overflow-y-auto border-l" aria-label="Opciones del render">
           <RenderControls ctl={render} />
+          <Section title="Look del video" summary={lookSummary(render.look)} open={open.look} onToggle={() => toggle("look")}>
+            <LookPanel
+              look={render.look}
+              onChange={render.setLook}
+              luts={render.state?.luts ?? []}
+              projectId={project.id}
+              disabled={render.job.running}
+            />
+          </Section>
           <Section
             title="Subtítulos"
             summary={render.burnSubtitles ? (render.style.highlight ? "Quemados · palabra resaltada" : "Quemados") : "No se queman"}

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from . import __version__
-from .config import SubtitleStyle, TextStyle, load_settings
+from .config import SubtitleStyle, TextStyle, VideoLook, load_settings
 from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
@@ -935,6 +935,9 @@ def build_mcp() -> MCPServer:
         subtitle_preset: Literal["reel", "clasico", "caja"] | None = None,
         subtitle_style: SubtitleStyle | None = None,
         text_style: TextStyle | None = None,
+        look_preset: Literal["none", "crimen", "documental", "nostalgico", "byn", "vivo"]
+        | None = None,
+        look: VideoLook | None = None,
         draft: bool = False,
     ) -> dict[str, Any]:
         """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos).
@@ -943,7 +946,12 @@ def build_mcp() -> MCPServer:
         subtitle_preset (reel = Montserrat cursiva con sombra y pop; clasico; caja) o
         subtitle_style completo; sin ninguno, el último usado. text_style: texto en pantalla de
         las escenas (font, size, uppercase, box, text_color y animation: none, fade, pop, slide o
-        typewriter); sin él, el último usado. Cancelable con cancel_job."""
+        typewriter); sin él, el último usado. Look del video (como un clip de ajuste, no toca
+        textos ni subtítulos): look_preset (crimen = desaturado, oscuro y frío con viñeta y
+        grano; documental; nostalgico; byn; vivo; none) o look completo (saturation, contrast,
+        brightness, blacks, temperature, vignette, grain, soften_photos, zoom_photos, lut).
+        Cancelable con cancel_job."""
+        from .services.render import look as looks
         from .services.render import service as render
 
         with _session() as s:
@@ -953,10 +961,18 @@ def build_mcp() -> MCPServer:
         if subtitle_preset:
             base = (subtitle_style or load_settings().subtitle_style).model_dump()
             style = SubtitleStyle(**{**base, **SUBTITLE_PRESETS[subtitle_preset]})
+        chosen_look = looks.preset(look_preset) if look_preset else look
 
         async def work(ctx: JobContext) -> dict:
             return await render.render_project(
-                _session, project_id, level, burn_subtitles, ctx, style=style, text_style=text_style
+                _session,
+                project_id,
+                level,
+                burn_subtitles,
+                ctx,
+                style=style,
+                text_style=text_style,
+                look=chosen_look,
             )
 
         job = jobs.jobs.submit(
