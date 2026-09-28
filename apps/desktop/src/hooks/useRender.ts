@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Job, type RenderQuality, type RenderState, type SubtitleStyle } from "@/lib/api";
+import { api, type Job, type RenderQuality, type RenderState, type SubtitleStyle, type TextStyle } from "@/lib/api";
 
 export const renderKey = (projectId: number) => ["render", projectId] as const;
 
@@ -14,6 +14,7 @@ export function useStartRender(projectId: number) {
       quality: RenderQuality;
       burn_subtitles: boolean | null;
       subtitle_style?: SubtitleStyle | null;
+      text_style?: TextStyle | null;
     }) =>
       api.post<Job>(`/api/projects/${projectId}/render`, body),
     onSuccess: (job) => client.setQueryData(["job", job.id], job),

@@ -80,8 +80,10 @@ def test_elevenlabs_needs_a_voice(mcp, media_project, eleven):  # noqa: F811
 def test_render_with_quality_and_preset(client, mcp, media_project, monkeypatch):
     calls = {}
 
-    async def fake_render(session_factory, project_id, level, burn, ctx, style=None):
-        calls.update(level=level, burn=burn, style=style)
+    async def fake_render(
+        session_factory, project_id, level, burn, ctx, style=None, text_style=None
+    ):
+        calls.update(level=level, burn=burn, style=style, text_style=text_style)
         return {"file": "proyecto.mp4"}
 
     monkeypatch.setattr(render_svc, "render_project", fake_render)

@@ -1,4 +1,4 @@
-import { Check, Crop as CropIcon, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
+import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -17,6 +17,7 @@ import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
 import { mediaKeys } from "@/hooks/useMedia";
 import { useScenes } from "@/hooks/useScenes";
+import { useOpenUrl } from "@/hooks/useManualMedia";
 import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
 import { VideoUrlDialog } from "./VideoUrlDialog";
@@ -295,15 +296,19 @@ export function MediaStage({
                       </Button>
                     </form>
                     <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                      <label className="flex items-center gap-1.5 text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={ctl.anyOrientation}
-                          onChange={(e) => ctl.setAnyOrientation(e.target.checked)}
-                          className="accent-[var(--accent)]"
-                        />
-                        Incluir otras orientaciones (se recortarán)
-                      </label>
+                      {scene.media_kind === "real" ? (
+                        <GoogleImagesLink query={ctl.query} />
+                      ) : (
+                        <label className="flex items-center gap-1.5 text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={ctl.anyOrientation}
+                            onChange={(e) => ctl.setAnyOrientation(e.target.checked)}
+                            className="accent-[var(--accent)]"
+                          />
+                          Incluir otras orientaciones (se recortarán)
+                        </label>
+                      )}
                       <span className="text-subtle">
                         · También puedes arrastrar archivos o pegar (Ctrl+V) una imagen o dirección
                       </span>
@@ -508,5 +513,23 @@ export function MediaStage({
         />
       )}
     </div>
+  );
+}
+
+/** Abre la búsqueda en Google Imágenes del navegador: la imagen se trae arrastrándola o
+ * con «Copiar imagen» y Ctrl+V aquí. */
+export function GoogleImagesLink({ query }: { query: string }) {
+  const openUrl = useOpenUrl();
+  const q = query.trim();
+  return (
+    <button
+      type="button"
+      disabled={!q}
+      title="Arrastra la imagen desde el navegador hasta aquí, o cópiala y pega con Ctrl+V"
+      onClick={() => openUrl.mutate(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(q)}`)}
+      className="flex items-center gap-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
+    >
+      <ExternalLink className="size-3.5" /> Abrir en Google Imágenes
+    </button>
   );
 }

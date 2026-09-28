@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from guionaria_core.config import SubtitleStyle
+from guionaria_core.config import SubtitleStyle, TextStyle
 from guionaria_core.services.render import captions, plan
 from guionaria_core.services.voice.align import SegmentTiming, Word
 from guionaria_core.services.voice.subtitles import cues_from_segments, estimate_words
@@ -70,11 +70,12 @@ def test_position_and_size():
     bottom = captions.build_ass(WORDS, SubtitleStyle(), 1080, 1920)
     fields = next(x for x in bottom.splitlines() if x.startswith("Style:")).split(",")
     assert (fields[18], fields[21]) == ("2", str(round(1920 * 0.22)))  # tercio inferior
-    assert fields[2] == str(round(1080 * 0.078))
+    # El tamaño de la vista previa (px de CSS), con la escala de libass para Arial.
+    assert fields[2] == str(round(round(1080 * 0.078) * 1.15))
     middle = captions.build_ass(WORDS, SubtitleStyle(position="middle", size="large"), 1080, 1920)
     fields = next(x for x in middle.splitlines() if x.startswith("Style:")).split(",")
     assert fields[18] == "5"
-    assert fields[2] == str(round(1080 * 0.078 * 1.25))
+    assert fields[2] == str(round(round(1080 * 0.078 * 1.25) * 1.15))
 
 
 def test_ass_syntax_is_escaped():
@@ -178,3 +179,82 @@ def test_libass_uses_the_bundled_font(tmp_path):
         capture_output=True,
     )
     assert proc.returncode == 0, proc.stderr.decode(errors="replace")
+
+
+# --- texto en pantalla de las escenas ---
+
+
+def texts_of(ass: str, style: str = "Text") -> list[str]:
+    return [
+        line for line in ass.splitlines() if line.startswith("Dialogue:") and f",{style}," in line
+    ]
+
+
+def test_scene_text_breaks_at_separators():
+    limit = captions.line_chars(1080, captions.scene_text_size(1080, 1920, False))
+    assert limit == 21
+    long = "María Marta García Belsunce · 50 años · socióloga"
+    assert captions.layout_text(long, limit) == "María Marta García Belsunce\n50 años · socióloga"
+    assert captions.layout_text("36 DÍAS", limit) == "36 DÍAS"
+    # Los saltos de línea del guion se respetan.
+    assert captions.layout_text("2024 · Perpetua\n2025 · Confirmada", limit) == (
+        "2024 · Perpetua\n2025 · Confirmada"
+    )
+
+
+def test_scene_text_position_style_and_animations():
+    item = captions.SceneText(1.0, 4.0, "María Marta García Belsunce · 50 años · socióloga", False)
+    ass = captions.build_ass(WORDS, SubtitleStyle(), 1080, 1920, [item], TextStyle())
+    [event] = texts_of(ass)
+    # Arriba (hay subtítulos), centrado, con las líneas cortadas en el separador y pop.
+    assert event.startswith("Dialogue: 1,0:00:01.00,0:00:04.00,Text,")
+    assert r"\pos(540,307)" in event and r"\fscx60" in event and r"\fad(90,150)" in event
+    assert r"María Marta García Belsunce\N50 años · socióloga" in event
+    assert "Style: Text,Montserrat ExtraBold,134," in ass  # 83 px en la vista previa
+    assert ",5,54,54,0,1" in ass  # centrado (\an5) y márgenes del 5 %
+
+    # Sin subtítulos baja al tercio inferior; mayúsculas y caja oscura.
+    boxed = TextStyle(uppercase=True, box=True, animation="slide", font="Arial")
+    ass = captions.build_ass([], SubtitleStyle(), 1080, 1920, [item], boxed)
+    [event] = texts_of(ass)
+    assert r"\move(540,1556,540,1498,0,300)" in event and "MARÍA MARTA" in event
+    assert "Style: Text,Arial,95,&H00FFFFFF,&H00FFFFFF,&H55000000," in ass
+    assert ",-1,0,0,0,100,100,0,0,3," in ass  # BorderStyle 3: caja
+
+    # Escena de texto sobre negro: centrada y más grande.
+    black = captions.SceneText(0, 2, "27 de octubre de 2002", True)
+    ass = captions.build_ass([], SubtitleStyle(), 1080, 1920, [black], TextStyle(animation="fade"))
+    [event] = texts_of(ass, "TextCenter")
+    assert r"\pos(540,960)\fad(300,150)" in event
+
+
+def test_typewriter_reveals_letters_without_moving_lines():
+    item = captions.SceneText(0.0, 3.0, "Un fragmento de bala", False)
+    ass = captions.build_ass(
+        [], SubtitleStyle(), 1080, 1920, [item], TextStyle(animation="typewriter")
+    )
+    events = texts_of(ass)
+    assert len(events) == 20  # un paso por letra (hasta 30)
+    # Lo que falta se escribe transparente: el texto completo ocupa su lugar desde el inicio.
+    assert events[0].endswith(r"U{\alpha&HFF&}n fragmento de bala")
+    assert events[-1].endswith(r"\fad(0,150)}Un fragmento de bala")
+    assert events[-1].split(",")[2] == "0:00:03.00"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="requiere FFmpeg")
+def test_libass_renders_scene_text(tmp_path):
+    item = captions.SceneText(0, 1, "Un fragmento de bala", False)
+    (tmp_path / "t.ass").write_text(
+        captions.build_ass([], SubtitleStyle(), 360, 640, [item], TextStyle()), encoding="utf-8"
+    )
+    shutil.copytree(captions.FONTS_DIR, tmp_path / "fonts")
+    out = subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=360x640:d=1",
+         "-vf", "ass=t.ass:fontsdir=fonts", "-ss", "0.5", "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        cwd=tmp_path, capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    rows = [out[y * 360 : (y + 1) * 360] for y in range(640)]
+    lit = [y for y, row in enumerate(rows) if max(row) > 200]
+    # El texto está en el tercio inferior (centro al 78 %).
+    assert lit and 440 < sum(lit) / len(lit) < 560

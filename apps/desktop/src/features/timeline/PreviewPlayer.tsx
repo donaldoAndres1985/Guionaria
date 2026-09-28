@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle } from "@/lib/api";
+import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   captionAt,
@@ -7,11 +7,18 @@ import {
   captionLayout,
   subtitleTextCss,
   effectLook,
+  layoutText,
+  lineChars,
   musicVolume,
   sceneIndexAt,
   sceneTextPx,
   subtitleFontPx,
+  TEXT_MARGIN,
+  textLook,
+  textTop,
 } from "./previewMeta";
+
+const DEFAULT_TEXT: TextStyle = { font: "Montserrat", size: "medium", uppercase: false, animation: "pop", box: false, text_color: "#FFFFFF" };
 
 /** Reloj de la vista previa: reproducir/pausar, buscar y avanzar en tiempo real. */
 export function usePreviewClock(duration: number) {
@@ -75,6 +82,7 @@ export function PreviewCanvas({
   playing,
   burnSubtitles,
   style,
+  textStyle,
   onSubtitlesClick,
 }: {
   preview: PreviewState;
@@ -82,6 +90,8 @@ export function PreviewCanvas({
   playing: boolean;
   burnSubtitles: boolean;
   style: SubtitleStyle;
+  /** Estilo del texto en pantalla; por defecto, el guardado. */
+  textStyle?: TextStyle;
   onSubtitlesClick?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -127,10 +137,16 @@ export function PreviewCanvas({
       {/* Texto en pantalla de la escena */}
       {scene?.text && (
         <SceneText
+          key={scene.position}
           text={scene.text}
           centered={!scene.media}
           raised={burnSubtitles}
-          px={sceneTextPx(preview.width, preview.height, !scene.media) * scale}
+          width={preview.width}
+          height={preview.height}
+          scale={scale}
+          local={time - scene.start_s}
+          duration={scene.duration_s}
+          style={textStyle ?? preview.text_style ?? DEFAULT_TEXT}
         />
       )}
 
@@ -142,7 +158,7 @@ export function PreviewCanvas({
           title="Clic para editar el estilo de los subtítulos"
           onClick={onSubtitlesClick}
           className={cn(
-            "absolute left-[6%] right-[6%] flex justify-center",
+            "absolute left-[4%] right-[4%] flex justify-center",
             style.position === "middle" ? "top-1/2 -translate-y-1/2" : "",
           )}
           style={style.position === "middle" ? undefined : { bottom: `${(portrait ? 22 : 8)}%` }}
@@ -267,15 +283,66 @@ function VideoLayer({
   return <video ref={ref} src={coreUrl(media.url) ?? ""} muted playsInline preload="auto" className={className} style={style} />;
 }
 
-function SceneText({ text, centered, raised, px }: { text: string; centered: boolean; raised: boolean; px: number }) {
-  const top = centered ? "50%" : raised ? "16%" : "78%";
+/** Texto en pantalla: mismas líneas, tamaño, posición y animación que el ASS del render. */
+function SceneText({
+  text,
+  centered,
+  raised,
+  width,
+  height,
+  scale,
+  local,
+  duration,
+  style,
+}: {
+  text: string;
+  centered: boolean;
+  raised: boolean;
+  width: number;
+  height: number;
+  scale: number;
+  local: number;
+  duration: number;
+  style: TextStyle;
+}) {
+  const size = sceneTextPx(width, height, centered, style.size);
+  const px = size * scale;
+  const laid = layoutText(style.uppercase ? text.toUpperCase() : text, lineChars(width, size));
+  const look = textLook(style.animation, local, duration, laid.length);
+  const shown = look.chars === null ? laid : laid.slice(0, look.chars);
+  const hidden = look.chars === null ? "" : laid.slice(look.chars);
+  const margin = `${TEXT_MARGIN * 100}%`;
   return (
-    <div className="pointer-events-none absolute left-[4%] right-[4%] -translate-y-1/2 text-center" style={{ top }}>
+    <div
+      data-testid="scene-text"
+      className="pointer-events-none absolute text-center"
+      style={{
+        left: margin,
+        right: margin,
+        top: `${(textTop(centered, raised) + look.rise) * 100}%`,
+        transform: `translateY(-50%) scale(${look.scale})`,
+        opacity: look.opacity,
+      }}
+    >
       <span
-        className="font-bold whitespace-pre-line text-white"
-        style={{ fontSize: px, lineHeight: 1.15, WebkitTextStroke: `${Math.max(1, px / 14)}px #000`, paintOrder: "stroke fill" }}
+        className="whitespace-pre-line"
+        style={{
+          fontFamily: style.font === "Montserrat" ? '"Montserrat", sans-serif' : style.font,
+          fontWeight: style.font === "Montserrat" ? 800 : 700,
+          fontSize: px,
+          lineHeight: 1.2,
+          color: style.text_color,
+          ...(style.box
+            ? { background: "rgba(0,0,0,0.67)", padding: `0 ${px * 0.2}px`, boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }
+            : {
+                WebkitTextStroke: `${Math.max(1, px / 12)}px #000`,
+                paintOrder: "stroke fill",
+                textShadow: `0 ${Math.max(1, px * 0.04)}px ${Math.max(1, px * 0.04)}px rgba(0,0,0,0.5)`,
+              }),
+        }}
       >
-        {text}
+        {shown}
+        {hidden && <span style={{ opacity: 0 }}>{hidden}</span>}
       </span>
     </div>
   );

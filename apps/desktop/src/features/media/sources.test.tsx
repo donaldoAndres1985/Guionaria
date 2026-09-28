@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Candidate, MediaOverview, Project, SceneMedia } from "@/lib/api";
 import { CandidateCard } from "./CandidateCard";
 import { isVideoSite, parseClock } from "./dropUtils";
+import { GoogleImagesLink } from "./MediaStage";
 import { useMediaController } from "./useMediaController";
 import { VideoUrlDialog } from "./VideoUrlDialog";
 
@@ -106,6 +107,19 @@ describe("fuentes por escena y video desde URL", () => {
     );
     return () => ctl;
   }
+
+  it("«Abrir en Google Imágenes» abre la búsqueda de la escena en el navegador", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <GoogleImagesLink query="María Marta García Belsunce foto" />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByText("Abrir en Google Imágenes"));
+    await waitFor(() => expect(requests.some((r) => r.path === "/api/system/open-url")).toBe(true));
+    expect(requests.find((r) => r.path === "/api/system/open-url")!.body).toEqual({
+      url: "https://www.google.com/search?tbm=isch&q=Mar%C3%ADa%20Marta%20Garc%C3%ADa%20Belsunce%20foto",
+    });
+  });
 
   it("una escena de material real busca por defecto en web, Wikimedia y Openverse", async () => {
     const ctl = setup();

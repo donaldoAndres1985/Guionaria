@@ -34,11 +34,12 @@ import {
   SubtitlesSettings,
   useRenderController,
 } from "./RenderPanel";
+import { TextStylePanel, textStyleSummary } from "./TextStylePanel";
 import { exportedAt, FORMAT_FILES, MARKER_TONE, pct, resolutionLabel, rulerTicks } from "./timelineMeta";
 
 const TONE = Object.fromEntries(KINDS.map((k) => [k.id, k.tone]));
 
-type SectionId = "subtitles" | "files" | "markers" | "exports";
+type SectionId = "subtitles" | "text" | "files" | "markers" | "exports";
 
 export function TimelineStage({ project, onGoToMedia }: { project: Project; onGoToMedia: () => void }) {
   const { data: state } = useTimeline(project.id);
@@ -49,6 +50,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
   const [tab, setTab] = useState<"preview" | "render">("preview");
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
     subtitles: false,
+    text: false,
     files: false,
     markers: false,
     exports: false,
@@ -176,6 +178,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
                   playing={clock.playing}
                   burnSubtitles={render.burnSubtitles}
                   style={render.style}
+                  textStyle={render.textStyle}
                   onSubtitlesClick={editSubtitles}
                 />
               ) : null
@@ -227,6 +230,14 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
             onToggle={() => toggle("subtitles")}
           >
             <SubtitlesSettings ctl={render} portrait={portrait} />
+          </Section>
+          <Section
+            title="Texto en pantalla"
+            summary={textStyleSummary(render.textStyle)}
+            open={open.text}
+            onToggle={() => toggle("text")}
+          >
+            <TextStylePanel style={render.textStyle} onChange={render.setTextStyle} disabled={render.job.running} />
           </Section>
           <Section
             title="Archivos del render"

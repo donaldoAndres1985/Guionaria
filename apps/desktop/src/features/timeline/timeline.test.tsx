@@ -310,6 +310,31 @@ describe("etapa de timeline", () => {
     expect(body.subtitle_style).toMatchObject({ uppercase: false, highlight_color: "#22E36B", position: "middle" });
   });
 
+  it("texto en pantalla: animación y fondo en la vista previa, y van con el render", async () => {
+    server = timeline();
+    renderStage();
+    await screen.findByTestId("preview-canvas");
+    fireEvent.click(screen.getByLabelText("Escena siguiente"));
+    fireEvent.click(screen.getByLabelText("Escena siguiente"));
+    const text = await screen.findByTestId("scene-text");
+    expect(text.textContent).toBe("SIN RESPUESTA");
+    expect(text.style.top).toBe("42%"); // escena de texto: centrado, sobre los subtítulos
+
+    openSection("Texto en pantalla");
+    const box = screen.getByLabelText("Estilo del texto en pantalla");
+    fireEvent.click(within(box).getByRole("radio", { name: "Máquina de escribir" }));
+    fireEvent.click(within(box).getByLabelText("Fondo del texto"));
+    // Letra a letra: lo que falta queda transparente (las líneas no se mueven).
+    const typed = screen.getByTestId("scene-text");
+    expect(typed.textContent).toBe("SIN RESPUESTA");
+    expect((typed.querySelector("span span") as HTMLElement).style.opacity).toBe("0");
+
+    fireEvent.click(within(await panel()).getByText("Renderizar"));
+    await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
+    const body = posts.find((p) => p.path.endsWith("/render"))!.body as { text_style: Record<string, unknown> };
+    expect(body.text_style).toMatchObject({ animation: "typewriter", box: true, font: "Montserrat" });
+  });
+
   it("estilo rápido «Reel cursiva»: fuente, cursiva, sombra y pop en la vista previa y el render", async () => {
     server = timeline();
     renderStage();

@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Literal
 
 FPS = 30
-ZOOM = 0.15  # zoom lento: 15 % a lo largo de la escena
+# Zoom lento: según lo que dura la escena (3 %/s), entre 4 % y 12 %. Un zoom fijo del 15 %
+# en escenas de 3 s se veía apurado.
+ZOOM = 0.12  # el máximo
+ZOOM_PER_S = 0.03
+ZOOM_MIN = 0.04
+KEN_BURNS = 1.08  # acercamiento fijo del paneo lateral
 MUSIC_VOLUME = 0.35
 SFX_VOLUME = 0.9
 
@@ -83,20 +88,43 @@ def cover(q: Quality, factor: int = 1) -> str:
     return f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1"
 
 
-def effect_filter(effect: str | None, q: Quality, frames: int, duration: float) -> list[str]:
+def zoom_amount(duration: float) -> float:
+    """Cuánto se acerca (o aleja) el zoom lento en una escena de `duration` segundos."""
+    return round(min(ZOOM, max(ZOOM_MIN, ZOOM_PER_S * duration)), 4)
+
+
+def _window(left: str, top: str, frac: str, interp: str) -> str:
+    """Recorte móvil con precisión subpíxel (perspective, evaluado por cuadro): la ventana
+    de ancho relativo `frac` con su esquina en (left, top). zoompan redondea a píxeles
+    enteros y el zoom «temblaba»."""
+    x0, y0 = f"W*({left})", f"H*({top})"
+    x1, y1 = f"W*({left}+{frac})", f"H*({top}+{frac})"
+    return (
+        f"perspective=x0='{x0}':y0='{y0}':x1='{x1}':y1='{y0}':x2='{x0}':y2='{y1}':"
+        f"x3='{x1}':y3='{y1}':interpolation={interp}:eval=frame"
+    )
+
+
+def effect_filter(
+    effect: str | None, q: Quality, frames: int, duration: float, draft: bool = False
+) -> list[str]:
     """Filtros de la sección 11 para una escena ya cubierta a la resolución de salida."""
     n = max(frames - 1, 1)
-    center = "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-    zp = f"d=1:s={q.size}:fps={FPS}"
-    if effect == "zoom_lento_in":
-        return [cover(q, 2), f"zoompan=z='1+{ZOOM}*on/{n}':{center}:{zp}"]
-    if effect == "zoom_lento_out":
-        return [cover(q, 2), f"zoompan=z='{1 + ZOOM}-{ZOOM}*on/{n}':{center}:{zp}"]
+    interp = "linear" if draft else "cubic"
+    amount = zoom_amount(duration)
+    if effect in ("zoom_lento_in", "zoom_lento_out"):
+        z = f"(1+{amount}*in/{n})" if effect == "zoom_lento_in" else f"(1+{amount}-{amount}*in/{n})"
+        frac = f"1/{z}"
+        margin = f"(1-1/{z})/2"
+        return [cover(q), _window(margin, margin, frac, interp)]
     if effect == "ken_burns":
-        return [cover(q, 2), f"zoompan=z='1.12':x='(iw-iw/zoom)*on/{n}':y='(ih-ih/zoom)/2':{zp}"]
+        frac = f"{1 / KEN_BURNS:.5f}"
+        travel = f"{1 - 1 / KEN_BURNS:.5f}"
+        return [cover(q), _window(f"{travel}*in/{n}", f"{travel}/2", frac, interp)]
     out = [cover(q)]
     if effect == "estatica":
-        out.append("noise=alls=35:allf=t+u,eq=saturation=0.6")
+        # Grano suave: el ruido fuerte cuadro a cuadro se veía como una vibración.
+        out.append("noise=alls=14:allf=t,eq=saturation=0.6:contrast=1.05")
     elif effect == "glitch":
         out.append("rgbashift=rh=-8:bh=8,noise=alls=12:allf=t")
     elif effect == "fundido_negro":
@@ -143,6 +171,7 @@ def segment_command(
     textfile: Path | None,
     font: str | None,
     raise_text: bool = False,
+    draft: bool = False,
 ) -> list[str]:
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
@@ -164,7 +193,7 @@ def segment_command(
     if seg.kind == "color":
         chain.append("setsar=1")
     else:
-        chain += effect_filter(None if fast else seg.effect, q, frames, frames / FPS)
+        chain += effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft)
     if textfile:
         chain.append(
             text_filter(textfile, font, q, centered=seg.kind == "color", raised=raise_text)

@@ -20,9 +20,13 @@ def test_real_scene_searches_web_commons_and_openverse(client, media_project, we
     candidates = body["scene"]["candidates"]
     assert body["warnings"] == []
     # Intercalados: uno de cada fuente por turno.
-    assert [c["provider"] for c in candidates][:3] == ["searxng", "wikimedia", "openverse"]
+    providers = [c["provider"] for c in candidates]
+    assert providers[:4] == ["google_images", "searxng", "wikimedia", "openverse"]
 
-    [sx] = by_provider(candidates, "searxng")  # el horizontal se filtró en el reel
+    # Fotos reales: en un reel se aceptan también las horizontales (el encuadre las completa).
+    sx, horizontal = by_provider(candidates, "searxng")
+    assert (horizontal["width"], horizontal["height"]) == (1920, 1080)
+    assert len(by_provider(candidates, "google_images")) == 2
     assert sx["full_url"] == "https://noticias.example/foto.jpg"
     assert sx["page_url"] == "https://noticias.example/nota"
     assert (sx["width"], sx["height"]) == (800, 1200)
@@ -30,14 +34,14 @@ def test_real_scene_searches_web_commons_and_openverse(client, media_project, we
     assert sx["author"] == "noticias.example"
     assert len(sx["provider_id"]) == 12  # identificador estable (sha1), no hash() de Python
 
-    [wm] = by_provider(candidates, "wikimedia")  # el horizontal se filtró
+    wm = by_provider(candidates, "wikimedia")[0]
     assert wm["author"] == "Ana Pérez"  # HTML limpio y entidades decodificadas
     assert wm["license"] == "CC BY-SA 4.0"
     assert wm["preview_url"].endswith("a-640.jpg")
     assert wm["page_url"] == "https://commons.wikimedia.org/wiki/File:A.jpg"
 
     ov = by_provider(candidates, "openverse")
-    assert [c["license"] for c in ov] == ["CC BY 2.0", "Dominio público (CC0)"]
+    assert {"CC BY 2.0", "Dominio público (CC0)"} <= {c["license"] for c in ov}
     assert ov[0]["author"] == "Usuario Flickr"
 
 
@@ -45,7 +49,7 @@ def test_requests_carry_query_orientation_and_paging(client, media_project, web)
     search(client, real_scene(media_project))
     ov = next(r for r in web.requests if r.url.host == "api.openverse.org")
     assert ov.url.params["q"] == "priscila loera foto"
-    assert ov.url.params["aspect_ratio"] == "tall"
+    assert "aspect_ratio" not in ov.url.params  # material real: cualquier orientación
     wm = next(r for r in web.requests if r.url.host == "commons.wikimedia.org")
     assert wm.url.params["gsrsearch"] == "priscila loera foto filetype:bitmap"
     assert wm.url.params["gsrnamespace"] == "6"

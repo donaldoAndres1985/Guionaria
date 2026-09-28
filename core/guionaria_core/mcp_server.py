@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from . import __version__
-from .config import SubtitleStyle, load_settings
+from .config import SubtitleStyle, TextStyle, load_settings
 from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
@@ -902,13 +902,16 @@ def build_mcp() -> MCPServer:
         burn_subtitles: bool | None = None,
         subtitle_preset: Literal["reel", "clasico", "caja"] | None = None,
         subtitle_style: SubtitleStyle | None = None,
+        text_style: TextStyle | None = None,
         draft: bool = False,
     ) -> dict[str, Any]:
         """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos).
         quality: draft (720p rápido), standard (1080p), high (1080p nítido), max (4K reescalado,
         YouTube le da más bitrate). burn_subtitles: por defecto sí en reels. Estilo de subtítulos:
         subtitle_preset (reel = Montserrat cursiva con sombra y pop; clasico; caja) o
-        subtitle_style completo; sin ninguno, el último usado. Cancelable con cancel_job."""
+        subtitle_style completo; sin ninguno, el último usado. text_style: texto en pantalla de
+        las escenas (font, size, uppercase, box, text_color y animation: none, fade, pop, slide o
+        typewriter); sin él, el último usado. Cancelable con cancel_job."""
         from .services.render import service as render
 
         with _session() as s:
@@ -921,7 +924,7 @@ def build_mcp() -> MCPServer:
 
         async def work(ctx: JobContext) -> dict:
             return await render.render_project(
-                _session, project_id, level, burn_subtitles, ctx, style=style
+                _session, project_id, level, burn_subtitles, ctx, style=style, text_style=text_style
             )
 
         job = jobs.jobs.submit(

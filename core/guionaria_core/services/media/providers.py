@@ -413,11 +413,15 @@ class SearXNG:
     kinds = frozenset({"image"})
     needs_key = False
 
+    engines: str | None = None  # None: los motores de imágenes que tenga activos SearXNG
+
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
 
     async def search(self, client, query, kind, orientation, page, per_page) -> list[Candidate]:
         params = {"q": query, "format": "json", "categories": "images", "pageno": page}
+        if self.engines:
+            params["engines"] = self.engines
         try:
             resp = await client.get(f"{self.base_url}/search", params=params)
         except httpx.HTTPError as exc:
@@ -460,6 +464,15 @@ class SearXNG:
         return out
 
 
+class GoogleImages(SearXNG):
+    """Google Imágenes a través de SearXNG (sin clave ni cuota): lo mejor para fotos de
+    personas y casos concretos. Las imágenes tienen derechos de sus autores: revisar."""
+
+    name = "google_images"
+    label = "Google Imágenes"
+    engines = "google images"
+
+
 PROVIDERS = {
     "pexels": Pexels,
     "pixabay": Pixabay,
@@ -467,11 +480,12 @@ PROVIDERS = {
     "openverse": Openverse,
     "wikimedia": Wikimedia,
     "searxng": SearXNG,
+    "google_images": GoogleImages,
 }
 
 # Fuentes por tipo de escena (sección 5.5).
 DEFAULTS = {
     "video": ["pexels", "pixabay"],
     "image": ["pexels", "pixabay", "unsplash", "openverse"],
-    "real": ["searxng", "wikimedia", "openverse"],
+    "real": ["google_images", "searxng", "wikimedia", "openverse"],
 }

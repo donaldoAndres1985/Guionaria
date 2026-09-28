@@ -92,6 +92,9 @@ def _rel(path: Path) -> str:
     return path.relative_to(get_paths().home).as_posix()
 
 
+SEARXNG_BASED = ("searxng", "google_images")  # piden la dirección de SearXNG, no una clave
+
+
 def configured_providers(kind: str | None = None) -> list[str]:
     """Fuentes utilizables: las que no piden clave y las que tienen su clave en Ajustes."""
     settings = load_settings()
@@ -101,7 +104,7 @@ def configured_providers(kind: str | None = None) -> list[str]:
             continue
         if cls.needs_key and not getattr(settings.api_keys, name, ""):
             continue
-        if name == "searxng" and not settings.searxng_url:
+        if name in SEARXNG_BASED and not settings.searxng_url:
             continue
         out.append(name)
     return out
@@ -109,7 +112,7 @@ def configured_providers(kind: str | None = None) -> list[str]:
 
 def make_provider(name: str):
     settings = load_settings()
-    if name == "searxng":
+    if name in SEARXNG_BASED:
         return PROVIDERS[name](settings.searxng_url)
     return PROVIDERS[name](getattr(settings.api_keys, name, ""))
 
@@ -370,7 +373,10 @@ async def search_scene(session: Session, scene_id: int, req: SearchRequest) -> S
             "Ajustes → Claves de API"
         )
 
-    orientation = None if req.any_orientation else orientation_for(project)
+    # Las fotos reales (prensa, archivo) casi siempre son horizontales: en un reel se aceptan
+    # igual y el encuadre las completa. Filtrarlas dejaba sin resultados a las víctimas.
+    any_orientation = req.any_orientation or scene.media_kind == "real"
+    orientation = None if any_orientation else orientation_for(project)
     results: dict[str, list[Candidate]] = {}
     to_fetch = []
     for name in active:
