@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project, Publication, PublishingState, QueueItem } from "@/lib/api";
 import { PublishingPage } from "@/pages/Publishing";
 import { PublishBottomBar, PublishStage, usePublishController } from "./PublishStage";
+import { kitSteps, kitSummary } from "./ManualKit";
 import { fromLocalInput, splitList, toLocalInput } from "./publishingMeta";
 
 const project = { id: 7, title: "El secuestro", status: "RENDERIZADO", format: "reel", channel_id: 1 } as Project;
@@ -44,6 +45,7 @@ const publication = (over: Partial<Publication> = {}): Publication => ({
   ],
   limits: { title: 100, description: 5000, tags: 500, hashtags: 5 },
   full_text: "Un caso que cambió todo.\n\n#truecrime\n\nCréditos — El secuestro",
+  caption: "Un caso que cambió todo.\n\n#truecrime\n\nCréditos — El secuestro",
   upload_url: "https://www.youtube.com/upload",
   thumbnail_url: null,
   ...over,
@@ -62,7 +64,15 @@ const baseState = (over: Partial<PublishingState> = {}): PublishingState => ({
   credits: "Créditos — El secuestro",
   publications: [
     publication(),
-    publication({ id: 2, platform: "tiktok", label: "TikTok", tags: [], full_text: "Nadie vio nada.", upload_url: "https://www.tiktok.com/tiktokstudio/upload" }),
+    publication({
+      id: 2,
+      platform: "tiktok",
+      label: "TikTok",
+      tags: [],
+      full_text: "Nadie vio nada.",
+      caption: "El secuestro que nadie vio\n\nNadie vio nada.",
+      upload_url: "https://www.tiktok.com/tiktokstudio/upload",
+    }),
   ],
   youtube: { configured: false, connected: false, account: null, redirect_uri: "http://127.0.0.1:8765/api/youtube/oauth/callback" },
   ...over,
@@ -195,14 +205,29 @@ describe("publicación", () => {
     expect(await screen.findByText("Subiendo a YouTube… 40 %")).toBeTruthy();
   });
 
-  it("publicar a mano: abrir la plataforma y pegar la dirección", async () => {
+  it("publicar a mano: pasos de la plataforma, copiar cada dato, mostrar archivos y pegar la dirección", async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText, write: vi.fn() }, configurable: true });
     renderStage();
     fireEvent.click(await screen.findByText("TikTok"));
     const editor = await screen.findByLabelText("Publicación en TikTok");
-    fireEvent.click(within(editor).getByText("Abrir TikTok"));
+    const kit = within(editor).getByLabelText("Publicar a mano en TikTok");
+    // Pasos de TikTok: abrir, video, texto único (con el título arriba), portada, fecha, créditos, comentario.
+    expect(within(kit).getAllByRole("listitem").map((li) => li.dataset.testid).filter(Boolean)).toEqual([
+      "kit-open", "kit-video", "kit-caption", "kit-cover", "kit-schedule", "kit-credits", "kit-pinned",
+    ]);
+    fireEvent.click(within(within(kit).getByTestId("kit-open")).getByText("Abrir"));
     await waitFor(() =>
       expect(calls).toContainEqual({ method: "POST", path: "/api/system/open-url", body: { url: "https://www.tiktok.com/tiktokstudio/upload" } }),
     );
+    fireEvent.click(within(kit).getByLabelText("Mostrar archivo: Sube el video: arrástralo desde la carpeta"));
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/projects/7/publishing:reveal" && c.method === "POST")).toBe(true));
+    fireEvent.click(within(kit).getByLabelText("Copiar: Descripción (título, texto y hashtags)"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("El secuestro que nadie vio\n\nNadie vio nada."));
+    fireEvent.click(within(kit).getByLabelText("Copiar: Créditos de los medios en el primer comentario"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Créditos — El secuestro"));
+    fireEvent.click(within(kit).getByText("Copiar todo"));
+    await waitFor(() => expect(String(writeText.mock.calls.at(-1)?.[0])).toContain("TIKTOK — El secuestro que nadie vio"));
     fireEvent.change(within(editor).getByLabelText("Dirección publicada en TikTok"), { target: { value: "https://www.tiktok.com/@x/video/1" } });
     fireEvent.click(within(editor).getByText("Marcar como publicado"));
     await waitFor(() =>
@@ -390,6 +415,23 @@ describe("cola de publicación", () => {
     expect(within(screen.getByRole("region", { name: "Publicado" })).getByLabelText("Abrir TikTok")).toBeTruthy();
     fireEvent.click(within(pending).getByText("El secuestro que nadie vio"));
     expect(await screen.findByText("proyecto abierto")).toBeTruthy();
+  });
+});
+
+describe("kit de publicación manual", () => {
+  it("YouTube: pasos en el orden de Studio con cada dato para copiar", () => {
+    const state = baseState();
+    const yt = { ...publication(), meta: { ...publication().meta, made_for_kids: false } };
+    const steps = kitSteps(yt, state);
+    expect(steps.map((s) => s.id)).toEqual(["open", "video", "title", "description", "thumbnail", "kids", "tags", "subtitles", "visibility", "pinned"]);
+    expect(steps.find((s) => s.id === "kids")?.label).toBe("Audiencia: No, no es contenido para niños");
+    expect(steps.find((s) => s.id === "tags")?.action).toEqual({ kind: "copy", text: "caso priscila", what: "Etiquetas" });
+    // Sin miniatura, el paso avisa que falta el archivo.
+    expect(steps.find((s) => s.id === "thumbnail")?.action).toEqual({ kind: "reveal", file: "thumbnail", available: false });
+    const summary = kitSummary(yt, state);
+    expect(summary).toContain("TÍTULO:\nEl secuestro que nadie vio");
+    expect(summary).toContain("ETIQUETAS:\ncaso priscila");
+    expect(summary).toContain("VIDEO: C:\\Guionaria\\proyecto.mp4");
   });
 });
 

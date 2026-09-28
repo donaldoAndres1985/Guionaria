@@ -49,7 +49,11 @@ export function usePublishingActions(projectId: number) {
         api.post<PublishingState>(`/api/projects/${projectId}/publishing/thumbnail`, body),
       onSuccess: done,
     }),
-    reveal: useMutation({ mutationFn: () => api.post<void>(`/api/projects/${projectId}/publishing:reveal`, {}) }),
+    /** Abre la carpeta publicacion/ o muestra el video, la miniatura o los subtítulos. */
+    reveal: useMutation({
+      mutationFn: (file?: "video" | "thumbnail" | "subtitles") =>
+        api.post<void>(`/api/projects/${projectId}/publishing:reveal${file ? `?file=${file}` : ""}`, {}),
+    }),
     chooseCover: useMutation({
       mutationFn: (index: number) => api.post<PublishingState>(`/api/projects/${projectId}/publishing/cover:choose`, { index }),
       onSuccess: done,

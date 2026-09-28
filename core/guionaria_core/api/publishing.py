@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse
@@ -110,11 +110,27 @@ def thumbnail(project_id: int, session: SessionDep) -> FileResponse:
 
 
 @router.post("/api/projects/{project_id}/publishing:reveal", status_code=status.HTTP_204_NO_CONTENT)
-def reveal(project_id: int, session: SessionDep) -> None:
-    """Abre la carpeta publicacion/ (textos por plataforma y miniatura)."""
+def reveal(
+    project_id: int,
+    session: SessionDep,
+    file: Literal["folder", "video", "thumbnail", "subtitles"] = "folder",
+) -> None:
+    """Abre la carpeta publicacion/ o muestra seleccionado el video, la miniatura o los
+    subtítulos (para arrastrarlos a la plataforma al publicar a mano)."""
     project = get_project(session, project_id)
     svc.write_texts(session, project)
-    system.reveal(project_dir(project) / svc.FOLDER)
+    if file == "folder":
+        system.reveal(project_dir(project) / svc.FOLDER)
+        return
+    path = svc.files_for(project)[file]
+    if path is None:
+        names = {
+            "video": "el video final",
+            "thumbnail": "la miniatura",
+            "subtitles": "los subtítulos",
+        }
+        raise NotFound(f"Todavía no hay {names[file]}")
+    system.reveal(path)
 
 
 @router.post(
