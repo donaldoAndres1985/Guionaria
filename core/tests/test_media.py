@@ -78,10 +78,18 @@ def test_search_image_and_real_scenes_use_image_endpoints(client, media_project,
 
     body = search(client, real_scene).json()
     assert body["scene"]["default_query"] == "priscila loera foto"
-    # Material real: SearXNG, Wikimedia y Openverse (sección 5.5), no los bancos de stock.
-    assert body["scene"]["default_providers"] == ["searxng", "wikimedia", "openverse"]
-    searx = [r for r in web.requests if r.url.port == 8888][-1]
-    assert searx.url.params["q"] == "priscila loera foto"
+    # Material real: Google Imágenes y la web (vía SearXNG), Wikimedia y Openverse (sección
+    # 5.5), no los bancos de stock.
+    assert body["scene"]["default_providers"] == [
+        "google_images",
+        "searxng",
+        "wikimedia",
+        "openverse",
+    ]
+    searx = [r for r in web.requests if r.url.port == 8888]
+    assert {r.url.params["q"] for r in searx} == {"priscila loera foto"}
+    # Google Imágenes pide solo ese motor; la búsqueda web usa los que tenga SearXNG.
+    assert sorted(r.url.params.get("engines", "") for r in searx) == ["", "google images"]
 
 
 def test_any_orientation_and_custom_query_and_provider_subset(client, media_project, web):
@@ -340,6 +348,7 @@ def test_approve_media_requires_every_scene_with_media(client, media_project, we
         "openverse",
         "wikimedia",
         "searxng",
+        "google_images",
     ]
     assert overview["orientation"] == "portrait"
     assert [s["needs_media"] for s in overview["scenes"]] == [True, True, True, False]

@@ -25,13 +25,24 @@ def test_quality():
 
 def test_effects():
     q = plan.quality(1080, 1920, False)
-    zin = ",".join(plan.effect_filter("zoom_lento_in", q, 60, 2.0))
-    assert "scale=2160:3840" in zin and "zoompan=z='1+0.15*on/59'" in zin and "s=1080x1920" in zin
-    assert "zoompan=z='1.15-0.15*on/59'" in ",".join(
-        plan.effect_filter("zoom_lento_out", q, 60, 2.0)
+    # Zoom según la duración (3 %/s, entre 4 % y 12 %) y recorte subpíxel (sin temblor).
+    assert (plan.zoom_amount(1.0), plan.zoom_amount(3.0), plan.zoom_amount(10)) == (
+        0.04,
+        0.09,
+        0.12,
     )
-    assert "x='(iw-iw/zoom)*on/59'" in ",".join(plan.effect_filter("ken_burns", q, 60, 2.0))
-    assert "noise=" in ",".join(plan.effect_filter("estatica", q, 60, 2.0))
+    zin = ",".join(plan.effect_filter("zoom_lento_in", q, 60, 2.0))
+    assert zin.startswith(plan.cover(q)) and "zoompan" not in zin
+    assert "perspective=x0='W*((1-1/(1+0.06*in/59))/2)'" in zin and "eval=frame" in zin
+    assert "interpolation=cubic" in zin
+    zout = ",".join(plan.effect_filter("zoom_lento_out", q, 60, 2.0))
+    assert "(1+0.06-0.06*in/59)" in zout
+    kb = ",".join(plan.effect_filter("ken_burns", q, 60, 2.0))
+    assert "x0='W*(0.07407*in/59)'" in kb and "y0='H*(0.07407/2)'" in kb
+    assert "interpolation=linear" in ",".join(
+        plan.effect_filter("zoom_lento_in", q, 60, 2.0, draft=True)
+    )
+    assert "noise=alls=14" in ",".join(plan.effect_filter("estatica", q, 60, 2.0))
     assert "rgbashift" in ",".join(plan.effect_filter("glitch", q, 60, 2.0))
     assert "fade=t=out:st=1.40:d=0.60" in ",".join(plan.effect_filter("fundido_negro", q, 60, 2.0))
     assert plan.effect_filter(None, q, 60, 2.0) == [plan.cover(q)]
@@ -170,10 +181,14 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
 
     state = client.get(f"/api/projects/{pid}/render").json()
     assert state["can_render"] and state["has_voice"] and state["has_subtitles"]
+    assert state["text_style"]["animation"] == "pop"  # por defecto
 
     job = wait_job(
         client,
-        client.post(f"/api/projects/{pid}/render", json={"draft": True}).json()["id"],
+        client.post(
+            f"/api/projects/{pid}/render",
+            json={"draft": True, "text_style": {"animation": "typewriter", "box": True}},
+        ).json()["id"],
         timeout=180,
     )
     assert job["status"] == "done", job["error"]
@@ -194,6 +209,16 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
     info = probe(out)
     assert sorted(info["streams"]) == ["audio", "video"]
     assert info["duration"] == pytest.approx(4.9, abs=0.15)
+    # El estilo del texto en pantalla se recuerda (y la vista previa lo usa).
+    assert client.get(f"/api/projects/{pid}/render").json()["text_style"]["box"] is True
+    assert client.get(f"/api/projects/{pid}/timeline/preview").json()["text_style"] == {
+        "font": "Montserrat",
+        "size": "medium",
+        "uppercase": False,
+        "animation": "typewriter",
+        "box": True,
+        "text_color": "#FFFFFF",
+    }
     # La voz no se adelanta a los subtítulos: el audio dura lo mismo que el video.
     audio, video_len = stream_durations(out)
     assert audio == pytest.approx(video_len, abs=0.1)

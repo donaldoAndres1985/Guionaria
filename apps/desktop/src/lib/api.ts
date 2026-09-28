@@ -145,6 +145,7 @@ export interface AppSettings {
   /** «Investigar con fuentes»: tope de búsquedas web por caso. */
   research_max_searches?: number;
   subtitle_style?: SubtitleStyle;
+  text_style?: TextStyle;
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -604,6 +605,7 @@ export interface PreviewState {
   music: PreviewSound[];
   words: PreviewWord[];
   subtitle_style: SubtitleStyle;
+  text_style?: TextStyle;
   default_burn_subtitles: boolean;
   zoom: number;
   music_volume: number;
@@ -927,6 +929,16 @@ export interface SubtitleStyle {
   background: boolean;
 }
 
+/** Estilo del texto en pantalla de las escenas (como TextStyle del núcleo). */
+export interface TextStyle {
+  font: SubtitleStyle["font"];
+  size: "small" | "medium" | "large";
+  uppercase: boolean;
+  animation: "none" | "fade" | "pop" | "slide" | "typewriter";
+  box: boolean;
+  text_color: string;
+}
+
 export interface RenderState {
   project_id: number;
   can_render: boolean;
@@ -936,6 +948,8 @@ export interface RenderState {
   default_burn_subtitles: boolean;
   /** Último estilo de subtítulos usado. */
   subtitle_style?: SubtitleStyle;
+  /** Último estilo del texto en pantalla. */
+  text_style?: TextStyle;
   duration_s: number;
   scenes: number;
   files: RenderFile[];

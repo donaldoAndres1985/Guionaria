@@ -108,7 +108,18 @@ class MediaOverview(BaseModel):
 class SearchRequest(BaseModel):
     query: str | None = None
     providers: (
-        list[Literal["pexels", "pixabay", "unsplash", "openverse", "wikimedia", "searxng"]] | None
+        list[
+            Literal[
+                "pexels",
+                "pixabay",
+                "unsplash",
+                "openverse",
+                "wikimedia",
+                "searxng",
+                "google_images",
+            ]
+        ]
+        | None
     ) = None
     page: int = Field(default=1, ge=1, le=20)
     any_orientation: bool = False

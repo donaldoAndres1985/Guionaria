@@ -4,7 +4,7 @@ componer escenas, texto, subtítulos y audio en tiempo real, con los mismos tiem
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from ...config import SubtitleStyle, load_settings
+from ...config import SubtitleStyle, TextStyle, load_settings
 from ...models import Project
 from ..render.plan import MUSIC_VOLUME, SFX_VOLUME, ZOOM
 from ..voice.service import timed_words
@@ -54,6 +54,7 @@ class PreviewState(BaseModel):
     music: list[PreviewSound]
     words: list[PreviewWord]  # con tiempos exactos (ElevenLabs/Whisper) o estimados (Piper)
     subtitle_style: SubtitleStyle
+    text_style: TextStyle
     default_burn_subtitles: bool
     zoom: float
     music_volume: float
@@ -128,6 +129,7 @@ def preview_state(session: Session, project: Project) -> PreviewState:
             for w in timed_words(session, project.id)
         ],
         subtitle_style=load_settings().subtitle_style,
+        text_style=load_settings().text_style,
         default_burn_subtitles=project.format == "reel",
         zoom=ZOOM,
         music_volume=MUSIC_VOLUME,

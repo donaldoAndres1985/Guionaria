@@ -5,12 +5,16 @@ import {
   captionGroups,
   effectLook,
   formatClock,
+  layoutText,
+  lineChars,
   musicVolume,
   sceneIndexAt,
   sceneTextPx,
   SUBTITLE_PRESETS,
   subtitleFontPx,
   subtitleTextCss,
+  textLook,
+  zoomAmount,
 } from "./previewMeta";
 import { DEFAULT_STYLE } from "./RenderPanel";
 
@@ -57,19 +61,42 @@ describe("vista previa: cálculos", () => {
   });
 
   it("efectos aproximados", () => {
-    expect(effectLook("zoom_lento_in", 0.5, 0.15, 4).transform).toBe("scale(1.075)");
-    expect(effectLook("zoom_lento_out", 1, 0.15, 4).transform).toBe("scale(1)");
-    expect(effectLook("ken_burns", 0, 0.15, 4).transform).toMatch(/^scale\(1\.12\) translateX\(5\.3/);
+    // Zoom según la duración (como plan.zoom_amount): 3 %/s entre 4 % y el máximo.
+    expect([zoomAmount(1, 0.12), zoomAmount(3, 0.12), zoomAmount(10, 0.12)]).toEqual([0.04, 0.09, 0.12]);
+    expect(effectLook("zoom_lento_in", 0.5, 0.12, 3).transform).toBe("scale(1.045)");
+    expect(effectLook("zoom_lento_out", 1, 0.12, 4).transform).toBe("scale(1)");
+    expect(effectLook("ken_burns", 0, 0.12, 4).transform).toMatch(/^scale\(1\.08\) translateX\(3\.7/);
     expect(effectLook("fundido_negro", 1, 0.15, 4).fade).toBeCloseTo(1);
     expect(effectLook("fundido_negro", 0.5, 0.15, 4).fade).toBe(0);
     expect(effectLook("camara_rapida", 0.5, 0.15, 4).playbackRate).toBe(2);
     expect(effectLook(null, 0.5, 0.15, 4).transform).toBe("none");
   });
 
+  it("texto en pantalla: mismas líneas y animaciones que el render", () => {
+    const limit = lineChars(1080, sceneTextPx(1080, 1920, false));
+    expect(limit).toBe(21);
+    expect(layoutText("María Marta García Belsunce · 50 años · socióloga", limit)).toBe(
+      "María Marta García Belsunce\n50 años · socióloga",
+    );
+    expect(layoutText("36 DÍAS", limit)).toBe("36 DÍAS");
+    // Pop: empieza pequeño, rebota y queda a su tamaño; se desvanece al final.
+    expect(textLook("pop", 0, 3, 10).scale).toBeCloseTo(0.6);
+    expect(textLook("pop", 0.15, 3, 10).scale).toBeCloseTo(1.08);
+    expect(textLook("pop", 1, 3, 10)).toEqual({ opacity: 1, scale: 1, rise: 0, chars: null });
+    expect(textLook("pop", 2.95, 3, 10).opacity).toBeCloseTo(1 / 3);
+    // Máquina de escribir: letra a letra durante el 40 % de la escena (máx. 1,2 s).
+    expect(textLook("typewriter", 0, 3, 20).chars).toBe(1);
+    expect(textLook("typewriter", 0.6, 3, 20).chars).toBe(11);
+    expect(textLook("typewriter", 1.3, 3, 20).chars).toBeNull();
+    expect(textLook("slide", 0, 3, 5).rise).toBeCloseTo(0.03);
+    expect(textLook("fade", 0.15, 3, 5).opacity).toBeCloseTo(0.5);
+  });
+
   it("tamaños como en el render y ducking de la música", () => {
     expect(subtitleFontPx(DEFAULT_STYLE, 1080, 1920)).toBeCloseTo(1080 * 0.078);
     expect(subtitleFontPx({ ...DEFAULT_STYLE, size: "large" }, 1920, 1080)).toBeCloseTo(1080 * 0.062 * 1.25);
-    expect(sceneTextPx(1080, 1920, false)).toBeCloseTo(1080 / 13);
+    expect(sceneTextPx(1080, 1920, false)).toBe(83); // como captions.scene_text_size
+    expect(sceneTextPx(1080, 1920, true, "large")).toBe(118);
     expect(musicVolume(0.35, words, 0.5)).toBeCloseTo(0.35 * 0.35);
     expect(musicVolume(0.35, words, 5)).toBe(0.35);
     expect(formatClock(75.25)).toBe("1:15.3");

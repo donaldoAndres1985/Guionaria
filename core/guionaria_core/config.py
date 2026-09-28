@@ -106,6 +106,18 @@ class SubtitleStyle(BaseModel):
     background: bool = False  # caja semitransparente detrás del texto
 
 
+class TextStyle(BaseModel):
+    """Estilo del texto en pantalla de las escenas (títulos, fechas, datos). Se recuerda."""
+
+    font: Literal["Arial", "Montserrat", "Impact", "Verdana", "Segoe UI"] = "Montserrat"
+    size: Literal["small", "medium", "large"] = "medium"
+    uppercase: bool = False
+    # Cómo entra el texto: aparecer, pop (crece y rebota), deslizar hacia arriba o letra a letra.
+    animation: Literal["none", "fade", "pop", "slide", "typewriter"] = "pop"
+    box: bool = False  # caja oscura detrás del texto
+    text_color: str = Field("#FFFFFF", pattern=HEX)
+
+
 class AppSettings(BaseModel):
     claude_model: str = ""  # vacío = el modelo por defecto de la CLI (alias: sonnet, opus, haiku)
     searxng_url: str = "http://127.0.0.1:8888"
@@ -122,6 +134,7 @@ class AppSettings(BaseModel):
     # «Investigar con fuentes»: tope de búsquedas web por caso (páginas leídas = el doble).
     research_max_searches: int = Field(default=6, ge=2, le=15)
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
+    text_style: TextStyle = Field(default_factory=TextStyle)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

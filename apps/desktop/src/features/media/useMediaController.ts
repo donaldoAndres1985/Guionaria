@@ -26,6 +26,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
   openverse: "Openverse",
   wikimedia: "Wikimedia",
   searxng: "Web (SearXNG)",
+  google_images: "Google Imágenes",
   manual: "Manual",
 };
 

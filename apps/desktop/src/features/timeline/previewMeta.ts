@@ -2,7 +2,7 @@
  * Cálculos de la vista previa en vivo. Replican los del render (services/render/plan.py y
  * captions.py) para que lo que se ve se parezca lo más posible al MP4 final.
  */
-import type { PreviewScene, PreviewWord, SubtitleStyle } from "@/lib/api";
+import type { PreviewScene, PreviewWord, SubtitleStyle, TextStyle } from "@/lib/api";
 
 /** Escena que se ve en el instante t (la última si t está al final). */
 export function sceneIndexAt(scenes: PreviewScene[], t: number): number {
@@ -91,9 +91,88 @@ export function subtitleFontPx(style: SubtitleStyle, width: number, height: numb
   return base * SUBTITLE_SIZE[style.size];
 }
 
-/** Tamaño del texto en pantalla (como en plan.text_filter). */
-export function sceneTextPx(width: number, height: number, centered: boolean): number {
-  return height < width ? height / (centered ? 9 : 16) : width / (centered ? 9 : 13);
+// --- texto en pantalla (como captions.scene_text_size, layout_text y _text_events) ---
+
+const TEXT_SIZE: Record<TextStyle["size"], number> = { small: 0.8, medium: 1, large: 1.2 };
+/** Margen lateral del texto (fracción del ancho), el mismo del render. */
+export const TEXT_MARGIN = 0.05;
+
+/** Tamaño del texto en pantalla, en píxeles del video. */
+export function sceneTextPx(width: number, height: number, centered: boolean, size: TextStyle["size"] = "medium"): number {
+  const base = height < width ? height / (centered ? 11 : 16) : width / (centered ? 11 : 13);
+  return Math.round(base * TEXT_SIZE[size]);
+}
+
+/** Caracteres que caben en una línea (ancho medio de un carácter en negrita ≈ 0,56 del tamaño). */
+export function lineChars(width: number, px: number): number {
+  return Math.max(10, Math.round((width * (1 - 2 * TEXT_MARGIN)) / (0.56 * px)));
+}
+
+const SEPARATOR = /\s+[·|•–—]\s+/;
+
+/** Corta en los separadores («Nombre · 50 años · socióloga») las líneas que no caben. */
+export function layoutText(text: string, limit: number): string {
+  const out: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    const parts = line.split(SEPARATOR);
+    if (line.length <= limit || parts.length === 1) {
+      out.push(line);
+      continue;
+    }
+    const seps = line.match(new RegExp(SEPARATOR.source, "g")) ?? [];
+    let current = parts[0];
+    parts.slice(1).forEach((part, i) => {
+      if (current.length + seps[i].length + part.length <= limit) current += seps[i] + part;
+      else {
+        out.push(current);
+        current = part;
+      }
+    });
+    out.push(current);
+  }
+  return out.filter(Boolean).join("\n");
+}
+
+/** Centro vertical del texto (fracción del alto): arriba si hay subtítulos quemados. */
+export function textTop(centered: boolean, raised: boolean): number {
+  if (centered) return raised ? 0.42 : 0.5; // con subtítulos, más arriba para no pisarlos
+  return raised ? 0.16 : 0.78;
+}
+
+export interface TextLook {
+  opacity: number;
+  /** Escala (pop) y desplazamiento vertical en fracción del alto (deslizar). */
+  scale: number;
+  rise: number;
+  /** Caracteres visibles (máquina de escribir); null = todos. */
+  chars: number | null;
+}
+
+const ease = (x: number) => 1 - (1 - x) ** 3;
+
+/** Animación de entrada del texto, `local` segundos después de que empieza la escena. */
+export function textLook(animation: TextStyle["animation"], local: number, duration: number, length: number): TextLook {
+  const look: TextLook = { opacity: 1, scale: 1, rise: 0, chars: null };
+  const outMs = Math.min(150, duration * 250) / 1000;
+  const left = duration - local;
+  const fadeOut = (inS: number) => (left < outMs ? Math.max(left / outMs, 0) : Math.min(local / inS, 1));
+  if (animation === "fade") look.opacity = fadeOut(0.3);
+  else if (animation === "pop") {
+    look.opacity = fadeOut(0.09);
+    const ms = local * 1000;
+    look.scale = ms < 150 ? 0.6 + 0.48 * (ms / 150) : ms < 260 ? 1.08 - 0.08 * ((ms - 150) / 110) : 1;
+  } else if (animation === "slide") {
+    look.opacity = fadeOut(0.22);
+    look.rise = 0.03 * (1 - ease(Math.min(local / 0.3, 1)));
+  } else if (animation === "typewriter") {
+    const reveal = Math.min(1.2, Math.max(0.4, duration * 0.4));
+    const steps = Math.min(30, length);
+    const k = Math.min(Math.floor((local / reveal) * steps) + 1, steps);
+    look.chars = k >= steps ? null : Math.round((length * k) / steps);
+    if (left < outMs) look.opacity = Math.max(left / outMs, 0);
+  }
+  return look;
 }
 
 // --- efectos (aproximación de plan.effect_filter) ---
@@ -106,15 +185,23 @@ export interface EffectLook {
   playbackRate: number;
 }
 
+/** Cuánto se acerca el zoom lento (como plan.zoom_amount): 3 %/s, entre 4 % y el máximo. */
+export function zoomAmount(duration: number, max: number): number {
+  return Math.round(Math.min(max, Math.max(0.04, 0.03 * duration)) * 10000) / 10000;
+}
+
+const KEN_BURNS = 1.08;
+
 export function effectLook(effect: string | null, progress: number, zoom: number, sceneDuration: number): EffectLook {
   const p = Math.min(Math.max(progress, 0), 1);
   const look: EffectLook = { transform: "none", fade: 0, playbackRate: 1 };
   const r = (v: number) => Math.round(v * 10000) / 10000;
-  if (effect === "zoom_lento_in") look.transform = `scale(${r(1 + zoom * p)})`;
-  else if (effect === "zoom_lento_out") look.transform = `scale(${r(1 + zoom - zoom * p)})`;
+  const amount = zoomAmount(sceneDuration, zoom);
+  if (effect === "zoom_lento_in") look.transform = `scale(${r(1 + amount * p)})`;
+  else if (effect === "zoom_lento_out") look.transform = `scale(${r(1 + amount - amount * p)})`;
   else if (effect === "ken_burns") {
-    const pan = ((1 - 1 / 1.12) / 2) * 100; // % que se desplaza hacia cada lado
-    look.transform = `scale(1.12) translateX(${pan - 2 * pan * p}%)`;
+    const pan = ((1 - 1 / KEN_BURNS) / 2) * 100; // % que se desplaza hacia cada lado
+    look.transform = `scale(${KEN_BURNS}) translateX(${r(pan - 2 * pan * p)}%)`;
   } else if (effect === "estatica") look.filter = "saturate(0.6) contrast(1.1)";
   else if (effect === "glitch") look.filter = "hue-rotate(8deg) saturate(1.3)";
   else if (effect === "fundido_negro") {

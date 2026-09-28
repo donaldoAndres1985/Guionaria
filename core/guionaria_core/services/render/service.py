@@ -20,7 +20,7 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from ...config import SubtitleStyle, load_settings, save_settings
+from ...config import SubtitleStyle, TextStyle, load_settings, save_settings
 from ...domain.states import ORDER, ProjectStatus
 from ...models._base import now_iso
 from ..errors import Conflict, DomainError, NotFound
@@ -60,6 +60,7 @@ class RenderState(BaseModel):
     has_subtitles: bool
     default_burn_subtitles: bool  # reels: sí; videos: no (se suben aparte a YouTube)
     subtitle_style: SubtitleStyle  # el último estilo usado
+    text_style: TextStyle  # estilo del texto en pantalla (el último usado)
     duration_s: float
     scenes: int
     files: list[RenderFile]
@@ -126,6 +127,7 @@ def render_state(session: Session, project_id: int) -> RenderState:
         has_subtitles=_srt(project).exists(),
         default_burn_subtitles=project.format == "reel",
         subtitle_style=load_settings().subtitle_style,
+        text_style=load_settings().text_style,
         duration_s=round(m.duration / m.fps, 2),
         scenes=len(m.scenes),
         files=files,
@@ -143,6 +145,20 @@ def render_file(session: Session, project_id: int, name: str) -> Path:
 
 
 # --- ejecución ---
+
+
+def scene_texts(m: TimelineModel) -> list[captions.SceneText]:
+    """Texto en pantalla de cada escena, en segundos del video final."""
+    return [
+        captions.SceneText(
+            span.start / m.fps,
+            (span.start + span.duration) / m.fps,
+            span.text,
+            centered=span.clip is None,
+        )
+        for span in m.scenes
+        if span.text and span.text.strip()
+    ]
 
 
 def _segments(m: TimelineModel) -> list[plan.Segment]:
@@ -234,6 +250,7 @@ def _render_sync(
     cancel: threading.Event | None = None,
     words: list[Word] | None = None,
     style: SubtitleStyle | None = None,
+    text_style: TextStyle | None = None,
 ) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
@@ -246,17 +263,9 @@ def _render_sync(
         files = []
         for i, seg in enumerate(segments):
             report(0.05 + 0.75 * i / len(segments), f"Escena {seg.position} de {len(segments)}…")
-            textfile = None
-            if seg.text:
-                textfile = tmp / f"texto_{i:03d}.txt"
-                textfile.write_text(seg.text, encoding="utf-8")
             out = tmp / f"seg_{i:03d}.mp4"
-            _run(
-                plan.segment_command(
-                    seg, q, out, textfile, font if textfile else None, raise_text=bool(srt)
-                ),
-                cancel=cancel,
-            )
+            # El texto en pantalla no va aquí: se escribe con libass en el paso final.
+            _run(plan.segment_command(seg, q, out, None, None, draft=draft), cancel=cancel)
             files.append(out)
 
         report(0.82, "Uniendo las escenas…")
@@ -299,9 +308,19 @@ def _render_sync(
         if afilter:
             args += ["-filter_complex", afilter]
         vfilter = None
-        if srt and words:
-            # Subtítulos con estilo: frases cortas y la palabra que se dice resaltada.
-            ass = captions.build_ass(words, style or SubtitleStyle(), q.width, q.height)
+        texts = scene_texts(m)
+        styled = bool(srt and words)
+        if styled or texts:
+            # Subtítulos con estilo (frases cortas, palabra resaltada) y texto de las escenas.
+            ass = captions.build_ass(
+                words if styled else [],
+                style or SubtitleStyle(),
+                q.width,
+                q.height,
+                texts,
+                text_style,
+                raised=bool(srt),
+            )
             (tmp / "subs.ass").write_text(ass, encoding="utf-8")
             # Fuentes incluidas (Montserrat…) en una carpeta local: sin escapar rutas de Windows.
             if captions.FONTS_DIR.exists():
@@ -309,15 +328,16 @@ def _render_sync(
                 vfilter = "ass=subs.ass:fontsdir=fonts"
             else:
                 vfilter = "ass=subs.ass"
-        elif srt:
+        if srt and not styled:
             shutil.copy2(srt, tmp / "subs.srt")  # nombre simple: evita escapar la ruta en Windows
-            vfilter = plan.subtitle_filter("subs.srt", m.height > m.width)
+            plain = plan.subtitle_filter("subs.srt", m.height > m.width)
+            vfilter = f"{plain},{vfilter}" if vfilter else plain
         args += ["-map", "0:v"]
         if vfilter:
             args += ["-vf", vfilter]
         if afilter:
             args += ["-map", "[aout]", "-c:a", "aac", "-b:a", q.audio_bitrate]
-        if srt:
+        if vfilter:
             args += [
                 "-c:v",
                 "libx264",
@@ -333,7 +353,7 @@ def _render_sync(
         output = folder / OUTPUTS["draft" if draft else "final"]
         partial = tmp / "salida.mp4"
         args += ["-t", f"{total:.3f}", "-movflags", "+faststart", partial.name]
-        report(0.85, "Mezclando el audio" + (" y quemando los subtítulos…" if srt else "…"))
+        report(0.85, "Mezclando el audio" + (" y escribiendo los textos…" if vfilter else "…"))
         _run_with_progress(args, total, tmp, lambda f: report(0.85 + 0.12 * f, None), cancel)
         output.unlink(missing_ok=True)
         partial.replace(output)
@@ -352,6 +372,7 @@ async def render_project(
     burn_subtitles: bool | None,
     ctx: JobContext,
     style: SubtitleStyle | None = None,
+    text_style: TextStyle | None = None,
 ) -> dict:
     if isinstance(level, bool):
         level = "draft" if level else "standard"
@@ -368,11 +389,13 @@ async def render_project(
         burn = project.format == "reel" if burn_subtitles is None else burn_subtitles
         srt = _srt(project) if burn and _srt(project).exists() else None
         words = timed_words(session, project_id) if srt else []
-    if style is not None:
-        settings = load_settings()
-        settings.subtitle_style = style  # se recuerda para la próxima vez
+    if style is not None or text_style is not None:
+        settings = load_settings()  # se recuerdan para la próxima vez
+        settings.subtitle_style = style or settings.subtitle_style
+        settings.text_style = text_style or settings.text_style
         save_settings(settings)
     style = style or load_settings().subtitle_style
+    text_style = text_style or load_settings().text_style
 
     folder.mkdir(parents=True, exist_ok=True)
     loop = asyncio.get_running_loop()
@@ -381,7 +404,7 @@ async def render_project(
         loop.call_soon_threadsafe(ctx.progress, fraction, message)
 
     output, thumb = await asyncio.to_thread(
-        _render_sync, m, folder, srt, level, report, ctx.cancel_event, words, style
+        _render_sync, m, folder, srt, level, report, ctx.cancel_event, words, style, text_style
     )
     _save_quality(folder, output.name, level)
 
