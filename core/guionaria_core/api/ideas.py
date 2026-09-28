@@ -5,9 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlmodel import Session
 
-from ..db import get_session
+from ..db import get_engine, get_session
 from ..schemas.project import ProjectRead
 from ..services import ideas as svc
+from ..services import research
+from ..services.jobs import JobContext, JobRead, jobs
+from ..services.llm.claude_cli import get_runner
 
 router = APIRouter(prefix="/api/ideas", tags=["ideas"])
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -36,6 +39,18 @@ def update_idea(idea_id: int, data: svc.IdeaUpdate, session: SessionDep) -> svc.
 @router.delete("/{idea_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_idea(idea_id: int, session: SessionDep) -> None:
     svc.delete_idea(session, idea_id)
+
+
+@router.post("/{idea_id}:research", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)
+async def research_idea(idea_id: int, session: SessionDep) -> JobRead:
+    """Claude busca en internet y guarda una ficha con fuentes en la idea (segundo plano)."""
+    svc.get_idea(session, idea_id)
+    runner = get_runner()
+
+    async def work(ctx: JobContext) -> dict:
+        return await research.research_idea(lambda: Session(get_engine()), idea_id, runner, ctx)
+
+    return jobs.submit("research", work, payload={"idea_id": idea_id}, exclusive=False)
 
 
 @router.post("/{idea_id}:convert", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)

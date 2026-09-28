@@ -28,8 +28,8 @@ class FakeClaude:
     def queue(self, *responses):
         self.responses.extend(responses)
 
-    async def run(self, prompt, schema, cwd=None):
-        self.calls.append({"prompt": prompt, "schema": schema, "cwd": cwd})
+    async def run(self, prompt, schema, cwd=None, tools=None):
+        self.calls.append({"prompt": prompt, "schema": schema, "cwd": cwd, "tools": tools})
         if not self.responses:
             raise AssertionError("FakeClaude: no hay respuestas encoladas")
         response = self.responses.pop(0)

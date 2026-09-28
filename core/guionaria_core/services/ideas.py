@@ -8,10 +8,12 @@ from sqlmodel import Session, col, delete, select
 from ..models import Idea, Project
 from ..models._base import now_iso
 from ..schemas.project import ProjectCreate, ProjectFormat, ProjectRead
+from ..schemas.research import ResearchRead
 from .channels import get_channel
 from .errors import Conflict, NotFound
 from .oplog import log_operation
-from .projects import create_project
+from .projects import create_project, to_read
+from .research import copy_to_project, read_research
 
 IdeaStatus = Literal["open", "converted", "discarded"]
 
@@ -41,6 +43,7 @@ class IdeaRead(BaseModel):
     status: IdeaStatus
     project_id: int | None
     project_in_trash: bool  # el proyecto creado está en la papelera (se puede restaurar)
+    research: ResearchRead | None = None  # ficha de «Investigar con fuentes»
     created_at: str
     updated_at: str
 
@@ -64,6 +67,7 @@ def _read(session: Session, idea: Idea) -> IdeaRead:
         status=idea.status or "open",
         project_id=idea.project_id,
         project_in_trash=bool(project and project.deleted_at),
+        research=read_research(idea.research_json),
         created_at=idea.created_at,
         updated_at=idea.updated_at or idea.created_at,
     )
@@ -156,6 +160,13 @@ def convert_idea(session: Session, idea_id: int, data: ConvertRequest) -> Projec
         ),
     )
     idea = get_idea(session, idea_id)  # create_project hace commit
+    if idea.research_json:
+        # La ficha con fuentes pasa al proyecto (y a su carpeta como investigacion.md).
+        stored = session.get(Project, project.id)
+        copy_to_project(session, idea, stored)
+        session.commit()
+        project = to_read(stored, get_channel(session, stored.channel_id))
+        idea = get_idea(session, idea_id)
     idea.status = "converted"
     idea.project_id = project.id
     idea.updated_at = now_iso()

@@ -117,7 +117,7 @@ def test_full_flow_without_calling_claude(
     )
     pid = created["project_id"]
     assert mcp.call("list_projects", channel="casos-reales")["projects"][0]["project_id"] == pid
-    assert mcp.call("get_project", project_id=pid)["next_step"].startswith("Redacta el guion")
+    assert "research_project" in mcp.call("get_project", project_id=pid)["next_step"]
 
     # Guion redactado por Claude (fuera de la app) y guardado tal cual.
     script = mcp.call("save_script", project_id=pid, segments=segments_from(GUION))

@@ -1,5 +1,5 @@
 import { Check, FileText, FolderOpen, Info, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useBlocker, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -38,6 +38,7 @@ import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProje
 import { useRestoreProject } from "@/hooks/useHistory";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { RightsPanel } from "@/features/rights/RightsPanel";
+import { ResearchPanel } from "@/features/research/ResearchPanel";
 import { useScenes } from "@/hooks/useScenes";
 import type { Project, ProjectUpdate } from "@/lib/api";
 import {
@@ -104,6 +105,14 @@ function ProjectView({ project }: { project: Project }) {
     ({ currentLocation, nextLocation }) =>
       script.dirty && currentLocation.pathname !== nextLocation.pathname,
   );
+
+  // Una investigación nueva reescribe las notas: el borrador toma las nuevas (con sus citas).
+  const researchAt = project.research?.created_at;
+  useEffect(() => {
+    if (researchAt) setDraft((d) => ({ ...d, research_notes: project.research_notes ?? "" }));
+    // Solo cuando llega otra ficha, no en cada cambio del proyecto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [researchAt]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
   const valid = draft.title.trim().length > 0 && draft.duration > 0;
@@ -261,6 +270,7 @@ function ProjectView({ project }: { project: Project }) {
                     onChange={(e) => set({ research_notes: e.target.value })}
                   />
                 </FormField>
+                <ResearchPanel target={{ kind: "project", id: project.id }} research={project.research} />
                 <div className="grid grid-cols-4 gap-4">
                   <FormField label={project.format === "video" ? "Duración (min)" : "Duración (s)"}>
                     <Input

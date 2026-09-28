@@ -15,6 +15,7 @@ PROMPTS: dict[str, str] = {
     "reescribir_segmento": "Reescribir fragmento",
     "escenas": "Generar escenas",
     "busquedas_alternativas": "Sugerir búsquedas",
+    "investigacion": "Investigar con fuentes",
 }
 
 

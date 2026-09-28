@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from ..domain.states import ProjectStatus
+from .research import ResearchRead
 
 ProjectFormat = Literal["video", "reel"]
 
@@ -51,3 +52,4 @@ class ProjectRead(BaseModel):
     parent_project_id: int | None
     created_at: str
     updated_at: str
+    research: ResearchRead | None = None  # ficha de «Investigar con fuentes»
