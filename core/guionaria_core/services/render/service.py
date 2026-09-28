@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -43,8 +44,47 @@ from . import look as looks
 from .thumbnail import make_thumbnail
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-OUTPUTS = {"final": "proyecto.mp4", "draft": "proyecto_borrador.mp4"}
+OUTPUTS = {"final": "proyecto.mp4", "draft": "proyecto_borrador.mp4"}  # nombres antiguos
 THUMBNAIL = "miniatura.jpg"
+DRAFT_SUFFIX = "_borrador"
+MAX_NAME = 70
+
+
+def slug_name(title: str) -> str:
+    """Nombre de archivo legible a partir del título: «María Marta García Belsunce: el
+    asesinato…» → «maria-marta-garcia-belsunce-el-asesinato…» (sin tildes, corto)."""
+    import re
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
+    if len(text) > MAX_NAME:
+        text = text[:MAX_NAME].rsplit("-", 1)[0]
+    return text or "video"
+
+
+def output_names(project) -> dict[str, str]:
+    base = slug_name(project.title)
+    return {"final": f"{base}.mp4", "draft": f"{base}{DRAFT_SUFFIX}.mp4"}
+
+
+def find_output(project, kind: str = "final") -> Path | None:
+    """El video del render aunque tenga otro nombre: el del título, el antiguo
+    (proyecto.mp4) o, para el final, el MP4 más reciente de la carpeta (si se renombró)."""
+    folder = project_dir(project) / "render"
+    for name in (output_names(project)[kind], OUTPUTS[kind]):
+        if (folder / name).exists():
+            return folder / name
+    if kind != "final" or not folder.exists():
+        return None
+    others = [
+        f
+        for f in folder.glob("*.mp4")
+        if not f.stem.endswith(DRAFT_SUFFIX) and f.name != OUTPUTS["draft"]
+    ]
+    return max(others, key=lambda f: f.stat().st_mtime) if others else None
+
+
 QUALITY_FILE = ".calidad.json"  # qué nivel de calidad tiene cada archivo del render
 
 
@@ -104,20 +144,20 @@ def render_state(session: Session, project_id: int) -> RenderState:
     folder = project_dir(project) / "render"
     levels = _load_quality(folder)
     files = []
-    for kind, name in (
-        ("final", OUTPUTS["final"]),
-        ("draft", OUTPUTS["draft"]),
-        ("thumbnail", THUMBNAIL),
+    for kind, path in (
+        ("final", find_output(project, "final")),
+        ("draft", find_output(project, "draft")),
+        ("thumbnail", folder / THUMBNAIL),
     ):
-        path = folder / name
-        if not path.exists():
+        if path is None or not path.exists():
             continue
+        name = path.name
         info = process.image_info(path) if kind == "thumbnail" else process.video_info(path)
         files.append(
             RenderFile(
                 kind=kind,
                 name=name,
-                url=f"/api/projects/{project_id}/render/files/{name}",
+                url=f"/api/projects/{project_id}/render/files/{quote(name)}",
                 size_bytes=path.stat().st_size,
                 duration_s=info.duration_s,
                 width=info.width,
@@ -147,10 +187,12 @@ def render_state(session: Session, project_id: int) -> RenderState:
 
 
 def render_file(session: Session, project_id: int, name: str) -> Path:
+    """Un video o imagen de la carpeta render/ (con el nombre que tenga)."""
     project = get_project(session, project_id)
-    if name not in (*OUTPUTS.values(), THUMBNAIL):
+    folder = project_dir(project) / "render"
+    path = folder / Path(name).name
+    if path.suffix.lower() not in (".mp4", ".jpg") or path.parent != folder:
         raise NotFound("Ese archivo no es del render")
-    path = project_dir(project) / "render" / name
     if not path.exists():
         raise NotFound("Todavía no hay render")
     return path
@@ -305,6 +347,7 @@ def _render_sync(
     text_style: TextStyle | None = None,
     prefs: TransitionPrefs | None = None,
     look: VideoLook | None = None,
+    names: dict[str, str] | None = None,
 ) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
@@ -414,13 +457,17 @@ def _render_sync(
             ]
         else:
             args += ["-c:v", "copy"]
-        output = folder / OUTPUTS["draft" if draft else "final"]
+        kind = "draft" if draft else "final"
+        output = folder / (names or OUTPUTS)[kind]
         partial = tmp / "salida.mp4"
         args += ["-t", f"{total:.3f}", "-movflags", "+faststart", partial.name]
         report(0.85, "Mezclando el audio" + (" y escribiendo los textos…" if vfilter else "…"))
         _run_with_progress(args, total, tmp, lambda f: report(0.85 + 0.12 * f, None), cancel)
         output.unlink(missing_ok=True)
         partial.replace(output)
+        legacy = folder / OUTPUTS[kind]
+        if legacy != output:
+            legacy.unlink(missing_ok=True)  # el antiguo proyecto.mp4 ya no hace falta
 
         report(0.98, "Creando la miniatura…")
         thumb = make_thumbnail(m, output, folder / THUMBNAIL, font)
@@ -451,6 +498,7 @@ async def render_project(
         if not m.scenes:
             raise Conflict("El proyecto no tiene escenas")
         folder = project_dir(project) / "render"
+        names = output_names(project)
         burn = project.format == "reel" if burn_subtitles is None else burn_subtitles
         srt = _srt(project) if burn and _srt(project).exists() else None
         words = timed_words(session, project_id) if srt else []
@@ -485,6 +533,7 @@ async def render_project(
         text_style,
         load_settings().transitions,
         look,
+        names,
     )
     _save_quality(folder, output.name, level)
 

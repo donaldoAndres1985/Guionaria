@@ -14,6 +14,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 from PIL import Image, ImageOps
 from sqlmodel import Session, col, select
@@ -127,9 +128,10 @@ def _is_crime(channel: Channel) -> bool:
 
 
 def final_video(project: Project) -> Path:
-    from ..render.service import OUTPUTS
+    from ..render.service import OUTPUTS, find_output
 
-    return project_dir(project) / "render" / OUTPUTS["final"]
+    # Se encuentra aunque se haya renombrado; si no hay, la ruta esperada (no existe).
+    return find_output(project, "final") or project_dir(project) / "render" / OUTPUTS["final"]
 
 
 def subtitles_file(project: Project) -> Path:
@@ -369,7 +371,7 @@ def publishing_state(session: Session, project_id: int, redirect_uri: str = "") 
         format=project.format,
         can_publish=video.exists(),
         reason=reason,
-        video_url=f"/api/projects/{project.id}/render/files/{video.name}"
+        video_url=f"/api/projects/{project.id}/render/files/{quote(video.name)}"
         if video.exists()
         else None,
         video_file=str(video) if video.exists() else None,
