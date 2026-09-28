@@ -9,12 +9,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { SubtitleStyle } from "@/lib/api";
+import { SUBTITLE_PRESETS, subtitleTextCss } from "./previewMeta";
 import { cn } from "@/lib/utils";
 
 const HIGHLIGHTS = ["#FFD400", "#22E36B", "#FF7A1A", "#33D6FF", "#FF4FA3"];
 const TEXT_COLORS = ["#FFFFFF", "#FFD400", "#F2F2F2"];
 const SAMPLE = ["Se", "lanzó", "del", "avión"];
-const FONTS: SubtitleStyle["font"][] = ["Arial", "Impact", "Verdana", "Segoe UI"];
+const FONTS: SubtitleStyle["font"][] = ["Arial", "Montserrat", "Impact", "Verdana", "Segoe UI"];
 
 /** Estilo de los subtítulos quemados, con vista previa animada (palabra que se dice resaltada). */
 export function SubtitleStylePanel({
@@ -59,13 +60,7 @@ export function SubtitleStylePanel({
       >
         <span
           className={cn("px-2 text-center leading-tight font-bold", style.background && "rounded bg-black/60 py-0.5")}
-          style={{
-            fontFamily: style.font,
-            fontSize: size * (portrait ? 0.62 : 0.55),
-            color: style.text_color,
-            WebkitTextStroke: style.background ? undefined : `1px ${style.outline_color}`,
-            textShadow: style.background ? undefined : `0 0 2px ${style.outline_color}`,
-          }}
+          style={{ ...subtitleTextCss(style, 0.1), fontSize: size * (portrait ? 0.62 : 0.55) }}
         >
           {words.map((w, i) => (
             <span key={w} style={style.highlight && i === active % words.length ? { color: style.highlight_color } : undefined}>
@@ -77,6 +72,30 @@ export function SubtitleStylePanel({
       )}
 
       <div className="grid content-start gap-3 text-[12px]">
+        <div className="grid gap-1 text-muted-foreground">
+          Estilos rápidos
+          <div className="flex flex-wrap gap-1.5">
+            {SUBTITLE_PRESETS.map((p) => {
+              const on = Object.entries(p.style).every(([k, v]) => style[k as keyof SubtitleStyle] === v);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  aria-pressed={on}
+                  disabled={disabled}
+                  onClick={() => onChange(p.style)}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-[12px]",
+                    on ? "border-brand bg-active text-active-foreground" : "hover:bg-panel-2",
+                  )}
+                  style={p.id === "reel" ? { fontFamily: "Montserrat", fontStyle: "italic", fontWeight: 800 } : undefined}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {!compact && (
           <div className="flex items-center gap-2 font-medium">
             <Captions className="size-4 text-brand" /> Estilo de los subtítulos
@@ -91,6 +110,7 @@ export function SubtitleStylePanel({
             onChange={(v) => onChange({ highlight: v })}
           />
           <Toggle label="Fondo detrás del texto" checked={style.background} disabled={disabled} onChange={(v) => onChange({ background: v })} />
+          <Toggle label="Cursiva" checked={!!style.italic} disabled={disabled} onChange={(v) => onChange({ italic: v })} />
           <label className="flex items-center justify-between gap-2 text-muted-foreground">
             Palabras por frase
             <Select
@@ -139,6 +159,27 @@ export function SubtitleStylePanel({
               ["large", "L"],
             ]}
             onChange={(v) => onChange({ size: v as SubtitleStyle["size"] })}
+          />
+          <Segmented
+            label="Contorno"
+            value={style.edge ?? "outline"}
+            disabled={disabled || style.background}
+            options={[
+              ["outline", "Borde"],
+              ["shadow", "Sombra"],
+              ["both", "Ambos"],
+            ]}
+            onChange={(v) => onChange({ edge: v as SubtitleStyle["edge"] })}
+          />
+          <Segmented
+            label="Animación"
+            value={style.animation ?? "none"}
+            disabled={disabled}
+            options={[
+              ["none", "Ninguna"],
+              ["pop", "Pop"],
+            ]}
+            onChange={(v) => onChange({ animation: v as SubtitleStyle["animation"] })}
           />
           <Segmented
             label="Posición"

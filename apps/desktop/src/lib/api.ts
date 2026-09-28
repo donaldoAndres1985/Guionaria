@@ -874,7 +874,10 @@ export type RenderQuality = "draft" | "standard" | "high" | "max";
 export interface SubtitleStyle {
   uppercase: boolean;
   words_per_line: number; // 0 = automático
-  font: "Arial" | "Impact" | "Verdana" | "Segoe UI";
+  font: "Arial" | "Montserrat" | "Impact" | "Verdana" | "Segoe UI";
+  italic?: boolean;
+  edge?: "outline" | "shadow" | "both";
+  animation?: "none" | "pop";
   size: "small" | "medium" | "large";
   position: "bottom" | "middle";
   text_color: string;

@@ -66,6 +66,24 @@ export function captionAt(groups: PreviewWord[][], t: number): { words: PreviewW
 
 export const SUBTITLE_SIZE = { small: 0.8, medium: 1, large: 1.25 } as const;
 
+/** Aspecto del texto de los subtítulos en CSS (fuente, cursiva, borde o sombra), como en el ASS. */
+export function subtitleTextCss(style: SubtitleStyle, scale: number): React.CSSProperties {
+  const edge = style.edge ?? "outline";
+  const css: React.CSSProperties = {
+    fontFamily: style.font === "Montserrat" ? '"Montserrat", sans-serif' : style.font,
+    fontWeight: style.font === "Montserrat" ? 800 : 700,
+    fontStyle: style.italic ? "italic" : "normal",
+    color: style.text_color,
+    paintOrder: "stroke fill",
+  };
+  if (style.background) return css;
+  const px = (v: number) => `${Math.max(v * scale, 1)}px`;
+  if (edge === "outline" || edge === "both") css.WebkitTextStroke = `${px(edge === "both" ? 6 : 8)} ${style.outline_color}`;
+  if (edge === "shadow") css.WebkitTextStroke = `${px(2)} ${style.outline_color}`;
+  if (edge === "shadow" || edge === "both") css.textShadow = `0 ${px(6)} ${px(8)} rgba(0,0,0,0.75)`;
+  return css;
+}
+
 /** Tamaño de letra de los subtítulos en px del cuadro de salida (como en captions.build_ass). */
 export function subtitleFontPx(style: SubtitleStyle, width: number, height: number): number {
   const portrait = height > width;
@@ -117,3 +135,31 @@ export function formatClock(t: number): string {
   const m = Math.floor(s / 60);
   return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`;
 }
+
+/** Estilos rápidos: combinaciones listas (se pueden retocar después). */
+export const SUBTITLE_PRESETS: { id: string; label: string; style: Partial<SubtitleStyle> }[] = [
+  {
+    id: "reel",
+    label: "Reel cursiva",
+    style: {
+      font: "Montserrat", italic: true, edge: "shadow", animation: "pop", uppercase: true,
+      highlight: true, highlight_color: "#FFD400", text_color: "#FFFFFF", background: false,
+    },
+  },
+  {
+    id: "classic",
+    label: "Clásico",
+    style: {
+      font: "Arial", italic: false, edge: "outline", animation: "none", uppercase: true,
+      highlight: true, highlight_color: "#FFD400", text_color: "#FFFFFF", background: false,
+    },
+  },
+  {
+    id: "box",
+    label: "Caja",
+    style: {
+      font: "Arial", italic: false, edge: "outline", animation: "none", uppercase: false,
+      highlight: true, highlight_color: "#FFD400", text_color: "#FFFFFF", background: true,
+    },
+  },
+];

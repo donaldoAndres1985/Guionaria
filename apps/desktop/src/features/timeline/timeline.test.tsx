@@ -294,6 +294,25 @@ describe("etapa de timeline", () => {
     expect(body.subtitle_style).toMatchObject({ uppercase: false, highlight_color: "#22E36B", position: "middle" });
   });
 
+  it("estilo rápido «Reel cursiva»: fuente, cursiva, sombra y pop en la vista previa y el render", async () => {
+    server = timeline();
+    renderStage();
+    fireEvent.click(await screen.findByTestId("preview-subtitle"));
+    const styleBox = screen.getByLabelText("Estilo de subtítulos");
+    fireEvent.click(within(styleBox).getByRole("button", { name: "Reel cursiva" }));
+    expect(within(styleBox).getByRole("button", { name: "Reel cursiva" }).getAttribute("aria-pressed")).toBe("true");
+    const text = screen.getByTestId("preview-subtitle").firstElementChild as HTMLElement;
+    expect(text.style.fontStyle).toBe("italic");
+    expect(text.style.fontFamily).toContain("Montserrat");
+    const active = screen.getByTestId("preview-subtitle").querySelector("[data-active]") as HTMLElement;
+    expect(active.style.animation).toContain("subtitle-pop");
+    expect(within(styleBox).getByRole("radio", { name: "Sombra" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(within(await panel()).getByText("Renderizar"));
+    await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
+    const body = posts.find((p) => p.path.endsWith("/render"))!.body as { subtitle_style: Record<string, unknown> };
+    expect(body.subtitle_style).toMatchObject({ font: "Montserrat", italic: true, edge: "shadow", animation: "pop" });
+  });
+
   it("la pista de subtítulos abre su configuración; sin quemarlos no hay estilo ni subtítulo", async () => {
     server = timeline();
     renderStage();
