@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
+import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog";
 import { StagePanel, useStagePanelCompact } from "@/components/projects/StagePanel";
 import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
@@ -36,8 +37,7 @@ import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
 import { VoiceStage } from "@/features/voice/VoiceStage";
 import { PublishBottomBar, PublishStage, usePublishController } from "@/features/publishing/PublishStage";
 import { publishProgress } from "@/features/publishing/PublishBadges";
-import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
-import { useRestoreProject } from "@/hooks/useHistory";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { RightsPanel } from "@/features/rights/RightsPanel";
 import { ResearchPanel } from "@/features/research/ResearchPanel";
@@ -95,8 +95,6 @@ function ProjectView({ project }: { project: Project }) {
   const [draft, setDraft] = useState(initial);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const update = useUpdateProject(project.id);
-  const remove = useDeleteProject();
-  const restore = useRestoreProject();
   const script = useScriptEditor(project);
   const publish = usePublishController(project, view === "publicacion");
   const generation = useScriptGeneration(project);
@@ -149,6 +147,15 @@ function ProjectView({ project }: { project: Project }) {
         <div className="flex items-center gap-3 pr-2">
           <FormatBadge format={project.format} />
           <StatusBadge status={project.status} />
+          <button
+            type="button"
+            aria-label="Eliminar proyecto"
+            title="Eliminar proyecto"
+            onClick={() => setConfirmDelete(true)}
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-danger/15 hover:text-danger"
+          >
+            <Trash2 className="size-4" />
+          </button>
         </div>
       }
       bottomBar={
@@ -378,24 +385,11 @@ function ProjectView({ project }: { project: Project }) {
         destructive
         onConfirm={() => blocker.proceed?.()}
       />
-      <ConfirmDialog
+      <DeleteProjectDialog
+        project={project}
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
-        title={`¿Eliminar "${project.title}"?`}
-        description="Se mueve a la papelera con todos sus archivos. Puedes restaurarlo durante 30 días desde Historial → Papelera."
-        confirmLabel="Eliminar proyecto"
-        destructive
-        pending={remove.isPending}
-        onConfirm={() =>
-          remove.mutate(project.id, {
-            onSuccess: () => {
-              toast.success("Proyecto enviado a la papelera", {
-                action: { label: "Deshacer", onClick: () => restore.mutate(project.id) },
-              });
-              navigate("/proyectos");
-            },
-          })
-        }
+        onDeleted={() => navigate("/proyectos")}
       />
     </PageLayout>
   );

@@ -1,4 +1,4 @@
-import { Clapperboard, Plus, Search } from "lucide-react";
+import { Clapperboard, LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
@@ -8,6 +8,8 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
 import { PublishBadges } from "@/features/publishing/PublishBadges";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
+import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog";
+import { MediaStrip, ProjectCover } from "@/components/projects/ProjectThumbs";
 import { Button } from "@/components/ui/button";
 import { useChannels } from "@/hooks/useChannels";
 import { useProjects } from "@/hooks/useProjects";
@@ -43,6 +45,9 @@ export function ProjectsPage() {
 
   const [tab, setTab] = useState<TabId>("all");
   const [query, setQuery] = useState("");
+  const [toDelete, setToDelete] = useState<Project | null>(null);
+  const view = useUiStore((s) => s.projectsView);
+  const setView = useUiStore((s) => s.setProjectsView);
   const selectedChannelId = useUiStore((s) => s.selectedChannelId);
   const { data: channels = [] } = useChannels();
   const channel = channels.find((c) => c.id === selectedChannelId) ?? null;
@@ -92,7 +97,28 @@ export function ProjectsPage() {
             <span className="text-[11px] opacity-80">{counts.get(t.id) ?? 0}</span>
           </button>
         ))}
-        <label className="ml-auto flex h-8 w-56 items-center gap-2 rounded-md border bg-background px-2.5">
+        <div role="radiogroup" aria-label="Vista" className="ml-auto flex rounded-md border p-0.5">
+          {(
+            [
+              ["list", List, "Lista"],
+              ["grid", LayoutGrid, "Miniaturas"],
+            ] as const
+          ).map(([id, Icon, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={view === id}
+              aria-label={label}
+              title={label}
+              onClick={() => setView(id)}
+              className={cn("rounded px-2 py-1", view === id ? "bg-active text-active-foreground" : "text-muted-foreground hover:bg-panel-2")}
+            >
+              <Icon className="size-4" />
+            </button>
+          ))}
+        </div>
+        <label className="flex h-8 w-56 items-center gap-2 rounded-md border bg-background px-2.5">
           <Search className="size-3.5 text-muted-foreground" />
           <input
             value={query}
@@ -114,6 +140,38 @@ export function ProjectsPage() {
           }
           action={!query && tab === "all" ? newButton : undefined}
         />
+      ) : view === "grid" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto p-4" data-testid="projects-grid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {visible.map((p) => (
+              <div
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Abrir ${p.title}`}
+                onClick={() => navigate(`/proyectos/${p.id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") navigate(`/proyectos/${p.id}`);
+                }}
+                className="group relative grid cursor-pointer content-start gap-2 rounded-lg border p-2.5 transition-colors hover:border-brand/60 hover:bg-panel-2"
+              >
+                <ProjectCover project={p} className={p.format === "reel" ? "mx-auto h-64" : "w-full"} />
+                <div className="grid gap-1">
+                  <span className="line-clamp-2 text-[13px] leading-snug font-medium">{p.title}</span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {p.channel_name} · {formatDuration(p.target_duration_s)}
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={p.status} />
+                    <PublishBadges project={p} />
+                  </span>
+                  <MediaStrip project={p} />
+                </div>
+                <DeleteButton onClick={() => setToDelete(p)} className="absolute top-3.5 right-3.5 bg-background/80" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <table className="w-full table-fixed text-[13px]">
@@ -124,7 +182,8 @@ export function ProjectsPage() {
                 <th className="w-44 px-3 font-normal">Estado</th>
                 <th className="w-24 px-3 font-normal">Duración</th>
                 <th className="w-32 px-3 font-normal">Publicación</th>
-                <th className="w-32 px-3 pr-5 font-normal">Actualizado</th>
+                <th className="w-32 px-3 font-normal">Actualizado</th>
+                <th className="w-12 pr-3" aria-label="Acciones" />
               </tr>
             </thead>
             <tbody>
@@ -132,15 +191,20 @@ export function ProjectsPage() {
                 <tr
                   key={p.id}
                   onClick={() => navigate(`/proyectos/${p.id}`)}
-                  className="cursor-pointer border-b last:border-b-0 hover:bg-panel-2"
+                  className="group cursor-pointer border-b last:border-b-0 hover:bg-panel-2"
                 >
                   <td className="py-3 pr-3 pl-5">
+                    <div className="flex items-center gap-3">
+                    <ProjectCover project={p} className={cn("shrink-0", p.format === "reel" ? "h-14" : "h-10")} />
+                    <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{p.title}</div>
                     <div className="mt-0.5 flex items-center gap-3">
                       <FormatBadge format={p.format} />
                       {p.topic && (
                         <span className="truncate text-[12px] text-muted-foreground">{p.topic}</span>
                       )}
+                    </div>
+                    </div>
                     </div>
                   </td>
                   <td className="truncate px-3 text-muted-foreground">{p.channel_name}</td>
@@ -159,8 +223,11 @@ export function ProjectsPage() {
                   >
                     {formatDate(p.target_publish_at)}
                   </td>
-                  <td className="px-3 pr-5 text-[12px] text-muted-foreground">
+                  <td className="px-3 text-[12px] text-muted-foreground">
                     {formatDate(p.updated_at)}
+                  </td>
+                  <td className="pr-3">
+                    <DeleteButton onClick={() => setToDelete(p)} />
                   </td>
                 </tr>
               ))}
@@ -170,6 +237,30 @@ export function ProjectsPage() {
       )}
 
       <NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      {toDelete && (
+        <DeleteProjectDialog project={toDelete} open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)} />
+      )}
     </PageLayout>
+  );
+}
+
+/** Papelera de la fila o tarjeta (aparece al pasar el ratón; no abre el proyecto). */
+function DeleteButton({ onClick, className }: { onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      aria-label="Eliminar proyecto"
+      title="Eliminar proyecto"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={cn(
+        "rounded p-1.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-danger/15 hover:text-danger focus-visible:opacity-100",
+        className,
+      )}
+    >
+      <Trash2 className="size-4" />
+    </button>
   );
 }

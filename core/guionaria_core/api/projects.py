@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -71,3 +72,14 @@ async def research_project(project_id: int, session: SessionDep) -> JobRead:
 def set_status(project_id: int, data: StatusRequest, session: SessionDep) -> ProjectRead:
     """Etapas finales que se hacen fuera de la app (render, programación, publicación)."""
     return svc.set_manual_status(session, project_id, data.status)
+
+
+@router.get("/{project_id}/cover")
+def project_cover(project_id: int, session: SessionDep) -> FileResponse:
+    """Portada del proyecto (miniatura de publicación o del render) para la vista en miniaturas."""
+    from ..services.errors import NotFound
+
+    path = svc.cover_path(svc.get_project(session, project_id))
+    if path is None:
+        raise NotFound("El proyecto todavía no tiene miniatura")
+    return FileResponse(path, media_type="image/jpeg")
