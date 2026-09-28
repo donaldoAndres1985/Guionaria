@@ -17,6 +17,9 @@ PROMPTS: dict[str, str] = {
     "busquedas_alternativas": "Sugerir búsquedas",
     "investigacion": "Investigar con fuentes",
     "metadatos_publicacion": "Metadatos de publicación",
+    "guia_titulos": "Guía de títulos con gancho",
+    "titulos": "Proponer títulos",
+    "miniatura": "Diseñar miniatura",
 }
 
 

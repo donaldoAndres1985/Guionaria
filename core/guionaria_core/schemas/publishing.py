@@ -28,10 +28,49 @@ class MetadatosClaude(BaseModel):
     capitulos: list[CapituloClaude] = Field(default_factory=list)
 
 
+class TituloClaude(BaseModel):
+    titulo: str
+    gancho: str = Field(description="Tipo de gancho de la guía (p. ej. Contradicción + Cifra)")
+    por_que: str = Field(description="En una frase, por qué funciona")
+
+
+class TitulosClaude(BaseModel):
+    titulos: list[TituloClaude] = Field(min_length=3, max_length=10)
+
+
+class DisenoClaude(BaseModel):
+    cuadro: int = Field(ge=1, description="Número del archivo cuadro_NN.jpg")
+    plantilla: Literal["impacto", "documental", "expediente"]
+    texto: str = Field(description="2 a 4 palabras")
+    resaltar: str | None = Field(default=None, description="Palabra del texto en color de acento")
+    etiqueta: str | None = None
+    color: str = Field(default="#FFD400", pattern=r"^#[0-9A-Fa-f]{6}$")
+    foco_x: float = Field(default=0.5, ge=0, le=1)
+    foco_y: float = Field(default=0.45, ge=0, le=1)
+    por_que: str = ""
+
+
+class MiniaturaClaude(BaseModel):
+    disenos: list[DisenoClaude] = Field(min_length=1, max_length=3)
+
+
+class TitleIdea(BaseModel):
+    title: str
+    hook: str
+    why: str
+
+
+class CoverOption(BaseModel):
+    index: int
+    url: str
+    design: DisenoClaude
+
+
 class PublicationMeta(BaseModel):
     """Lo que no cabe en las columnas de `publication` (va en meta_json)."""
 
     title_options: list[str] = Field(default_factory=list)
+    title_ideas: list[TitleIdea] = Field(default_factory=list)  # «Proponer títulos con gancho»
     hashtags: list[str] = Field(default_factory=list)
     pinned_comment: str | None = None
     chapters: list[CapituloClaude] = Field(default_factory=list)
@@ -88,6 +127,7 @@ class PublishingState(BaseModel):
     subtitles: bool
     credits: str
     publications: list[PublicationRead]
+    cover_options: list[CoverOption] = Field(default_factory=list)  # propuestas de Claude
     youtube: "YouTubeStatus"
 
 
@@ -123,6 +163,15 @@ class MarkPublished(BaseModel):
 class ThumbnailRequest(BaseModel):
     time_s: float = Field(ge=0)
     text: str | None = None  # título encima; None = sin texto
+
+
+class CoverChoice(BaseModel):
+    index: int = Field(ge=1)
+
+
+class CoverRedraw(BaseModel):
+    index: int = Field(ge=1)
+    design: DisenoClaude
 
 
 class QueueItem(BaseModel):

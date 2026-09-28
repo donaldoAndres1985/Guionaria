@@ -679,6 +679,52 @@ def build_mcp() -> MCPServer:
         return _job_summary(jobs.jobs.submit("publishing_metadata", work, project_id=project_id))
 
     @tool
+    def suggest_titles(publication_id: int) -> dict[str, Any]:
+        """Claude propone 8 títulos con gancho para esa plataforma, siguiendo la guía de títulos
+        (guia_titulos.md, editable). Devuelve el job; las ideas quedan en get_publishing
+        (meta.title_ideas con el tipo de gancho y por qué funciona)."""
+        from .models import Publication
+        from .services.llm.claude_cli import get_runner
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            pub = s.get(Publication, publication_id)
+            if not pub:
+                raise NotFound("No existe esa publicación")
+            project_id = pub.project_id
+        runner = get_runner()
+
+        async def work(ctx: JobContext) -> dict:
+            return await pub_svc.suggest_titles(_session, publication_id, runner, ctx)
+
+        return _job_summary(jobs.jobs.submit("publishing_titles", work, project_id=project_id))
+
+    @tool
+    def design_thumbnail(project_id: int) -> dict[str, Any]:
+        """Claude mira los cuadros del video y diseña 3 miniaturas (cuadro, texto de 2-4
+        palabras, palabra resaltada, rótulo, plantilla impacto/documental/expediente); la app
+        las dibuja. Devuelve el job; las propuestas quedan en get_publishing (cover_options)."""
+        from .services.llm.claude_cli import get_runner
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            projects.get_project(s, project_id)
+        runner = get_runner()
+
+        async def work(ctx: JobContext) -> dict:
+            return await pub_svc.design_cover(_session, project_id, runner, ctx)
+
+        return _job_summary(jobs.jobs.submit("publishing_cover", work, project_id=project_id))
+
+    @tool
+    def choose_thumbnail(project_id: int, index: int) -> dict[str, Any]:
+        """Usa la propuesta de miniatura `index` (1-3) como miniatura del video."""
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            return pub_svc.choose_cover(s, project_id, index).model_dump()
+
+    @tool
     def update_publication(publication_id: int, changes: PublicationUpdate) -> dict[str, Any]:
         """Cambia una publicación: enabled («publicar en»), title, description, tags, hashtags,
         pinned_comment, visibility, scheduled_at (ISO; fecha futura), made_for_kids, synthetic,

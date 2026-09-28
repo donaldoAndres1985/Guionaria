@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Job, type PublicationUpdate, type PublishingState, type QueueItem } from "@/lib/api";
+import { api, type CoverDesign, type Job, type PublicationUpdate, type PublishingState, type QueueItem } from "@/lib/api";
 
 export const publishingKey = (projectId: number) => ["publishing", projectId] as const;
 
@@ -50,7 +50,18 @@ export function usePublishingActions(projectId: number) {
       onSuccess: done,
     }),
     reveal: useMutation({ mutationFn: () => api.post<void>(`/api/projects/${projectId}/publishing:reveal`, {}) }),
+    chooseCover: useMutation({
+      mutationFn: (index: number) => api.post<PublishingState>(`/api/projects/${projectId}/publishing/cover:choose`, { index }),
+      onSuccess: done,
+    }),
+    redrawCover: useMutation({
+      mutationFn: (body: { index: number; design: CoverDesign }) =>
+        api.post<PublishingState>(`/api/projects/${projectId}/publishing/cover:redraw`, body),
+      onSuccess: done,
+    }),
     generate: () => api.post<Job>(`/api/projects/${projectId}/publishing:generate`, {}),
+    suggestTitles: (id: number) => api.post<Job>(`/api/publications/${id}:titles`, {}),
+    designCover: () => api.post<Job>(`/api/projects/${projectId}/publishing/cover:design`, {}),
     upload: (id: number) => api.post<Job>(`/api/publications/${id}:upload`, {}),
   };
 }

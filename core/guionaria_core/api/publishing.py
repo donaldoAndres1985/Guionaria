@@ -9,6 +9,8 @@ from sqlmodel import Session
 
 from ..db import get_engine, get_session
 from ..schemas.publishing import (
+    CoverChoice,
+    CoverRedraw,
     MarkPublished,
     PublicationUpdate,
     PublishingState,
@@ -95,6 +97,58 @@ def reveal(project_id: int, session: SessionDep) -> None:
     project = get_project(session, project_id)
     svc.write_texts(session, project)
     system.reveal(project_dir(project) / svc.FOLDER)
+
+
+@router.post(
+    "/api/publications/{pub_id}:titles",
+    response_model=JobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def suggest_titles(pub_id: int, session: SessionDep) -> JobRead:
+    """Claude propone títulos con gancho siguiendo guia_titulos.md (segundo plano)."""
+    from ..models import Publication
+
+    pub = session.get(Publication, pub_id)
+    if not pub:
+        raise NotFound("No existe esa publicación")
+    runner = get_runner()
+
+    async def work(ctx: JobContext) -> dict:
+        return await svc.suggest_titles(_factory, pub_id, runner, ctx)
+
+    return jobs.submit("publishing_titles", work, project_id=pub.project_id)
+
+
+@router.post(
+    "/api/projects/{project_id}/publishing/cover:design",
+    response_model=JobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def design_cover(project_id: int, session: SessionDep) -> JobRead:
+    """Claude mira los cuadros del video y diseña 3 miniaturas (segundo plano)."""
+    get_project(session, project_id)
+    runner = get_runner()
+
+    async def work(ctx: JobContext) -> dict:
+        return await svc.design_cover(_factory, project_id, runner, ctx)
+
+    return jobs.submit("publishing_cover", work, project_id=project_id)
+
+
+@router.get("/api/projects/{project_id}/publishing/cover/{index}")
+def cover_option(project_id: int, index: int, session: SessionDep) -> FileResponse:
+    return FileResponse(svc.cover_option_path(session, project_id, index), media_type="image/jpeg")
+
+
+@router.post("/api/projects/{project_id}/publishing/cover:choose", response_model=PublishingState)
+def choose_cover(project_id: int, data: CoverChoice, session: SessionDep) -> PublishingState:
+    return svc.choose_cover(session, project_id, data.index)
+
+
+@router.post("/api/projects/{project_id}/publishing/cover:redraw", response_model=PublishingState)
+def redraw_cover(project_id: int, data: CoverRedraw, session: SessionDep) -> PublishingState:
+    """Vuelve a dibujar una propuesta con otro texto, plantilla o color (sin Claude)."""
+    return svc.redraw_cover(session, project_id, data.index, data.design)
 
 
 @router.get("/api/publishing/queue", response_model=list[QueueItem])

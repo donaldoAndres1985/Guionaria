@@ -24,12 +24,17 @@ from ...models import Channel, Project, Publication
 from ...models._base import now_iso
 from ...schemas.publishing import (
     CheckItem,
+    CoverOption,
+    DisenoClaude,
     MetadatosClaude,
+    MiniaturaClaude,
     PublicationMeta,
     PublicationRead,
     PublicationUpdate,
     PublishingState,
     QueueItem,
+    TitleIdea,
+    TitulosClaude,
     YouTubeStatus,
 )
 from .. import prompts
@@ -345,6 +350,7 @@ def publishing_state(session: Session, project_id: int, redirect_uri: str = "") 
         subtitles=subtitles_file(project).exists(),
         credits=credits,
         publications=[_read(p, channel, project, credits, engine) for p in rows],
+        cover_options=cover_options(project),
         youtube=YouTubeStatus(
             configured=youtube.configured(),
             connected=youtube.is_connected(channel.id),
@@ -531,6 +537,18 @@ def _dossier_text(project: Project) -> tuple[str, str]:
     return d.resumen + "\n" + "\n".join(facts), care
 
 
+def title_guide() -> str:
+    """Guía de títulos con gancho (editable en Ajustes → Claude)."""
+    return prompts.load_prompt("guia_titulos")
+
+
+def _with_guide(template: str) -> str:
+    # Un prompt copiado antes de existir la guía no tiene {guia_titulos}: se agrega al final.
+    if "{guia_titulos}" in template:
+        return template
+    return template + "\n\nGuía de títulos (síguela al pie de la letra):\n{guia_titulos}\n"
+
+
 def _prompt(session: Session, project: Project, channel: Channel, platforms: list[str]) -> str:
     ficha, cuidados = _dossier_text(project)
     minutes = (project.target_duration_s or 60) / 60
@@ -540,7 +558,8 @@ def _prompt(session: Session, project: Project, channel: Channel, platforms: lis
         else "- Sin capítulos (lista vacía)."
     )
     return prompts.render(
-        prompts.load_prompt("metadatos_publicacion"),
+        _with_guide(prompts.load_prompt("metadatos_publicacion")),
+        guia_titulos=title_guide(),
         canal=channel.name,
         estilo=channel.style_prompt or "Claro y directo.",
         nicho=channel.niche or "general",
@@ -725,3 +744,200 @@ def queue(session: Session, channel_id: int | None = None) -> list[QueueItem]:
         reverse=True,
     )
     return pending + done
+
+
+# --- títulos con gancho ---
+
+
+async def suggest_titles(
+    session_factory, pub_id: int, runner: ClaudeRunner, ctx: JobContext
+) -> dict:
+    """Claude propone 8 títulos con distintos tipos de gancho (guia_titulos.md)."""
+    with session_factory() as session:
+        pub = _get_pub(session, pub_id)
+        project = get_project(session, pub.project_id)
+        channel = get_channel(session, project.channel_id)
+        ficha, _care = _dossier_text(project)
+        limit = PLATFORMS[pub.platform]["limits"]["title"]
+        prompt = prompts.render(
+            _with_guide(prompts.load_prompt("titulos")),
+            guia_titulos=title_guide(),
+            canal=channel.name,
+            plataforma=PLATFORMS[pub.platform]["label"],
+            estilo=channel.style_prompt or "Claro y directo.",
+            nicho=channel.niche or "general",
+            idioma=channel.language,
+            formato="video horizontal" if project.format == "video" else "short / reel vertical",
+            titulo=project.title,
+            guion=_script_text(session, project.id),
+            ficha=ficha,
+            max_titulo=limit,
+        )
+    ctx.progress(0.1, "Claude está pensando títulos con gancho…")
+    data = await generate_structured(runner, prompt, TitulosClaude)
+    with session_factory() as session:
+        pub = _get_pub(session, pub_id)
+        meta = _meta(pub)
+        meta.title_ideas = [
+            TitleIdea(title=_clip(t.titulo, limit), hook=t.gancho, why=t.por_que)
+            for t in data.titulos
+            if t.titulo.strip()
+        ]
+        _set_meta(pub, meta)
+        session.commit()
+    return {"titles": len(meta.title_ideas)}
+
+
+# --- miniatura diseñada con Claude ---
+
+COVERS = "miniaturas"
+
+
+def _covers_dir(project: Project) -> Path:
+    return project_dir(project) / FOLDER / COVERS
+
+
+def _cover_size(project: Project) -> tuple[int, int]:
+    return (1280, 720) if project.format == "video" else (1080, 1920)
+
+
+def _designs(project: Project) -> list[DisenoClaude]:
+    path = _covers_dir(project) / "disenos.json"
+    if not path.exists():
+        return []
+    return [DisenoClaude.model_validate(d) for d in json.loads(path.read_text(encoding="utf-8"))]
+
+
+def _save_designs(project: Project, designs: list[DisenoClaude]) -> None:
+    path = _covers_dir(project) / "disenos.json"
+    path.write_text(json.dumps([d.model_dump() for d in designs], ensure_ascii=False), "utf-8")
+
+
+def cover_options(project: Project) -> list[CoverOption]:
+    out = []
+    for i, design in enumerate(_designs(project), start=1):
+        path = _covers_dir(project) / f"opcion_{i}.jpg"
+        if path.exists():
+            out.append(
+                CoverOption(
+                    index=i,
+                    url=f"/api/projects/{project.id}/publishing/cover/{i}?v={path.stat().st_mtime_ns}",
+                    design=design,
+                )
+            )
+    return out
+
+
+def cover_option_path(session: Session, project_id: int, index: int) -> Path:
+    path = _covers_dir(get_project(session, project_id)) / f"opcion_{index}.jpg"
+    if not path.exists():
+        raise NotFound("No existe esa propuesta de miniatura")
+    return path
+
+
+def _draw_option(folder: Path, size: tuple[int, int], index: int, design: DisenoClaude) -> None:
+    from . import cover
+
+    frames = cover.saved_frames(folder / "cuadros")
+    frame = frames.get(design.cuadro)
+    if frame is None:
+        raise DomainError(f"No existe el cuadro {design.cuadro}")
+    image = cover.load_frame(frame, folder / "cuadros")
+    cover.render(design, image, size).save(folder / f"opcion_{index}.jpg", "JPEG", quality=90)
+
+
+async def design_cover(
+    session_factory, project_id: int, runner: ClaudeRunner, ctx: JobContext
+) -> dict:
+    """Claude mira los cuadros del video y diseña 3 miniaturas; la app las dibuja."""
+    import asyncio
+
+    from ..timeline.model import build_timeline
+    from . import cover
+
+    with session_factory() as session:
+        project = get_project(session, project_id)
+        youtube = next(
+            (p for p in ensure_publications(session, project) if p.platform == "youtube"), None
+        )
+        chosen_title = (youtube.title if youtube else None) or project.title
+        project = get_project(session, project_id)
+        channel = get_channel(session, project.channel_id)
+        m = build_timeline(session, project)
+        covers = _covers_dir(project)
+        size = _cover_size(project)
+        values = {
+            "canal": channel.name,
+            "estilo": channel.style_prompt or "Claro y directo.",
+            "nicho": channel.niche or "general",
+            "idioma": channel.language,
+            "titulo": project.title,
+            "titulo_publicacion": chosen_title,
+        }
+    frames = cover.pick_frames(m)
+    if not frames:
+        raise Conflict("Aprueba los medios para que Claude elija el cuadro de la miniatura")
+    folder = covers / "cuadros"
+    ctx.progress(0.05, "Sacando los cuadros del video…")
+    names = await asyncio.to_thread(cover.write_previews, frames, folder)
+    if not names:
+        raise DomainError("No se pudieron sacar los cuadros del video")
+    w, h = size
+    prompt = prompts.render(
+        prompts.load_prompt("miniatura"),
+        **values,
+        tamano=f"{w}×{h} ({'horizontal 16:9' if w > h else 'vertical 9:16'})",
+        n=len(names),
+        archivos=", ".join(names),
+    )
+    available = {int(n[7:9]) for n in names}
+
+    def check(data: MiniaturaClaude) -> None:
+        wrong = [d.cuadro for d in data.disenos if d.cuadro not in available]
+        if wrong:
+            raise ValueError(f"Cuadros inexistentes: {wrong}; usa solo {sorted(available)}")
+
+    ctx.progress(0.15, "Claude está mirando los cuadros y diseñando…")
+    data = await generate_structured(
+        runner, prompt, MiniaturaClaude, cwd=folder, check=check, tools=["Read"]
+    )
+    ctx.progress(0.85, "Dibujando las propuestas…")
+    for old in covers.glob("opcion_*.jpg"):
+        old.unlink()
+    for i, design in enumerate(data.disenos, start=1):
+        await asyncio.to_thread(_draw_option, covers, size, i, design)
+    (covers / "disenos.json").write_text(
+        json.dumps([d.model_dump() for d in data.disenos], ensure_ascii=False), "utf-8"
+    )
+    return {"options": len(data.disenos)}
+
+
+def redraw_cover(
+    session: Session, project_id: int, index: int, design: DisenoClaude
+) -> PublishingState:
+    """Vuelve a dibujar una propuesta con cambios (texto, plantilla, color…), sin Claude."""
+    project = get_project(session, project_id)
+    designs = _designs(project)
+    if not 1 <= index <= len(designs):
+        raise NotFound("No existe esa propuesta de miniatura")
+    _draw_option(_covers_dir(project), _cover_size(project), index, design)
+    designs[index - 1] = design
+    _save_designs(project, designs)
+    return publishing_state(session, project_id)
+
+
+def choose_cover(session: Session, project_id: int, index: int) -> PublishingState:
+    import shutil
+
+    project = get_project(session, project_id)
+    source = cover_option_path(session, project_id, index)
+    target = project_dir(project) / FOLDER / COVER
+    shutil.copyfile(source, target)
+    design = _designs(project)[index - 1]
+    for pub in ensure_publications(session, project):
+        meta = _meta(pub)
+        meta.thumbnail_text = design.texto
+        _set_meta(pub, meta)
+        pub.thumbnail_path = str(target.relative_to(get_paths().home))
+    session.commit()
+    return publishing_state(session, project_id)

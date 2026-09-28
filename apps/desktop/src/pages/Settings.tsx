@@ -14,6 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,12 @@ export function SettingsPage() {
   const saved = useSettings();
   const save = useSaveSettings();
 
-  const [category, setCategory] = useState<CategoryId>("deps");
+  // ?categoria=claude (p. ej. desde «Editar la guía de títulos») abre esa categoría.
+  const [params] = useSearchParams();
+  const asked = params.get("categoria") as CategoryId | null;
+  const [category, setCategory] = useState<CategoryId>(
+    asked && ["deps", "claude", "mcp", "folders", "keys", "prefs"].includes(asked) ? asked : "deps",
+  );
   const [draft, setDraft] = useState<AppSettings | null>(null);
   const current = draft ?? saved.data;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(saved.data);

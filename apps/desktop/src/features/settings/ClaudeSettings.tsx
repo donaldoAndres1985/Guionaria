@@ -28,6 +28,12 @@ const PLACEHOLDERS: Record<string, string> = {
   reescribir_segmento: "{canal} {estilo} {idioma} {guion} {notas} {fragmento} {instruccion}",
   escenas: "{canal} {estilo} {formato} {relacion} {max_escena_s} {lista_efectos} {guion}",
   busquedas_alternativas: "{canal} {tipo} {orientacion} {narracion} {descripcion} {busqueda_actual}",
+  investigacion: "{canal} {estilo} {idioma} {fecha} {titulo} {notas} {max_busquedas} {max_paginas}",
+  metadatos_publicacion:
+    "{canal} {estilo} {nicho} {idioma} {formato} {duracion} {titulo} {guion} {ficha} {plataformas} {max_titulo} {capitulos} {cuidados} {guia_titulos}",
+  guia_titulos: "Sin variables: es el texto que siguen los títulos (se inserta como {guia_titulos}).",
+  titulos: "{canal} {plataforma} {estilo} {nicho} {idioma} {formato} {titulo} {guion} {ficha} {guia_titulos} {max_titulo}",
+  miniatura: "{canal} {estilo} {nicho} {idioma} {titulo} {titulo_publicacion} {tamano} {n} {archivos}",
 };
 
 export function ClaudeSettings({
