@@ -155,11 +155,7 @@ export function IdeasPage() {
         <div className="flex min-w-0 flex-1 flex-col">
           {selected ? (
             // Con una ficha nueva se vuelve a montar: las notas ya traen las citas.
-            <IdeaDetail
-              key={`${selected.id}-${selected.research?.created_at ?? ""}`}
-              idea={selected}
-              onConvert={() => setConverting(selected)}
-            />
+            <IdeaDetail key={`${selected.id}-${selected.research?.created_at ?? ""}`} idea={selected} />
           ) : (
             <EmptyState
               icon={Lightbulb}
@@ -174,7 +170,7 @@ export function IdeasPage() {
   );
 }
 
-function IdeaDetail({ idea, onConvert }: { idea: Idea; onConvert: () => void }) {
+function IdeaDetail({ idea }: { idea: Idea }) {
   const { data: channels = [] } = useChannels();
   const update = useUpdateIdea();
   const remove = useDeleteIdea();
@@ -206,6 +202,8 @@ function IdeaDetail({ idea, onConvert }: { idea: Idea; onConvert: () => void }) 
           </Button>
         </div>
       </div>
+      {/* El detalle se desplaza (la investigación puede ser larga). */}
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="idea-detail-scroll">
       <div className="grid max-w-3xl gap-5 p-5">
         {idea.status === "converted" && idea.project_id && (
           <div className="flex items-center gap-3 rounded-md border bg-panel p-3 text-[13px]">
@@ -266,13 +264,7 @@ function IdeaDetail({ idea, onConvert }: { idea: Idea; onConvert: () => void }) 
             </Select>
           </FormField>
         </div>
-        {idea.status === "open" && (
-          <div>
-            <Button variant="outline" onClick={onConvert}>
-              <ArrowRight /> Convertir en proyecto
-            </Button>
-          </div>
-        )}
+      </div>
       </div>
       <ConfirmDialog
         open={confirmDelete}
