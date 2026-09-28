@@ -171,7 +171,10 @@ describe("páginas de planificación", () => {
     fireEvent.blur(screen.getByLabelText("Notas"));
     await waitFor(() => expect(requests.some((r) => r.method === "PATCH" && (r.body as { notes?: string }).notes === "Fuente: archivo")).toBe(true));
 
-    fireEvent.click(screen.getAllByText("Convertir en proyecto")[0]);
+    // Un solo botón para convertir (el de la barra inferior) y el detalle con scroll propio.
+    expect(screen.getAllByText("Convertir en proyecto")).toHaveLength(1);
+    expect(screen.getByTestId("idea-detail-scroll").className).toContain("overflow-y-auto");
+    fireEvent.click(screen.getByText("Convertir en proyecto"));
     fireEvent.click(await screen.findByRole("button", { name: /Video/ }));
     expect((screen.getByLabelText("Duración") as HTMLInputElement).value).toBe("10");
     fireEvent.change(screen.getByLabelText("Publicación objetivo"), { target: { value: "2026-10-03" } });
