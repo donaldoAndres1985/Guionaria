@@ -410,6 +410,30 @@ describe("etapa de timeline", () => {
     expect(screen.queryByTestId("preview-outgoing")).toBeNull();
   });
 
+  it("look del video: estilo rápido en la vista previa, sin tocar los subtítulos, y va con el render", async () => {
+    server = timeline();
+    renderStage();
+    await screen.findByTestId("preview-canvas");
+    const layer = screen.getByTestId("look-layer");
+    expect(layer.style.filter).toBe("none");
+    openSection("Look del video");
+    const box = screen.getByLabelText("Look del video");
+    fireEvent.click(within(box).getByRole("radio", { name: "Crimen oscuro" }));
+    expect(screen.getByTestId("look-layer").style.filter).toBe("saturate(0.4) contrast(1.35) brightness(0.85)");
+    expect(screen.getByTestId("look-vignette")).toBeTruthy();
+    expect(screen.getByTestId("look-grain")).toBeTruthy();
+    // Los subtítulos quedan por fuera del clip de ajuste.
+    expect(layer.contains(await screen.findByTestId("preview-subtitle"))).toBe(false);
+    // Un control ajusta el estilo elegido.
+    fireEvent.change(within(box).getByLabelText("Saturación"), { target: { value: "60" } });
+    expect(screen.getByRole("button", { name: /^Look del video/ }).textContent).toContain("Crimen oscuro (ajustado)");
+
+    fireEvent.click(within(await panel()).getByText("Renderizar"));
+    await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
+    const body = posts.find((p) => p.path.endsWith("/render"))!.body as { look: Record<string, unknown> };
+    expect(body.look).toMatchObject({ preset: "crimen", saturation: 60, vignette: 75, zoom_photos: true });
+  });
+
   it("estilo rápido «Reel cursiva»: fuente, cursiva, sombra y pop en la vista previa y el render", async () => {
     server = timeline();
     renderStage();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle } from "@/lib/api";
+import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   captionAt,
@@ -17,6 +17,9 @@ import {
   textLook,
   textTop,
   transitionLook,
+  lookCss,
+  NEUTRAL_LOOK,
+  sceneEffect,
 } from "./previewMeta";
 
 const DEFAULT_TEXT: TextStyle = { font: "Montserrat", size: "medium", uppercase: false, animation: "pop", box: false, text_color: "#FFFFFF" };
@@ -84,6 +87,7 @@ export function PreviewCanvas({
   burnSubtitles,
   style,
   textStyle,
+  look: lookProp,
   onSubtitlesClick,
 }: {
   preview: PreviewState;
@@ -93,6 +97,8 @@ export function PreviewCanvas({
   style: SubtitleStyle;
   /** Estilo del texto en pantalla; por defecto, el guardado. */
   textStyle?: TextStyle;
+  /** Look del video (clip de ajuste); por defecto, el guardado. */
+  look?: VideoLook;
   onSubtitlesClick?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -125,7 +131,10 @@ export function PreviewCanvas({
     [preview.words, layout.perLine, layout.maxChars],
   );
   const caption = burnSubtitles ? captionAt(groups, time) : null;
-  const look = scene ? effectLook(scene.effect, (time - scene.start_s) / scene.duration_s, preview.zoom, scene.duration_s) : null;
+  const grade = lookProp ?? preview.look ?? NEUTRAL_LOOK;
+  const css = lookCss(grade);
+  const effect = scene ? sceneEffect(scene.effect, scene.media?.kind, grade) : null;
+  const look = scene ? effectLook(effect, (time - scene.start_s) / scene.duration_s, preview.zoom, scene.duration_s) : null;
 
   return (
     <div
@@ -134,38 +143,54 @@ export function PreviewCanvas({
       className="relative overflow-hidden rounded-md bg-black shadow-lg"
       style={{ aspectRatio: `${preview.width} / ${preview.height}`, height: "100%", maxWidth: "100%" }}
     >
-      {scene && (
-        <SceneLayer
-          key={scene.position}
-          scene={scene}
-          time={time}
-          playing={playing}
-          visible
-          zoom={preview.zoom}
-          layerStyle={{ ...trans?.incoming, zIndex: trans?.outgoingOnTop ? 1 : 2 }}
-        />
-      )}
-      {/* Durante la transición, la escena anterior sigue (su cola) y se funde con esta */}
-      {trans && prev && (
-        <SceneLayer
-          key={prev.position}
-          scene={prev}
-          time={time}
-          playing={playing}
-          visible
-          outgoing
-          zoom={preview.zoom}
-          layerStyle={{ ...trans.outgoing, zIndex: trans.outgoingOnTop ? 2 : 1 }}
-        />
-      )}
-      {trans?.overlay && (
-        <div className="absolute inset-0 z-[3]" style={{ background: trans.overlay.color, opacity: trans.overlay.opacity }} />
-      )}
-      {next && next.media && (
-        <SceneLayer key={next.position} scene={next} time={time} playing={false} visible={false} zoom={preview.zoom} />
-      )}
+      {/* Clip de ajuste: el look se aplica a videos, fotos y fondos; el texto y los subtítulos quedan fuera */}
+      <div data-testid="look-layer" className="absolute inset-0 isolate overflow-hidden" style={{ filter: css.filter }}>
+        {scene && (
+          <SceneLayer
+            key={scene.position}
+            scene={scene}
+            time={time}
+            playing={playing}
+            visible
+            zoom={preview.zoom}
+            grade={grade}
+            layerStyle={{ ...trans?.incoming, zIndex: trans?.outgoingOnTop ? 1 : 2 }}
+          />
+        )}
+        {/* Durante la transición, la escena anterior sigue (su cola) y se funde con esta */}
+        {trans && prev && (
+          <SceneLayer
+            key={prev.position}
+            scene={prev}
+            time={time}
+            playing={playing}
+            visible
+            outgoing
+            zoom={preview.zoom}
+            grade={grade}
+            layerStyle={{ ...trans.outgoing, zIndex: trans.outgoingOnTop ? 2 : 1 }}
+          />
+        )}
+        {trans?.overlay && (
+          <div className="absolute inset-0 z-[3]" style={{ background: trans.overlay.color, opacity: trans.overlay.opacity }} />
+        )}
+        {next && next.media && (
+          <SceneLayer key={next.position} scene={next} time={time} playing={false} visible={false} zoom={preview.zoom} grade={grade} />
+        )}
 
-      {look && look.fade > 0 && <div className="absolute inset-0 z-[3] bg-black" style={{ opacity: look.fade }} />}
+        {look && look.fade > 0 && <div className="absolute inset-0 z-[3] bg-black" style={{ opacity: look.fade }} />}
+        {css.tint && (
+          <div className="absolute inset-0 z-[3] mix-blend-soft-light" style={{ background: css.tint.color, opacity: css.tint.opacity }} />
+        )}
+        {css.vignette > 0 && (
+          <div
+            data-testid="look-vignette"
+            className="absolute inset-0 z-[3]"
+            style={{ background: `radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,${Math.round(css.vignette * 90) / 100}) 100%)` }}
+          />
+        )}
+        {css.grain > 0 && <Grain amount={css.grain} time={time} />}
+      </div>
 
       {/* Texto en pantalla de la escena */}
       {scene?.text && (
@@ -257,6 +282,7 @@ function SceneLayer({
   zoom,
   outgoing,
   layerStyle,
+  grade,
 }: {
   scene: PreviewScene;
   time: number;
@@ -266,9 +292,11 @@ function SceneLayer({
   /** La escena que sale durante una transición (se ve pasado su final). */
   outgoing?: boolean;
   layerStyle?: React.CSSProperties;
+  grade?: VideoLook;
 }) {
   const local = Math.max(time - scene.start_s, 0);
-  const look = effectLook(scene.effect, local / scene.duration_s, zoom, scene.duration_s);
+  const look = effectLook(sceneEffect(scene.effect, scene.media?.kind, grade), local / scene.duration_s, zoom, scene.duration_s);
+  const blur = grade ? lookCss(grade).photoBlur : 0;
   const media = scene.media;
   const common = "absolute inset-0 size-full object-cover";
   return (
@@ -281,7 +309,13 @@ function SceneLayer({
       {media?.kind === "video" ? (
         <VideoLayer scene={scene} local={local} playing={playing && visible} visible={visible} rate={look.playbackRate} style={{ transform: look.transform, filter: look.filter }} className={common} />
       ) : media?.kind === "image" ? (
-        <img src={coreUrl(media.url) ?? ""} alt="" draggable={false} className={common} style={{ transform: look.transform, filter: look.filter }} />
+        <img
+          src={coreUrl(media.url) ?? ""}
+          alt=""
+          draggable={false}
+          className={common}
+          style={{ transform: look.transform, filter: [look.filter, blur > 0 ? `blur(${blur / 2}px)` : ""].filter(Boolean).join(" ") || undefined }}
+        />
       ) : (
         <div className="absolute inset-0 bg-black" />
       )}
@@ -429,4 +463,20 @@ function AudioTrack({
     }
   }, [time, playing, inside, start, volume]);
   return <audio ref={ref} src={src} preload="auto" />;
+}
+
+// Ruido fractal (SVG) para el grano de película; se desplaza cada cuadro para que «viva».
+const GRAIN_URL = `url("data:image/svg+xml;utf8,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(#n)'/></svg>",
+)}")`;
+
+function Grain({ amount, time }: { amount: number; time: number }) {
+  const frame = Math.floor(time * 24);
+  return (
+    <div
+      data-testid="look-grain"
+      className="pointer-events-none absolute inset-0 z-[3] mix-blend-overlay"
+      style={{ backgroundImage: GRAIN_URL, backgroundPosition: `${(frame * 37) % 160}px ${(frame * 53) % 160}px`, opacity: amount * 0.45 }}
+    />
+  );
 }

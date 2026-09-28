@@ -190,7 +190,12 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
         client,
         client.post(
             f"/api/projects/{pid}/render",
-            json={"draft": True, "text_style": {"animation": "typewriter", "box": True}},
+            json={
+                "draft": True,
+                "text_style": {"animation": "typewriter", "box": True},
+                # Look en blanco y negro con viñeta y grano: no debe tocar los subtítulos.
+                "look": {"saturation": 0, "vignette": 50, "grain": 20, "soften_photos": 30},
+            },
         ).json()["id"],
         timeout=180,
     )
@@ -223,6 +228,18 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
         "box": True,
         "text_color": "#FFFFFF",
     }
+    # Look: el video queda en gris y los subtítulos, por fuera, siguen en amarillo.
+    frame = tmp_path / "cuadro.png"
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-ss", "0.1", "-i", str(out), "-frames:v", "1", str(frame)],
+        check=True,
+    )
+    with Image.open(frame) as im:
+        pixels = list(im.convert("RGB").get_flattened_data())
+    yellow = sum(1 for r, g, b in pixels if r > 190 and g > 160 and b < 90)
+    colored = sum(1 for r, g, b in pixels if max(r, g, b) - min(r, g, b) > 40)
+    assert yellow > 50 and colored - yellow < len(pixels) * 0.01
+    assert client.get(f"/api/projects/{pid}/render").json()["look"]["saturation"] == 0
     # La voz no se adelanta a los subtítulos: el audio dura lo mismo que el video.
     audio, video_len = stream_durations(out)
     assert audio == pytest.approx(video_len, abs=0.1)

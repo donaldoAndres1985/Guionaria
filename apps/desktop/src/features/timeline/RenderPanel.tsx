@@ -8,10 +8,11 @@ import { formatSize } from "@/features/storage/treemap";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { useCancelJob, useRenderState, useStartRender } from "@/hooks/useRender";
-import { coreUrl, type Project, type RenderQuality, type RenderState, type SubtitleStyle, type TextStyle } from "@/lib/api";
+import { coreUrl, type Project, type RenderQuality, type RenderState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
+import { NEUTRAL_LOOK } from "./previewMeta";
 import { exportedAt } from "./timelineMeta";
 
 export const QUALITIES: { id: RenderQuality; label: string; detail: string; hint: string }[] = [
@@ -57,6 +58,7 @@ export function useRenderController(project: Project) {
   const [burn, setBurn] = useState<boolean | null>(null);
   const [stylePatch, setStylePatch] = useState<Partial<SubtitleStyle>>({});
   const [textPatch, setTextPatch] = useState<Partial<TextStyle>>({});
+  const [lookPatch, setLookPatch] = useState<Partial<VideoLook>>({});
   const quality = useUiStore((s) => s.renderQuality);
   const setQuality = useUiStore((s) => s.setRenderQuality);
   const chosen = useRef<RenderQuality>(quality);
@@ -64,6 +66,7 @@ export function useRenderController(project: Project) {
   const burnSubtitles = state?.has_subtitles ? (burn ?? state.default_burn_subtitles) : false;
   const style: SubtitleStyle = { ...DEFAULT_STYLE, ...state?.subtitle_style, ...stylePatch };
   const textStyle: TextStyle = { ...DEFAULT_TEXT_STYLE, ...state?.text_style, ...textPatch };
+  const look: VideoLook = { ...NEUTRAL_LOOK, ...state?.look, ...lookPatch };
 
   const job = useProjectJob(
     project.id,
@@ -74,6 +77,7 @@ export function useRenderController(project: Project) {
         burn_subtitles: burnSubtitles,
         subtitle_style: burnSubtitles ? style : null,
         text_style: textStyle,
+        look,
       }),
     (done) => toast.success(`Render listo: ${String(done.result?.file ?? "")}`),
   );
@@ -99,6 +103,8 @@ export function useRenderController(project: Project) {
     setStyle: (patch: Partial<SubtitleStyle>) => setStylePatch((p) => ({ ...p, ...patch })),
     textStyle,
     setTextStyle: (patch: Partial<TextStyle>) => setTextPatch((p) => ({ ...p, ...patch })),
+    look,
+    setLook: (patch: Partial<VideoLook>) => setLookPatch((p) => ({ ...p, ...patch })),
     job,
     chosenQuality: chosen.current,
     run: () => {

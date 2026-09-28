@@ -635,6 +635,7 @@ export interface PreviewState {
   words: PreviewWord[];
   subtitle_style: SubtitleStyle;
   text_style?: TextStyle;
+  look?: VideoLook;
   default_burn_subtitles: boolean;
   zoom: number;
   music_volume: number;
@@ -968,6 +969,22 @@ export interface TextStyle {
   text_color: string;
 }
 
+/** Look de todo el video (clip de ajuste): no toca el texto en pantalla ni los subtítulos. */
+export interface VideoLook {
+  preset: string;
+  saturation: number; // 0–150 (100 = sin cambio)
+  contrast: number; // −50–50
+  brightness: number; // −50–50
+  blacks: number; // 0–100
+  temperature: number; // −100 frío … 100 cálido
+  vignette: number;
+  grain: number;
+  soften_photos: number;
+  zoom_photos: boolean;
+  lut: string | null;
+  lut_strength: number;
+}
+
 export interface RenderState {
   project_id: number;
   can_render: boolean;
@@ -979,6 +996,9 @@ export interface RenderState {
   subtitle_style?: SubtitleStyle;
   /** Último estilo del texto en pantalla. */
   text_style?: TextStyle;
+  /** Último look del video y los LUT importados. */
+  look?: VideoLook;
+  luts?: string[];
   duration_s: number;
   scenes: number;
   files: RenderFile[];

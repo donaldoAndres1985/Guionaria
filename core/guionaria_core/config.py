@@ -118,6 +118,25 @@ class TextStyle(BaseModel):
     text_color: str = Field("#FFFFFF", pattern=HEX)
 
 
+class VideoLook(BaseModel):
+    """«Look» de todo el video, como un clip de ajuste encima de la línea de tiempo: se aplica
+    igual a videos, fotos y fondos, y deja fuera el texto en pantalla y los subtítulos.
+    Todo en 0 (o 100 en la saturación) = sin cambios."""
+
+    preset: str = "none"  # el estilo rápido del que partió (solo informativo)
+    saturation: int = Field(100, ge=0, le=150)  # %; 30–50 = desaturado
+    contrast: int = Field(0, ge=-50, le=50)
+    brightness: int = Field(0, ge=-50, le=50)
+    blacks: int = Field(0, ge=0, le=100)  # negros más profundos (bajar el lift)
+    temperature: int = Field(0, ge=-100, le=100)  # < 0 frío (azul/verde en sombras), > 0 cálido
+    vignette: int = Field(0, ge=0, le=100)
+    grain: int = Field(0, ge=0, le=100)  # grano de película: iguala fotos limpias y videos
+    soften_photos: int = Field(0, ge=0, le=100)  # suaviza las fotos (más nítidas que el video)
+    zoom_photos: bool = False  # zoom lento en las fotos sin efecto
+    lut: str | None = None  # archivo .cube de la carpeta luts/
+    lut_strength: int = Field(100, ge=0, le=100)
+
+
 class TransitionPrefs(BaseModel):
     """Transición de por defecto entre escenas (cada corte puede tener la suya)."""
 
@@ -143,6 +162,7 @@ class AppSettings(BaseModel):
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
     text_style: TextStyle = Field(default_factory=TextStyle)
     transitions: TransitionPrefs = Field(default_factory=TransitionPrefs)
+    look: VideoLook = Field(default_factory=VideoLook)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

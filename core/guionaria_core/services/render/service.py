@@ -20,7 +20,14 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from ...config import SubtitleStyle, TextStyle, TransitionPrefs, load_settings, save_settings
+from ...config import (
+    SubtitleStyle,
+    TextStyle,
+    TransitionPrefs,
+    VideoLook,
+    load_settings,
+    save_settings,
+)
 from ...domain.states import ORDER, ProjectStatus
 from ...models._base import now_iso
 from ..errors import Conflict, DomainError, NotFound
@@ -32,6 +39,7 @@ from ..timeline.model import TimelineModel, build_timeline
 from ..voice.align import Word
 from ..voice.service import timed_words
 from . import captions, plan, transitions
+from . import look as looks
 from .thumbnail import make_thumbnail
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -61,6 +69,8 @@ class RenderState(BaseModel):
     default_burn_subtitles: bool  # reels: sí; videos: no (se suben aparte a YouTube)
     subtitle_style: SubtitleStyle  # el último estilo usado
     text_style: TextStyle  # estilo del texto en pantalla (el último usado)
+    look: VideoLook  # look del video (el último usado)
+    luts: list[str]  # LUT .cube importados
     duration_s: float
     scenes: int
     files: list[RenderFile]
@@ -128,6 +138,8 @@ def render_state(session: Session, project_id: int) -> RenderState:
         default_burn_subtitles=project.format == "reel",
         subtitle_style=load_settings().subtitle_style,
         text_style=load_settings().text_style,
+        look=load_settings().look,
+        luts=looks.list_luts(),
         duration_s=round(m.duration / m.fps, 2),
         scenes=len(m.scenes),
         files=files,
@@ -161,6 +173,14 @@ def scene_texts(m: TimelineModel) -> list[captions.SceneText]:
     ]
 
 
+def _effect(effect: str | None, kind: str | None, look: VideoLook | None) -> str | None:
+    """Efecto de la escena; con el look «zoom lento en fotos», las fotos sin efecto lo llevan."""
+    chosen = effect if effect != "ninguno" else None
+    if chosen is None and kind == "image" and look and look.zoom_photos:
+        return "zoom_lento_in"
+    return chosen
+
+
 def _join_with_transitions(
     m: TimelineModel,
     files: list[Path],
@@ -189,7 +209,9 @@ def _join_with_transitions(
     _run(args, cwd=out.parent, cancel=cancel)
 
 
-def _segments(m: TimelineModel, cuts: list[transitions.Cut]) -> list[plan.Segment]:
+def _segments(
+    m: TimelineModel, cuts: list[transitions.Cut], look: VideoLook | None = None
+) -> list[plan.Segment]:
     out = []
     for i, span in enumerate(m.scenes):
         c = span.clip
@@ -202,7 +224,7 @@ def _segments(m: TimelineModel, cuts: list[transitions.Cut]) -> list[plan.Segmen
                 kind=c.kind if c else "color",
                 path=c.path if c else None,
                 source_in=(c.source_in / m.fps) if c else 0,
-                effect=span.effect if span.effect != "ninguno" else None,
+                effect=_effect(span.effect, c.kind if c else None, look),
                 text=span.text,
             )
         )
@@ -282,6 +304,7 @@ def _render_sync(
     style: SubtitleStyle | None = None,
     text_style: TextStyle | None = None,
     prefs: TransitionPrefs | None = None,
+    look: VideoLook | None = None,
 ) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
@@ -291,20 +314,28 @@ def _render_sync(
     tmp.mkdir(parents=True)
     try:
         cuts = m.cuts(prefs or TransitionPrefs())
-        segments = _segments(m, cuts)
+        segments = _segments(m, cuts, look)
+        soften = looks.soften_sigma(look)
         files = []
         for i, seg in enumerate(segments):
             report(0.05 + 0.75 * i / len(segments), f"Escena {seg.position} de {len(segments)}…")
             out = tmp / f"seg_{i:03d}.mp4"
             # El texto en pantalla no va aquí: se escribe con libass en el paso final.
-            _run(plan.segment_command(seg, q, out, None, None, draft=draft), cancel=cancel)
+            _run(
+                plan.segment_command(seg, q, out, None, None, draft=draft, soften=soften),
+                cancel=cancel,
+            )
             files.append(out)
 
         video = tmp / "video.mp4"
         if any(c.transition for c in cuts):
             report(0.82, "Uniendo las escenas con sus transiciones…")
             # Si después se escriben subtítulos o texto, se vuelve a codificar.
-            again = bool(srt) or bool(scene_texts(m))
+            again = (
+                bool(srt)
+                or bool(scene_texts(m))
+                or bool(look and looks.look_filter(look, look.lut))
+            )
             _join_with_transitions(m, files, cuts, q, video, again, cancel)
         else:
             report(0.82, "Uniendo las escenas…")
@@ -357,6 +388,14 @@ def _render_sync(
             shutil.copy2(srt, tmp / "subs.srt")  # nombre simple: evita escapar la ruta en Windows
             plain = plan.subtitle_filter("subs.srt", m.height > m.width)
             vfilter = f"{plain},{vfilter}" if vfilter else plain
+        # Look (clip de ajuste) antes del texto y los subtítulos: a ellos no los toca.
+        lut = None
+        if look and look.lut:
+            shutil.copyfile(looks.lut_path(look.lut), tmp / looks.LUT_NAME)
+            lut = looks.LUT_NAME
+        graded = looks.look_filter(look, lut) if look else None
+        if graded:
+            vfilter = f"{graded},{vfilter}" if vfilter else graded
         args += ["-map", "0:v"]
         if vfilter:
             args += ["-vf", vfilter]
@@ -398,6 +437,7 @@ async def render_project(
     ctx: JobContext,
     style: SubtitleStyle | None = None,
     text_style: TextStyle | None = None,
+    look: VideoLook | None = None,
 ) -> dict:
     if isinstance(level, bool):
         level = "draft" if level else "standard"
@@ -414,13 +454,17 @@ async def render_project(
         burn = project.format == "reel" if burn_subtitles is None else burn_subtitles
         srt = _srt(project) if burn and _srt(project).exists() else None
         words = timed_words(session, project_id) if srt else []
-    if style is not None or text_style is not None:
+    if style is not None or text_style is not None or look is not None:
         settings = load_settings()  # se recuerdan para la próxima vez
         settings.subtitle_style = style or settings.subtitle_style
         settings.text_style = text_style or settings.text_style
+        settings.look = look or settings.look
         save_settings(settings)
     style = style or load_settings().subtitle_style
     text_style = text_style or load_settings().text_style
+    look = look or load_settings().look
+    if look.lut:
+        looks.lut_path(look.lut)  # falla antes de empezar si el LUT ya no está
 
     folder.mkdir(parents=True, exist_ok=True)
     loop = asyncio.get_running_loop()
@@ -440,6 +484,7 @@ async def render_project(
         style,
         text_style,
         load_settings().transitions,
+        look,
     )
     _save_quality(folder, output.name, level)
 
