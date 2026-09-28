@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { FormField } from "@/components/FormField";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -60,6 +61,21 @@ export function ClaudeSettings({
             ))}
           </SelectContent>
         </Select>
+      </FormField>
+
+      <FormField
+        label="Investigar con fuentes: búsquedas por caso"
+        hint="Tope de búsquedas web de Claude en cada investigación (lee hasta el doble de páginas). Más búsquedas = ficha más completa y más cuota de tu plan."
+      >
+        <Input
+          type="number"
+          aria-label="Búsquedas por investigación"
+          min={2}
+          max={15}
+          className="w-28"
+          value={settings.research_max_searches ?? 6}
+          onChange={(e) => onChange({ research_max_searches: Math.min(15, Math.max(2, Number(e.target.value) || 6)) })}
+        />
       </FormField>
 
       {prompts.map((p) => (

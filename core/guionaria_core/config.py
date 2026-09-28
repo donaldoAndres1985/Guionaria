@@ -119,6 +119,8 @@ class AppSettings(BaseModel):
     elevenlabs: ElevenLabsPrefs = Field(default_factory=ElevenLabsPrefs)
     # Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena.
     trim_after_download: bool = False
+    # «Investigar con fuentes»: tope de búsquedas web por caso (páginas leídas = el doble).
+    research_max_searches: int = Field(default=6, ge=2, le=15)
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
 
 

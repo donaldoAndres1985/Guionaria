@@ -15,6 +15,7 @@ class Project(SQLModel, table=True):
     status: str
     topic: str | None = None
     research_notes: str | None = None
+    research_json: str | None = None  # ficha de «Investigar con fuentes» (JSON)
     target_duration_s: int | None = None
     target_publish_at: str | None = None
     priority: int = 2

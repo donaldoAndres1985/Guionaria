@@ -33,7 +33,10 @@ def project_dir(project: Project) -> Path:
 
 
 def to_read(project: Project, channel: Channel) -> ProjectRead:
+    from .research import read_research  # import local: research usa este módulo
+
     return ProjectRead(
+        research=read_research(project.research_json),
         id=project.id,
         channel_id=project.channel_id,
         channel_name=channel.name,

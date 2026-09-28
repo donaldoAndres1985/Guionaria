@@ -55,7 +55,10 @@ plano: consulta su avance con job_status. Escribe el guion y las escenas en el i
 (normalmente español). La revisión visual final conviene hacerla en la app."""
 
 NEXT_STEP = {
-    ProjectStatus.IDEA: "Redacta el guion y guárdalo con save_script; luego approve_script.",
+    ProjectStatus.IDEA: (
+        "Si el tema necesita datos, investígalo con research_project; después redacta el guion "
+        "(save_script) y apruébalo (approve_script)."
+    ),
     ProjectStatus.GUION_BORRADOR: "Revisa el guion (get_script) y apruébalo con approve_script.",
     ProjectStatus.GUION_APROBADO: "Redacta las escenas y guárdalas con save_scenes.",
     ProjectStatus.ESCENAS_BORRADOR: "Revisa las escenas y apruébalas con approve_scenes.",
@@ -359,6 +362,41 @@ def build_mcp() -> MCPServer:
                 ),
             )
             return {"project_id": p.id, "folder": p.folder_path, "status": p.status}
+
+    @tool
+    def research_idea(idea_id: int) -> dict[str, Any]:
+        """Investiga la idea en internet (búsqueda web aislada, con tope de búsquedas) y guarda
+        una ficha con fuentes: cada dato con su certeza y sus citas. Las notas de la idea quedan
+        con la versión citada; las anteriores se conservan debajo. Devuelve el job."""
+        from .services import research
+        from .services.llm.claude_cli import get_runner
+
+        with _session() as s:
+            ideas.get_idea(s, idea_id)
+        runner = get_runner()
+
+        async def work(ctx: JobContext) -> dict:
+            return await research.research_idea(_session, idea_id, runner, ctx)
+
+        job = jobs.jobs.submit("research", work, payload={"idea_id": idea_id}, exclusive=False)
+        return _job_summary(job)
+
+    @tool
+    def research_project(project_id: int) -> dict[str, Any]:
+        """Investiga el tema del proyecto en internet y guarda la ficha con fuentes en sus notas
+        de investigación y en investigacion.md. Hazlo antes de escribir el guion.
+        Devuelve el job."""
+        from .services import research
+        from .services.llm.claude_cli import get_runner
+
+        with _session() as s:
+            projects.get_project(s, project_id)
+        runner = get_runner()
+
+        async def work(ctx: JobContext) -> dict:
+            return await research.research_project(_session, project_id, runner, ctx)
+
+        return _job_summary(jobs.jobs.submit("research", work, project_id=project_id))
 
     # --- guion ---
 

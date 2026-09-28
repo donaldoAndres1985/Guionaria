@@ -11,5 +11,6 @@ class Idea(SQLModel, table=True):
     priority: int | None = None  # 1 alta · 2 media · 3 baja
     status: str | None = None  # open | converted | discarded
     project_id: int | None = Field(default=None, foreign_key="project.id")  # si se convirtió
+    research_json: str | None = None  # ficha de «Investigar con fuentes» (JSON)
     created_at: str = Field(default_factory=now_iso)
     updated_at: str | None = None

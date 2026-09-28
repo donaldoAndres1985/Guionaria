@@ -1,8 +1,10 @@
 """Claude dentro de la app: Claude Code CLI en modo headless (sección 4.1 de SPEC.md).
 
 Se ejecuta `claude -p` con salida estructurada (--json-schema), sin herramientas (solo escribe
-texto) y sin guardar la sesión en el historial del usuario. El prompt va por stdin porque
-Windows limita el largo de la línea de comandos y las notas de investigación pueden ser largas.
+texto; la investigación con fuentes activa solo WebSearch y WebFetch), sin los servidores MCP
+del usuario (--strict-mcp-config: no gastan tokens aquí) y sin guardar la sesión. El prompt va
+por stdin porque Windows limita el largo de la línea de comandos y las notas de investigación
+pueden ser largas.
 """
 
 import asyncio
@@ -28,7 +30,13 @@ class ClaudeError(DomainError):
 
 
 class ClaudeRunner(Protocol):
-    async def run(self, prompt: str, schema: dict[str, Any], cwd: Path | None = None) -> Any: ...
+    async def run(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        cwd: Path | None = None,
+        tools: list[str] | None = None,
+    ) -> Any: ...
 
 
 def _friendly_error(text: str) -> str:
@@ -48,7 +56,9 @@ class ClaudeCli:
         self.model = model
         self.timeout_s = timeout_s
 
-    def build_args(self, exe: str, schema: dict[str, Any]) -> list[str]:
+    def build_args(
+        self, exe: str, schema: dict[str, Any], tools: list[str] | None = None
+    ) -> list[str]:
         args = [
             exe,
             "-p",
@@ -57,14 +67,24 @@ class ClaudeCli:
             "--json-schema",
             json.dumps(schema, ensure_ascii=False),
             "--tools",
-            "",
+            ",".join(tools or []),
+            "--strict-mcp-config",
             "--no-session-persistence",
         ]
+        if tools:
+            # Aprobadas de antemano: en modo -p no hay a quién preguntar.
+            args += ["--allowedTools", *tools]
         if self.model:
             args += ["--model", self.model]
         return args
 
-    async def run(self, prompt: str, schema: dict[str, Any], cwd: Path | None = None) -> Any:
+    async def run(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        cwd: Path | None = None,
+        tools: list[str] | None = None,
+    ) -> Any:
         exe = shutil.which("claude")
         if not exe:
             raise ClaudeError(
@@ -73,17 +93,17 @@ class ClaudeCli:
         try:
             proc = await asyncio.to_thread(
                 subprocess.run,
-                self.build_args(exe, schema),
+                self.build_args(exe, schema, tools),
                 input=prompt.encode("utf-8"),
                 capture_output=True,
-                timeout=self.timeout_s,
+                timeout=self.timeout_s * (3 if tools else 1),  # buscar en la web tarda más
                 cwd=str(cwd) if cwd else None,
                 creationflags=_NO_WINDOW,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ClaudeError(
-                f"Claude no respondió en {self.timeout_s // 60} minutos. Intenta de nuevo."
-            ) from exc
+            minutes = self.timeout_s * (3 if tools else 1) // 60
+            message = f"Claude no respondió en {minutes} minutos. Intenta de nuevo."
+            raise ClaudeError(message) from exc
         except OSError as exc:
             raise ClaudeError(f"No se pudo ejecutar Claude Code CLI: {exc}") from exc
         return parse_output(proc.stdout, proc.stderr, proc.returncode)
@@ -125,6 +145,7 @@ async def generate_structured[T: BaseModel](
     model: type[T],
     cwd: Path | None = None,
     check: Callable[[T], None] | None = None,
+    tools: list[str] | None = None,
 ) -> T:
     """Pide a Claude una respuesta con el esquema de `model` y la valida.
 
@@ -134,7 +155,11 @@ async def generate_structured[T: BaseModel](
     attempt_prompt = prompt
     last_error = ""
     for _ in range(2):
-        raw = await runner.run(attempt_prompt, schema, cwd)
+        raw = await (
+            runner.run(attempt_prompt, schema, cwd, tools=tools)
+            if tools
+            else runner.run(attempt_prompt, schema, cwd)
+        )
         try:
             value = model.model_validate(raw)
             if check:

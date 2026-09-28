@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ResearchPanel } from "@/features/research/ResearchPanel";
 import { ConvertIdeaDialog } from "@/features/planning/ConvertIdeaDialog";
 import { useChannels } from "@/hooks/useChannels";
 import { useCreateIdea, useDeleteIdea, useIdeas, useUpdateIdea } from "@/hooks/useIdeas";
@@ -153,7 +154,12 @@ export function IdeasPage() {
 
         <div className="flex min-w-0 flex-1 flex-col">
           {selected ? (
-            <IdeaDetail key={selected.id} idea={selected} onConvert={() => setConverting(selected)} />
+            // Con una ficha nueva se vuelve a montar: las notas ya traen las citas.
+            <IdeaDetail
+              key={`${selected.id}-${selected.research?.created_at ?? ""}`}
+              idea={selected}
+              onConvert={() => setConverting(selected)}
+            />
           ) : (
             <EmptyState
               icon={Lightbulb}
@@ -229,6 +235,7 @@ function IdeaDetail({ idea, onConvert }: { idea: Idea; onConvert: () => void }) 
             onBlur={() => notes !== (idea.notes ?? "") && save({ notes })}
           />
         </FormField>
+        <ResearchPanel target={{ kind: "idea", id: idea.id }} research={idea.research} disabled={!editable} />
         <div className="grid grid-cols-2 gap-4">
           <FormField label="Prioridad">
             <Select value={String(idea.priority)} onValueChange={(v) => save({ priority: Number(v) })}>

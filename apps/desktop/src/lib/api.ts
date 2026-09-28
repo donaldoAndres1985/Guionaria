@@ -142,6 +142,8 @@ export interface AppSettings {
   elevenlabs: ElevenLabsPrefs;
   /** Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena. */
   trim_after_download: boolean;
+  /** «Investigar con fuentes»: tope de búsquedas web por caso. */
+  research_max_searches?: number;
   subtitle_style?: SubtitleStyle;
 }
 
@@ -206,6 +208,8 @@ export interface Project extends ProjectInput {
   parent_project_id: number | null;
   created_at: string;
   updated_at: string;
+  /** Ficha de «Investigar con fuentes». */
+  research?: Research | null;
 }
 
 export interface SegmentInput {
@@ -647,6 +651,39 @@ export interface McpInfo {
 
 export type IdeaStatus = "open" | "converted" | "discarded";
 
+/** Ficha de «Investigar con fuentes». */
+export type Certeza = "confirmado" | "una_fuente" | "en_disputa";
+
+export interface ResearchSource {
+  id: number;
+  titulo: string;
+  medio: string | null;
+  url: string;
+  fecha: string | null;
+  tipo: "oficial" | "judicial" | "prensa" | "academica" | "libro" | "otra";
+}
+
+export interface ResearchFact {
+  afirmacion: string;
+  certeza: Certeza;
+  fuentes: number[];
+  nota: string | null;
+}
+
+export interface Research {
+  created_at: string;
+  dossier: {
+    resumen: string;
+    datos: ResearchFact[];
+    fuentes: ResearchSource[];
+    contradicciones: string[];
+    incognitas: string[];
+    cuidados: string[];
+    ganchos: string[];
+  };
+  stats: Record<Certeza | "fuentes", number>;
+}
+
 export interface Idea {
   id: number;
   channel_id: number;
@@ -659,6 +696,7 @@ export interface Idea {
   project_in_trash: boolean;
   created_at: string;
   updated_at: string;
+  research?: Research | null;
 }
 
 export interface IdeaInput {
