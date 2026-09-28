@@ -48,6 +48,16 @@ def _purge_expired_trash() -> None:
         purge_expired(session)
 
 
+def _resync_publishing() -> None:
+    from sqlmodel import Session
+
+    from .db import get_engine
+    from .services.publishing.service import resync_statuses
+
+    with Session(get_engine()) as session:
+        resync_statuses(session)
+
+
 def create_app() -> FastAPI:
     # Servidor MCP por HTTP en /mcp (sección 4.2): sin estado y con respuestas JSON, que es lo
     # más simple para clientes locales como Claude Code.
@@ -65,6 +75,7 @@ def create_app() -> FastAPI:
         run_migrations()
         ensure_prompts()
         fail_interrupted()
+        _resync_publishing()
         _purge_expired_trash()
         async with mcp.session_manager.run():
             yield

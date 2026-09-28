@@ -310,17 +310,7 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
   return (
     <div className="grid max-w-3xl gap-5 p-5" aria-label={`Publicación en ${pub.label}`}>
       {/* Estado */}
-      {pub.status === "published" && pub.external_url && (
-        <Banner tone="success" icon={Check}>
-          Publicado en {pub.label}:{" "}
-          <button type="button" className="underline" onClick={() => openUrl.mutate(pub.external_url!)}>
-            {pub.external_url}
-          </button>
-          <button type="button" className="ml-auto text-[12px] text-muted-foreground hover:text-foreground" onClick={() => ctl.actions.reopen.mutate(pub.id)}>
-            Volver a borrador
-          </button>
-        </Banner>
-      )}
+      {pub.status === "published" && pub.external_url && <PublishedLink pub={pub} ctl={ctl} />}
       {pub.status === "scheduled" && pub.scheduled_at && (
         <Banner tone="info" icon={CalendarClock}>
           {pub.external_url ? "Subido y programado" : "Programado"} para el {new Date(pub.scheduled_at).toLocaleString("es")}
@@ -663,6 +653,63 @@ function TitleIdeas({ pub, ctl, onUse }: { pub: Publication; ctl: PublishControl
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** Publicado: el enlace (se puede corregir) y volver a borrador. */
+function PublishedLink({ pub, ctl }: { pub: Publication; ctl: PublishController }) {
+  const openUrl = useOpenUrl();
+  const [editing, setEditing] = useState(false);
+  const [url, setUrl] = useState(pub.external_url ?? "");
+  return (
+    <div className="grid gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-[12px]" aria-label={`Publicado en ${pub.label}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Check className="size-4 shrink-0" />
+        <span>
+          Publicado en {pub.label}
+          {pub.published_at && ` · ${new Date(pub.published_at).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" })}`}
+        </span>
+        <span className="ml-auto flex gap-3">
+          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setEditing((v) => !v)}>
+            {editing ? "Cancelar" : "Cambiar enlace"}
+          </button>
+          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => ctl.actions.reopen.mutate(pub.id)}>
+            Volver a borrador
+          </button>
+        </span>
+      </div>
+      {editing ? (
+        <div className="flex flex-wrap gap-2">
+          <Input aria-label={`Enlace publicado en ${pub.label}`} value={url} onChange={(e) => setUrl(e.target.value)} className="min-w-56 flex-1" />
+          <Button
+            size="sm"
+            disabled={!url.trim() || url.trim() === pub.external_url || ctl.actions.markPublished.isPending}
+            onClick={() =>
+              ctl.actions.markPublished.mutate(
+                { id: pub.id, url: url.trim() },
+                {
+                  onSuccess: () => {
+                    setEditing(false);
+                    toast.success("Enlace guardado");
+                  },
+                },
+              )
+            }
+          >
+            Guardar enlace
+          </Button>
+        </div>
+      ) : (
+        <span className="flex items-center gap-2">
+          <button type="button" className="min-w-0 truncate text-left underline" onClick={() => openUrl.mutate(pub.external_url!)}>
+            {pub.external_url}
+          </button>
+          <button type="button" aria-label="Copiar enlace" className="text-muted-foreground hover:text-foreground" onClick={() => copy(pub.external_url!, "Enlace")}>
+            <Copy className="size-3.5" />
+          </button>
+        </span>
       )}
     </div>
   );

@@ -6,8 +6,8 @@ Facebook) con sus metadatos, la lista de verificación y el estado.
   límites de cada plataforma.
 - Publicar a mano: copiar los textos, abrir la plataforma y pegar la URL publicada.
 - YouTube además se sube directo (youtube.py).
-- Estado del proyecto: PROGRAMADO cuando todas las plataformas activas están programadas o
-  publicadas; PUBLICADO cuando todas están publicadas.
+- Estado del proyecto: PUBLICADO en cuanto está publicado en alguna plataforma activa (las
+  demás se ven como «1/3»); PROGRAMADO si aún no está en ninguna pero hay alguna con fecha.
 """
 
 import json
@@ -360,6 +360,7 @@ def publishing_state(session: Session, project_id: int, redirect_uri: str = "") 
     channel = get_channel(session, project.channel_id)
     rows = ensure_publications(session, project)
     settle_scheduled(session, project, rows)
+    sync_project_status(session, project)
     credits = rights_report(session, project_id).credits
     engine = _voice_engine(session, project_id)
     video = final_video(project)
@@ -476,9 +477,10 @@ def mark_published(session: Session, pub_id: int, url: str) -> PublishingState:
     pub = _get_pub(session, pub_id)
     if not re.match(r"https?://", url.strip()):
         raise DomainError("Pega la dirección completa de la publicación (https://…)")
+    was_published = pub.status == "published" and pub.published_at
     pub.status = "published"
     pub.external_url = url.strip()
-    pub.published_at = now_iso()
+    pub.published_at = pub.published_at if was_published else now_iso()  # cambiar solo el enlace
     pub.error = None
     pub.updated_at = now_iso()
     session.commit()
@@ -502,14 +504,31 @@ def reopen(session: Session, pub_id: int) -> PublishingState:
     return publishing_state(session, project.id)
 
 
+def resync_statuses(session: Session) -> int:
+    """Recalcula el estado de los proyectos con publicaciones (al arrancar: por si la regla
+    cambió o se editó algo fuera de la app). Devuelve cuántos cambiaron."""
+    ids = {r.project_id for r in session.exec(select(Publication)).all()}
+    changed = 0
+    for pid in ids:
+        project = session.get(Project, pid)
+        if project is None or project.deleted_at:
+            continue
+        before = project.status
+        sync_project_status(session, project)
+        changed += project.status != before
+    return changed
+
+
 def sync_project_status(session: Session, project: Project) -> None:
     rows = session.exec(select(Publication).where(Publication.project_id == project.id)).all()
     active = [r for r in rows if r.enabled]
     if ORDER.index(project.status) < ORDER.index(ProjectStatus.RENDERIZADO):
         return
-    if active and all(r.status == "published" for r in active):
+    # Publicado en cuanto el video está en alguna plataforma (el resto se ve como «1/3»);
+    # programado si todavía no está en ninguna pero hay alguna con fecha.
+    if any(r.status == "published" for r in active):
         new = ProjectStatus.PUBLICADO
-    elif active and all(r.status in ("scheduled", "published") for r in active):
+    elif any(r.status == "scheduled" for r in active):
         new = ProjectStatus.PROGRAMADO
     else:
         new = ProjectStatus.RENDERIZADO

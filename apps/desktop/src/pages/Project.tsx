@@ -35,6 +35,7 @@ import { useVoiceController } from "@/features/voice/useVoiceController";
 import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
 import { VoiceStage } from "@/features/voice/VoiceStage";
 import { PublishBottomBar, PublishStage, usePublishController } from "@/features/publishing/PublishStage";
+import { publishProgress } from "@/features/publishing/PublishBadges";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useRestoreProject } from "@/hooks/useHistory";
 import { useRevealProject } from "@/hooks/useManualMedia";
@@ -229,6 +230,8 @@ function ProjectView({ project }: { project: Project }) {
                         ? "Generando…"
                         : s.id === "medios" && media.overview?.needing_media
                           ? `${STATE_TEXT[state]} · ${media.overview.with_media}/${media.overview.needing_media} con medio`
+                          : s.id === "publicacion" && project.publications?.length
+                          ? `${publishProgress(project).done}/${publishProgress(project).total} publicadas`
                           : s.id === "escenas" && scenesState?.scenes.length
                           ? `${STATE_TEXT[state]} · ${scenesState.scenes.length} escenas${scenesState.review_count ? ` · ${scenesState.review_count} por revisar` : ""}`
                           : STATE_TEXT[state]
