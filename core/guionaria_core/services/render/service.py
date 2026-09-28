@@ -20,7 +20,7 @@ from typing import Literal
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from ...config import SubtitleStyle, TextStyle, load_settings, save_settings
+from ...config import SubtitleStyle, TextStyle, TransitionPrefs, load_settings, save_settings
 from ...domain.states import ORDER, ProjectStatus
 from ...models._base import now_iso
 from ..errors import Conflict, DomainError, NotFound
@@ -31,7 +31,7 @@ from ..projects import get_project, project_dir
 from ..timeline.model import TimelineModel, build_timeline
 from ..voice.align import Word
 from ..voice.service import timed_words
-from . import captions, plan
+from . import captions, plan, transitions
 from .thumbnail import make_thumbnail
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -161,14 +161,44 @@ def scene_texts(m: TimelineModel) -> list[captions.SceneText]:
     ]
 
 
-def _segments(m: TimelineModel) -> list[plan.Segment]:
-    out = []
+def _join_with_transitions(
+    m: TimelineModel,
+    files: list[Path],
+    cuts: list[transitions.Cut],
+    q: plan.Quality,
+    out: Path,
+    encode_again: bool,
+    cancel: threading.Event | None,
+) -> None:
+    """Une los segmentos con xfade. Si el paso final vuelve a codificar (subtítulos o
+    texto), este va rápido y casi sin pérdida; si no, con la calidad elegida."""
+    starts, acc = [], 0
     for span in m.scenes:
+        starts.append(acc / m.fps)
+        acc += span.duration
+    graph, label = plan.join_filter(len(files), cuts, starts)
+    args = ["ffmpeg", "-y", "-v", "error"]
+    for f in files:
+        args += ["-i", f.name]
+    preset, crf = ("veryfast", max(q.crf - 6, 10)) if encode_again else (q.preset, q.crf)
+    args += [
+        "-filter_complex", graph, "-map", f"[{label}]",
+        "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
+        "-color_range", "tv", "-t", f"{m.duration / m.fps:.3f}", out.name,
+    ]  # fmt: skip
+    _run(args, cwd=out.parent, cancel=cancel)
+
+
+def _segments(m: TimelineModel, cuts: list[transitions.Cut]) -> list[plan.Segment]:
+    out = []
+    for i, span in enumerate(m.scenes):
         c = span.clip
+        # Con transición, la escena que sale dura un poco más: se funde con la siguiente.
+        tail = round(cuts[i].duration * m.fps) if i < len(cuts) else 0
         out.append(
             plan.Segment(
                 position=span.position,
-                duration=span.duration / m.fps,
+                duration=(span.duration + tail) / m.fps,
                 kind=c.kind if c else "color",
                 path=c.path if c else None,
                 source_in=(c.source_in / m.fps) if c else 0,
@@ -251,6 +281,7 @@ def _render_sync(
     words: list[Word] | None = None,
     style: SubtitleStyle | None = None,
     text_style: TextStyle | None = None,
+    prefs: TransitionPrefs | None = None,
 ) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
@@ -259,7 +290,8 @@ def _render_sync(
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     try:
-        segments = _segments(m)
+        cuts = m.cuts(prefs or TransitionPrefs())
+        segments = _segments(m, cuts)
         files = []
         for i, seg in enumerate(segments):
             report(0.05 + 0.75 * i / len(segments), f"Escena {seg.position} de {len(segments)}…")
@@ -268,29 +300,22 @@ def _render_sync(
             _run(plan.segment_command(seg, q, out, None, None, draft=draft), cancel=cancel)
             files.append(out)
 
-        report(0.82, "Uniendo las escenas…")
-        listing = tmp / "escenas.txt"
-        listing.write_text("".join(f"file '{f.name}'\n" for f in files), encoding="utf-8")
         video = tmp / "video.mp4"
-        _run(
-            [
-                "ffmpeg",
-                "-y",
-                "-v",
-                "error",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                listing.name,
-                "-c",
-                "copy",
-                video.name,
-            ],
-            cwd=tmp,
-            cancel=cancel,
-        )
+        if any(c.transition for c in cuts):
+            report(0.82, "Uniendo las escenas con sus transiciones…")
+            # Si después se escriben subtítulos o texto, se vuelve a codificar.
+            again = bool(srt) or bool(scene_texts(m))
+            _join_with_transitions(m, files, cuts, q, video, again, cancel)
+        else:
+            report(0.82, "Uniendo las escenas…")
+            listing = tmp / "escenas.txt"
+            listing.write_text("".join(f"file '{f.name}'\n" for f in files), encoding="utf-8")
+            _run(
+                ["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0",
+                 "-i", listing.name, "-c", "copy", video.name],
+                cwd=tmp,
+                cancel=cancel,
+            )  # fmt: skip
 
         total = m.duration / m.fps
         sec = lambda f: f / m.fps  # noqa: E731
@@ -404,7 +429,17 @@ async def render_project(
         loop.call_soon_threadsafe(ctx.progress, fraction, message)
 
     output, thumb = await asyncio.to_thread(
-        _render_sync, m, folder, srt, level, report, ctx.cancel_event, words, style, text_style
+        _render_sync,
+        m,
+        folder,
+        srt,
+        level,
+        report,
+        ctx.cancel_event,
+        words,
+        style,
+        text_style,
+        load_settings().transitions,
     )
     _save_quality(folder, output.name, level)
 

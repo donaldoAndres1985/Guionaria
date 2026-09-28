@@ -35,22 +35,26 @@ import {
   useRenderController,
 } from "./RenderPanel";
 import { TextStylePanel, textStyleSummary } from "./TextStylePanel";
+import { CutMarkers, TransitionsPanel, transitionsSummary } from "./TransitionsPanel";
+import { useTransitions } from "@/hooks/useTransitions";
 import { exportedAt, FORMAT_FILES, MARKER_TONE, pct, resolutionLabel, rulerTicks } from "./timelineMeta";
 
 const TONE = Object.fromEntries(KINDS.map((k) => [k.id, k.tone]));
 
-type SectionId = "subtitles" | "text" | "files" | "markers" | "exports";
+type SectionId = "subtitles" | "text" | "transitions" | "files" | "markers" | "exports";
 
 export function TimelineStage({ project, onGoToMedia }: { project: Project; onGoToMedia: () => void }) {
   const { data: state } = useTimeline(project.id);
   const { data: preview } = usePreview(project.id);
   const render = useRenderController(project);
+  const { data: transitions } = useTransitions(project.id);
   const reveal = useRevealProject();
   const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [tab, setTab] = useState<"preview" | "render">("preview");
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
     subtitles: false,
     text: false,
+    transitions: false,
     files: false,
     markers: false,
     exports: false,
@@ -240,6 +244,14 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
             <TextStylePanel style={render.textStyle} onChange={render.setTextStyle} disabled={render.job.running} />
           </Section>
           <Section
+            title="Transiciones"
+            summary={transitionsSummary(transitions)}
+            open={open.transitions}
+            onToggle={() => toggle("transitions")}
+          >
+            <TransitionsPanel projectId={project.id} disabled={render.job.running} />
+          </Section>
+          <Section
             title="Archivos del render"
             summary={render.state?.files.some((f) => f.kind !== "thumbnail") ? "Listos" : "Sin render"}
             open={open.files}
@@ -305,15 +317,20 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
             icon: Film,
             label: "Video",
             height: "h-14",
-            content: state.scenes.map((s) => (
-              <SceneBlock
-                key={s.position}
-                scene={s}
-                duration={d}
-                onSeek={() => seekTo(s.start_s)}
-                onTrim={canTrim && s.is_video ? () => openTrim(s) : undefined}
-              />
-            )),
+            content: (
+              <>
+                {state.scenes.map((s) => (
+                  <SceneBlock
+                    key={s.position}
+                    scene={s}
+                    duration={d}
+                    onSeek={() => seekTo(s.start_s)}
+                    onTrim={canTrim && s.is_video ? () => openTrim(s) : undefined}
+                  />
+                ))}
+                <CutMarkers projectId={project.id} duration={d} disabled={render.job.running} />
+              </>
+            ),
           },
           {
             id: "subtitles",

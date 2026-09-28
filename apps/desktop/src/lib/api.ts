@@ -578,6 +578,35 @@ export interface PreviewScene {
   media: PreviewMedia | null;
   effect: string | null;
   text: string | null;
+  /** Transición con la que entra desde la escena anterior (ya con la de por defecto). */
+  transition_in?: string | null;
+  transition_in_s?: number;
+}
+
+export interface TransitionOption {
+  id: string;
+  label: string;
+}
+
+/** Corte entre una escena y la siguiente. */
+export interface TransitionCut {
+  scene_id: number;
+  position: number;
+  from_kind: MediaKind;
+  to_kind: MediaKind;
+  at_s: number;
+  /** La elegida en este corte; null = la de por defecto. */
+  chosen: string | null;
+  /** La que se aplica; null = corte directo. */
+  transition: string | null;
+  duration_s: number;
+}
+
+export interface TransitionsState {
+  default: string;
+  duration: number;
+  options: TransitionOption[];
+  cuts: TransitionCut[];
 }
 
 export interface PreviewSound {

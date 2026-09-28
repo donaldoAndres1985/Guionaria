@@ -27,6 +27,9 @@ class PreviewScene(BaseModel):
     media: PreviewMedia | None
     effect: str | None
     text: str | None
+    # Transición con la que entra desde la escena anterior (la de por defecto ya aplicada).
+    transition_in: str | None = None
+    transition_in_s: float = 0.0
 
 
 class PreviewSound(BaseModel):
@@ -76,8 +79,10 @@ def _sec(m: TimelineModel, frames: int) -> float:
 
 def preview_state(session: Session, project: Project) -> PreviewState:
     m = build_timeline(session, project)
+    cuts = m.cuts(load_settings().transitions)
     scenes = []
-    for s in m.scenes:
+    for i, s in enumerate(m.scenes):
+        cut = cuts[i - 1] if i > 0 else None
         media = None
         if s.clip and s.asset_id and s.scene_id:
             media = PreviewMedia(
@@ -97,6 +102,8 @@ def preview_state(session: Session, project: Project) -> PreviewState:
                 media=media,
                 effect=s.effect,
                 text=s.text,
+                transition_in=cut.transition if cut else None,
+                transition_in_s=cut.duration if cut else 0.0,
             )
         )
 

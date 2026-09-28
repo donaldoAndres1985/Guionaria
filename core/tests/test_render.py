@@ -182,6 +182,9 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
     state = client.get(f"/api/projects/{pid}/render").json()
     assert state["can_render"] and state["has_voice"] and state["has_subtitles"]
     assert state["text_style"]["animation"] == "pop"  # por defecto
+    # Transiciones: fundido por defecto y un círculo en el último corte (hacia el texto).
+    client.put(f"/api/projects/{pid}/transitions", json={"default": "fade", "duration": 0.3})
+    client.put(f"/api/scenes/{real}/transition", json={"transition": "circleopen"})
 
     job = wait_job(
         client,
@@ -208,6 +211,7 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
     out.write_bytes(draft.content)
     info = probe(out)
     assert sorted(info["streams"]) == ["audio", "video"]
+    # Con transiciones el video dura lo mismo: la voz no se desfasa.
     assert info["duration"] == pytest.approx(4.9, abs=0.15)
     # El estilo del texto en pantalla se recuerda (y la vista previa lo usa).
     assert client.get(f"/api/projects/{pid}/render").json()["text_style"]["box"] is True

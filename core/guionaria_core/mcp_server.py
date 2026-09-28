@@ -649,6 +649,38 @@ def build_mcp() -> MCPServer:
         return out
 
     @tool
+    def set_transitions(
+        project_id: int,
+        default: str | None = None,
+        duration_s: Annotated[float, Field(ge=0.2, le=1.5)] | None = None,
+        cuts: dict[int, str | None] | None = None,
+        reset_cuts: bool = False,
+    ) -> dict[str, Any]:
+        """Transiciones entre escenas. default: la de todos los cortes («none» = corte directo).
+        cuts: {posición de la escena que sale: transición} (null = volver a la de por defecto).
+        reset_cuts: todos los cortes vuelven a la de por defecto. Sin argumentos, devuelve el
+        estado y las opciones (fade, fadeblack, slideleft, wipeleft, circleopen, zoomin…)."""
+        from .services.timeline import cuts as cut_svc
+
+        with _session() as s:
+            project = projects.get_project(s, project_id)
+            state = cut_svc.update_transitions(
+                s,
+                project,
+                cut_svc.TransitionsUpdate(
+                    default=default, duration=duration_s, reset_cuts=reset_cuts
+                ),
+            )
+            by_position = {c.position: c.scene_id for c in state.cuts}
+            for position, kind in (cuts or {}).items():
+                if position not in by_position:
+                    raise DomainError(f"La escena {position} no tiene un corte después")
+                state = cut_svc.set_cut(
+                    s, by_position[position], cut_svc.CutUpdate(transition=kind)
+                )
+            return state.model_dump()
+
+    @tool
     def set_trim(
         scene_id: int, asset_id: int, trim_in_s: float | None, trim_out_s: float | None
     ) -> dict[str, Any]:

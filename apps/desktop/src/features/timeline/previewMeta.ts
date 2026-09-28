@@ -250,3 +250,71 @@ export const SUBTITLE_PRESETS: { id: string; label: string; style: Partial<Subti
     },
   },
 ];
+
+// --- transiciones (aproximación en CSS de xfade de FFmpeg) ---
+
+export interface TransitionLook {
+  /** La escena que entra y la que sale (esta sigue con su cola durante la transición). */
+  incoming: React.CSSProperties;
+  outgoing: React.CSSProperties;
+  /** La que sale va encima (p. ej. el círculo que se cierra sobre la nueva). */
+  outgoingOnTop?: boolean;
+  /** Velo de color (fundido a negro o destello blanco). */
+  overlay?: { color: string; opacity: number };
+}
+
+const pctStr = (v: number) => `${Math.round(v * 10000) / 100}%`;
+
+/** Cómo se ven las dos escenas en el punto `p` (0 → 1) de la transición `kind`. */
+export function transitionLook(kind: string, p: number): TransitionLook {
+  const x = Math.min(Math.max(p, 0), 1);
+  const cross = { incoming: { opacity: x }, outgoing: {} };
+  switch (kind) {
+    case "fadeblack":
+    case "fadewhite": {
+      // Primero se oscurece (o aclara) la que sale; después aparece la nueva.
+      const color = kind === "fadeblack" ? "#000" : "#fff";
+      return x < 0.5
+        ? { incoming: { opacity: 0 }, outgoing: {}, overlay: { color, opacity: x * 2 } }
+        : { incoming: {}, outgoing: { opacity: 0 }, overlay: { color, opacity: 2 - x * 2 } };
+    }
+    case "fadegrays":
+      return { incoming: { opacity: x, filter: `grayscale(${1 - x})` }, outgoing: { filter: `grayscale(${x})` } };
+    case "slideleft":
+      return { incoming: { transform: `translateX(${pctStr(1 - x)})` }, outgoing: { transform: `translateX(${pctStr(-x)})` } };
+    case "slideright":
+      return { incoming: { transform: `translateX(${pctStr(x - 1)})` }, outgoing: { transform: `translateX(${pctStr(x)})` } };
+    case "slideup":
+      return { incoming: { transform: `translateY(${pctStr(1 - x)})` }, outgoing: { transform: `translateY(${pctStr(-x)})` } };
+    case "slidedown":
+      return { incoming: { transform: `translateY(${pctStr(x - 1)})` }, outgoing: { transform: `translateY(${pctStr(x)})` } };
+    case "wipeleft":
+    case "smoothleft":
+      return { incoming: { clipPath: `inset(0 0 0 ${pctStr(1 - x)})` }, outgoing: {} };
+    case "wiperight":
+      return { incoming: { clipPath: `inset(0 ${pctStr(1 - x)} 0 0)` }, outgoing: {} };
+    case "wipeup":
+      return { incoming: { clipPath: `inset(${pctStr(1 - x)} 0 0 0)` }, outgoing: {} };
+    case "wipedown":
+      return { incoming: { clipPath: `inset(0 0 ${pctStr(1 - x)} 0)` }, outgoing: {} };
+    case "circleopen":
+      return { incoming: { clipPath: `circle(${pctStr(x * 0.75)} at 50% 50%)` }, outgoing: {} };
+    case "circleclose":
+      return { incoming: {}, outgoing: { clipPath: `circle(${pctStr((1 - x) * 0.75)} at 50% 50%)` }, outgoingOnTop: true };
+    case "horzopen":
+      return { incoming: { clipPath: `inset(${pctStr((1 - x) / 2)} 0 ${pctStr((1 - x) / 2)} 0)` }, outgoing: {} };
+    case "radial": {
+      const mask = `conic-gradient(#000 ${Math.round(x * 360)}deg, transparent 0)`;
+      return { incoming: { maskImage: mask, WebkitMaskImage: mask }, outgoing: {} };
+    }
+    case "zoomin":
+      return { incoming: { opacity: x }, outgoing: { transform: `scale(${1 + x})` } };
+    case "hblur":
+    case "pixelize": {
+      const blur = `blur(${Math.round(Math.sin(x * Math.PI) * 12)}px)`;
+      return { incoming: { opacity: x, filter: blur }, outgoing: { filter: blur } };
+    }
+    default: // fade, dissolve
+      return cross;
+  }
+}

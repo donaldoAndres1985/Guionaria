@@ -14,6 +14,7 @@ import {
   subtitleFontPx,
   subtitleTextCss,
   textLook,
+  transitionLook,
   zoomAmount,
 } from "./previewMeta";
 import { DEFAULT_STYLE } from "./RenderPanel";
@@ -90,6 +91,18 @@ describe("vista previa: cálculos", () => {
     expect(textLook("typewriter", 1.3, 3, 20).chars).toBeNull();
     expect(textLook("slide", 0, 3, 5).rise).toBeCloseTo(0.03);
     expect(textLook("fade", 0.15, 3, 5).opacity).toBeCloseTo(0.5);
+  });
+
+  it("transiciones: cómo se ven las dos escenas", () => {
+    expect(transitionLook("fade", 0.25).incoming.opacity).toBe(0.25);
+    // Fundido a negro: primero se oscurece la que sale, luego aparece la nueva.
+    expect(transitionLook("fadeblack", 0.25)).toMatchObject({ incoming: { opacity: 0 }, overlay: { color: "#000", opacity: 0.5 } });
+    expect(transitionLook("fadeblack", 0.75)).toMatchObject({ outgoing: { opacity: 0 }, overlay: { opacity: 0.5 } });
+    expect(transitionLook("slideleft", 0.5)).toEqual({ incoming: { transform: "translateX(50%)" }, outgoing: { transform: "translateX(-50%)" } });
+    expect(transitionLook("wipeleft", 0.25).incoming.clipPath).toBe("inset(0 0 0 75%)");
+    expect(transitionLook("circleopen", 1).incoming.clipPath).toBe("circle(75% at 50% 50%)");
+    expect(transitionLook("circleclose", 0.5).outgoingOnTop).toBe(true);
+    expect(transitionLook("desconocida", 0.5).incoming.opacity).toBe(0.5); // como un fundido
   });
 
   it("tamaños como en el render y ducking de la música", () => {
