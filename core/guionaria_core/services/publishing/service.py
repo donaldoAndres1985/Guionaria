@@ -846,12 +846,30 @@ def _draw_option(folder: Path, size: tuple[int, int], index: int, design: Diseno
     cover.render(design, image, size).save(folder / f"opcion_{index}.jpg", "JPEG", quality=90)
 
 
-async def design_cover(
-    session_factory, project_id: int, runner: ClaudeRunner, ctx: JobContext
-) -> dict:
-    """Claude mira los cuadros del video y diseña 3 miniaturas; la app las dibuja."""
-    import asyncio
+class CoverFrames:
+    """Cuadros del video listos para decidir la miniatura (cuadro_NN.jpg en `folder`)."""
 
+    def __init__(self, folder: Path, names: list[str], size: tuple[int, int], values: dict):
+        self.folder, self.names, self.size, self.values = folder, names, size, values
+
+    @property
+    def numbers(self) -> set[int]:
+        return {int(n[7:9]) for n in self.names}
+
+    def brief(self) -> str:
+        w, h = self.size
+        shape = "horizontal 16:9" if w > h else "vertical 9:16"
+        return prompts.render(
+            prompts.load_prompt("miniatura"),
+            **self.values,
+            tamano=f"{w}×{h} ({shape})",
+            n=len(self.names),
+            archivos=", ".join(self.names),
+        )
+
+
+def prepare_cover_frames(session_factory, project_id: int) -> CoverFrames:
+    """Saca un cuadro por escena (del medio original) para que Claude los mire."""
     from ..timeline.model import build_timeline
     from . import cover
 
@@ -876,39 +894,52 @@ async def design_cover(
         }
     frames = cover.pick_frames(m)
     if not frames:
-        raise Conflict("Aprueba los medios para que Claude elija el cuadro de la miniatura")
+        raise Conflict("Aprueba los medios para elegir el cuadro de la miniatura")
     folder = covers / "cuadros"
-    ctx.progress(0.05, "Sacando los cuadros del video…")
-    names = await asyncio.to_thread(cover.write_previews, frames, folder)
+    names = cover.write_previews(frames, folder)
     if not names:
         raise DomainError("No se pudieron sacar los cuadros del video")
-    w, h = size
-    prompt = prompts.render(
-        prompts.load_prompt("miniatura"),
-        **values,
-        tamano=f"{w}×{h} ({'horizontal 16:9' if w > h else 'vertical 9:16'})",
-        n=len(names),
-        archivos=", ".join(names),
+    return CoverFrames(folder, names, size, values)
+
+
+def draw_designs(frames: CoverFrames, designs: list[DisenoClaude]) -> list[Path]:
+    """Dibuja las propuestas (reemplaza las anteriores) y guarda sus diseños."""
+    wrong = [d.cuadro for d in designs if d.cuadro not in frames.numbers]
+    if wrong:
+        raise DomainError(f"Cuadros inexistentes: {wrong}; usa solo {sorted(frames.numbers)}")
+    covers = frames.folder.parent
+    for old in covers.glob("opcion_*.jpg"):
+        old.unlink()
+    out = []
+    for i, design in enumerate(designs, start=1):
+        _draw_option(covers, frames.size, i, design)
+        out.append(covers / f"opcion_{i}.jpg")
+    (covers / "disenos.json").write_text(
+        json.dumps([d.model_dump() for d in designs], ensure_ascii=False), "utf-8"
     )
-    available = {int(n[7:9]) for n in names}
+    return out
+
+
+async def design_cover(
+    session_factory, project_id: int, runner: ClaudeRunner, ctx: JobContext
+) -> dict:
+    """Claude mira los cuadros del video y diseña 3 miniaturas; la app las dibuja."""
+    import asyncio
+
+    ctx.progress(0.05, "Sacando los cuadros del video…")
+    frames = await asyncio.to_thread(prepare_cover_frames, session_factory, project_id)
 
     def check(data: MiniaturaClaude) -> None:
-        wrong = [d.cuadro for d in data.disenos if d.cuadro not in available]
+        wrong = [d.cuadro for d in data.disenos if d.cuadro not in frames.numbers]
         if wrong:
-            raise ValueError(f"Cuadros inexistentes: {wrong}; usa solo {sorted(available)}")
+            raise ValueError(f"Cuadros inexistentes: {wrong}; usa solo {sorted(frames.numbers)}")
 
     ctx.progress(0.15, "Claude está mirando los cuadros y diseñando…")
     data = await generate_structured(
-        runner, prompt, MiniaturaClaude, cwd=folder, check=check, tools=["Read"]
+        runner, frames.brief(), MiniaturaClaude, cwd=frames.folder, check=check, tools=["Read"]
     )
     ctx.progress(0.85, "Dibujando las propuestas…")
-    for old in covers.glob("opcion_*.jpg"):
-        old.unlink()
-    for i, design in enumerate(data.disenos, start=1):
-        await asyncio.to_thread(_draw_option, covers, size, i, design)
-    (covers / "disenos.json").write_text(
-        json.dumps([d.model_dump() for d in data.disenos], ensure_ascii=False), "utf-8"
-    )
+    await asyncio.to_thread(draw_designs, frames, data.disenos)
     return {"options": len(data.disenos)}
 
 
@@ -937,6 +968,41 @@ def choose_cover(session: Session, project_id: int, index: int) -> PublishingSta
     for pub in ensure_publications(session, project):
         meta = _meta(pub)
         meta.thumbnail_text = design.texto
+        _set_meta(pub, meta)
+        pub.thumbnail_path = str(target.relative_to(get_paths().home))
+    session.commit()
+    return publishing_state(session, project_id)
+
+
+MAX_COVER_BYTES = 2 * 1024 * 1024  # límite de YouTube para miniaturas
+
+
+def upload_cover(session: Session, project_id: int, source: Path) -> PublishingState:
+    """Miniatura propia (hecha con otra herramienta): se encuadra al tamaño del formato y se
+    guarda en JPEG por debajo de 2 MB."""
+    import io
+
+    from PIL import UnidentifiedImageError
+
+    project = get_project(session, project_id)
+    try:
+        with Image.open(source) as img:
+            img = ImageOps.exif_transpose(img).convert("RGB")
+    except (UnidentifiedImageError, OSError) as exc:
+        raise DomainError("No es una imagen válida (usa JPG, PNG o WebP)") from exc
+    size = _cover_size(project)
+    img = ImageOps.fit(img, size, Image.Resampling.LANCZOS)
+    for quality in (92, 85, 78, 70, 60):
+        buffer = io.BytesIO()
+        img.save(buffer, "JPEG", quality=quality, optimize=True)
+        if buffer.tell() <= MAX_COVER_BYTES:
+            break
+    target = project_dir(project) / FOLDER / COVER
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(buffer.getvalue())
+    for pub in ensure_publications(session, project):
+        meta = _meta(pub)
+        meta.thumbnail_text = None
         _set_meta(pub, meta)
         pub.thumbnail_path = str(target.relative_to(get_paths().home))
     session.commit()

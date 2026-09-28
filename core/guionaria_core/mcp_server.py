@@ -27,7 +27,7 @@ from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
 from .schemas.project import ProjectCreate
-from .schemas.publishing import PublicationUpdate
+from .schemas.publishing import DisenoClaude, PublicationUpdate
 from .schemas.scene import EFFECTS, EscenaClaude, SceneUpdate
 from .schemas.script import SegmentIn
 from .services import channels, ideas, jobs, library, projects, script, sounds
@@ -53,7 +53,11 @@ Voz: generate_voice con Piper (gratis) o ElevenLabs (list_elevenlabs_voices para
 Render: render_video con quality (draft, standard, high, max) y subtitle_preset (reel, clasico,
 caja); cancel_job lo detiene. Las herramientas que devuelven un trabajo (job) corren en segundo
 plano: consulta su avance con job_status. Escribe el guion y las escenas en el idioma del canal
-(normalmente español). La revisión visual final conviene hacerla en la app."""
+(normalmente español). La revisión visual final conviene hacerla en la app.
+Publicación: get_publishing muestra cada plataforma. Escribe tú los títulos siguiendo la guía
+(get_title_guide) y guárdalos con update_publication. Miniatura: mira los
+cuadros con get_thumbnail_frames, dibuja tus diseños con draw_thumbnails (te devuelve las imágenes
+para revisarlas) y elige una con choose_thumbnail; upload_to_youtube sube el video."""
 
 NEXT_STEP = {
     ProjectStatus.IDEA: (
@@ -213,9 +217,14 @@ class IdeaItem(BaseModel):
 def build_mcp() -> MCPServer:
     server = MCPServer(name="guionaria", version=__version__, instructions=INSTRUCTIONS)
 
-    def tool(fn: Callable | None = None, *, description: str | None = None) -> Callable:
+    def tool(
+        fn: Callable | None = None,
+        *,
+        description: str | None = None,
+        structured_output: bool | None = None,
+    ) -> Callable:
         def register(f: Callable) -> Callable:
-            server.tool(description=description)(_mcp_tool(f))
+            server.tool(description=description, structured_output=structured_output)(_mcp_tool(f))
             return f
 
         return register(fn) if fn else register
@@ -679,6 +688,14 @@ def build_mcp() -> MCPServer:
         return _job_summary(jobs.jobs.submit("publishing_metadata", work, project_id=project_id))
 
     @tool
+    def get_title_guide() -> str:
+        """Guía de títulos con gancho del usuario (reglas, tipos de gancho y estructuras).
+        Síguela al escribir títulos con update_publication."""
+        from .services.publishing import service as pub_svc
+
+        return pub_svc.title_guide()
+
+    @tool
     def suggest_titles(publication_id: int) -> dict[str, Any]:
         """Claude propone 8 títulos con gancho para esa plataforma, siguiendo la guía de títulos
         (guia_titulos.md, editable). Devuelve el job; las ideas quedan en get_publishing
@@ -715,6 +732,44 @@ def build_mcp() -> MCPServer:
             return await pub_svc.design_cover(_session, project_id, runner, ctx)
 
         return _job_summary(jobs.jobs.submit("publishing_cover", work, project_id=project_id))
+
+    # Devuelve imágenes: sin salida estructurada (JSON).
+    @tool(structured_output=False)
+    def get_thumbnail_frames(project_id: int) -> list[Any]:
+        """Cuadros del video (uno por escena) como imágenes, con el encargo de diseño. Míralos
+        y diseña tú las miniaturas con draw_thumbnails: así no se gasta otra llamada a Claude
+        (design_thumbnail hace lo mismo pero con un Claude aparte)."""
+        from mcp.server.mcpserver import Image
+
+        from .services.publishing import service as pub_svc
+
+        frames = pub_svc.prepare_cover_frames(_session, project_id)
+        out: list[Any] = [
+            frames.brief() + "\n\nCuando decidas, llama a draw_thumbnails con 1 a 3 diseños "
+            "(cuadro = número de cuadro_NN.jpg)."
+        ]
+        for name in frames.names:
+            out += [name, Image(path=frames.folder / name)]
+        return out
+
+    # Devuelve imágenes: sin salida estructurada (JSON).
+    @tool(structured_output=False)
+    def draw_thumbnails(project_id: int, designs: list[DisenoClaude]) -> list[Any]:
+        """Dibuja 1 a 3 miniaturas con tus diseños (cuadro, plantilla impacto/documental/
+        expediente, texto de 2-4 palabras, resaltar, etiqueta, color hex, foco_x, foco_y) y
+        las devuelve como imágenes para que las revises. Luego choose_thumbnail(index)."""
+        from mcp.server.mcpserver import Image
+
+        from .services.publishing import service as pub_svc
+
+        if not 1 <= len(designs) <= 3:
+            raise DomainError("Envía entre 1 y 3 diseños")
+        frames = pub_svc.prepare_cover_frames(_session, project_id)
+        paths = pub_svc.draw_designs(frames, designs)
+        out: list[Any] = [f"{len(paths)} propuestas dibujadas (índices 1 a {len(paths)})."]
+        for i, path in enumerate(paths, start=1):
+            out += [f"Propuesta {i}", Image(path=path)]
+        return out
 
     @tool
     def choose_thumbnail(project_id: int, index: int) -> dict[str, Any]:

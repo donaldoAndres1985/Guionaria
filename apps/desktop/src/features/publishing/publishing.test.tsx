@@ -80,7 +80,7 @@ describe("publicación", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input));
         const method = init?.method ?? "GET";
-        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        const body = init?.body instanceof FormData ? init.body : init?.body ? JSON.parse(String(init.body)) : undefined;
         calls.push({ method, path: url.pathname, body });
         const ok = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status });
         if (url.pathname === "/api/projects/7/publishing") return ok(state);
@@ -88,7 +88,7 @@ describe("publicación", () => {
         if (url.pathname === "/api/settings") {
           return ok(method === "PUT" ? body : { youtube: { client_id: "", client_secret: "" }, api_keys: {} });
         }
-        if (url.pathname.endsWith(":upload") || url.pathname.endsWith(":generate") || url.pathname.endsWith(":titles") || url.pathname.endsWith("cover:design")) {
+        if ((url.pathname.startsWith("/api/publications/") && url.pathname.endsWith(":upload")) || url.pathname.endsWith(":generate") || url.pathname.endsWith(":titles") || url.pathname.endsWith("cover:design")) {
           return ok({ id: 50, type: "publish", project_id: 7, status: "queued", progress: 0, created_at: "" }, 202);
         }
         if (url.pathname === "/api/jobs/50") return ok({ id: 50, type: "publish", project_id: 7, status: "running", progress: 0.4, message: "Subiendo a YouTube… 40 %", created_at: "" });
@@ -208,6 +208,28 @@ describe("publicación", () => {
     await waitFor(() =>
       expect(calls).toContainEqual({ method: "POST", path: "/api/publications/2:published", body: { url: "https://www.tiktok.com/@x/video/1" } }),
     );
+  });
+
+  it("miniatura propia: soltar, pegar con Ctrl+V o subir desde el disco", async () => {
+    renderStage();
+    const drop = await screen.findByTestId("cover-drop");
+    const uploads = () => calls.filter((c) => c.path === "/api/projects/7/publishing/thumbnail:upload");
+    const png = new File([new Uint8Array([137, 80, 78, 71])], "mia.png", { type: "image/png" });
+
+    fireEvent.drop(drop, { dataTransfer: { files: [png] } });
+    await waitFor(() => expect(uploads()).toHaveLength(1));
+    expect((uploads()[0].body as FormData).get("file")).toBeInstanceOf(File);
+
+    const paste = new Event("paste", { bubbles: true }) as ClipboardEvent;
+    Object.defineProperty(paste, "clipboardData", { value: { files: [png] } });
+    window.dispatchEvent(paste);
+    await waitFor(() => expect(uploads()).toHaveLength(2));
+
+    fireEvent.change(screen.getByLabelText("Archivo de miniatura"), { target: { files: [png] } });
+    await waitFor(() => expect(uploads()).toHaveLength(3));
+    // Un archivo que no es imagen no se envía.
+    fireEvent.drop(drop, { dataTransfer: { files: [new File(["x"], "nota.txt", { type: "text/plain" })] } });
+    expect(uploads()).toHaveLength(3);
   });
 
   it("generar los textos con Claude desde la barra inferior", async () => {

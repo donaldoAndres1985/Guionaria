@@ -1,8 +1,10 @@
 """Publicación (sección 5.14): metadatos por plataforma, cola y subida a YouTube."""
 
+import tempfile
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -81,6 +83,22 @@ async def generate(project_id: int, session: SessionDep) -> JobRead:
 @router.post("/api/projects/{project_id}/publishing/thumbnail", response_model=PublishingState)
 def make_thumbnail(project_id: int, data: ThumbnailRequest, session: SessionDep) -> PublishingState:
     return svc.make_cover(session, project_id, data.time_s, data.text)
+
+
+@router.post(
+    "/api/projects/{project_id}/publishing/thumbnail:upload", response_model=PublishingState
+)
+async def upload_thumbnail(
+    project_id: int, file: UploadFile, session: SessionDep
+) -> PublishingState:
+    """Miniatura propia: arrastrada, pegada con Ctrl+V o elegida del disco."""
+    data = await file.read(25 * 1024 * 1024 + 1)
+    if len(data) > 25 * 1024 * 1024:
+        raise DomainError("La imagen supera 25 MB")
+    with tempfile.TemporaryDirectory(prefix="guionaria-") as tmp:
+        path = Path(tmp) / Path(file.filename or "miniatura.png").name
+        path.write_bytes(data)
+        return svc.upload_cover(session, project_id, path)
 
 
 @router.get("/api/projects/{project_id}/publishing/thumbnail")
