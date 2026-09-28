@@ -54,6 +54,7 @@ class SceneSpan:
     asset_id: int | None
     effect: str | None = None
     scene_id: int | None = None
+    transition: str | None = None  # hacia la escena siguiente (None: la de por defecto)
 
 
 @dataclass
@@ -69,6 +70,14 @@ class TimelineModel:
     warnings: list[str] = field(default_factory=list)
     sfx: list[Clip] = field(default_factory=list)  # efectos al inicio de su escena
     music: list[Clip] = field(default_factory=list)  # cada tema hasta el siguiente cambio
+
+    def cuts(self, prefs) -> list:
+        """Transición de cada corte (render/transitions.resolve), en segundos."""
+        from ..render.transitions import resolve
+
+        return resolve(
+            [s.transition for s in self.scenes], [s.duration / self.fps for s in self.scenes], prefs
+        )
 
     def video_items(self) -> list[tuple[int, int, Clip | None]]:
         """Pista de video como (inicio, duración, clip); None es un hueco. Los huecos seguidos
@@ -209,6 +218,7 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 pair[1].id if pair else None,
                 scene.effect,
                 scene.id,
+                scene.transition,
             )
         )
 

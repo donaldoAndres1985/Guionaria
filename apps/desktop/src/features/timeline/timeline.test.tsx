@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PreviewState, Project, RenderState, TimelineState } from "@/lib/api";
+import type { PreviewState, Project, RenderState, TimelineState, TransitionsState } from "@/lib/api";
 import { useUiStore } from "@/stores/ui";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
+import { PreviewCanvas } from "./PreviewPlayer";
 import { clipCount, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
 
 const project = { id: 7, status: "VOZ_LISTA", title: "P", format: "reel" } as Project;
@@ -85,14 +86,33 @@ describe("utilidades del timeline", () => {
   });
 });
 
+const transitionsState = (over: Partial<TransitionsState> = {}): TransitionsState => ({
+  default: "none",
+  duration: 0.5,
+  options: [
+    { id: "none", label: "Corte directo" },
+    { id: "fade", label: "Fundido cruzado" },
+    { id: "circleopen", label: "Círculo que se abre" },
+  ],
+  cuts: [
+    { scene_id: 11, position: 1, from_kind: "video", to_kind: "image", at_s: 1.3, chosen: null, transition: null, duration_s: 0 },
+    { scene_id: 12, position: 2, from_kind: "image", to_kind: "text", at_s: 2.6, chosen: null, transition: null, duration_s: 0 },
+  ],
+  ...over,
+});
+
 describe("etapa de timeline", () => {
   let server: TimelineState;
+  let transitions: TransitionsState;
+  let puts: { path: string; body: unknown }[];
   let renderState: RenderState;
   const renderJob = { id: 9, type: "render", project_id: 7, status: "running", progress: 0.42, message: "Escena 2 de 3…", created_at: "" };
   let posts: { path: string; body: unknown }[];
 
   beforeEach(() => {
     posts = [];
+    puts = [];
+    transitions = transitionsState();
     useUiStore.setState({ renderQuality: "standard" });
     HTMLMediaElement.prototype.play = vi.fn(async () => {});
     HTMLMediaElement.prototype.pause = vi.fn();
@@ -115,6 +135,19 @@ describe("etapa de timeline", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const path = new URL(String(input)).pathname;
+        if (init?.method === "PUT") {
+          const body = JSON.parse(String(init.body));
+          puts.push({ path, body });
+          if (path.endsWith("/transitions") && body.default) {
+            transitions = { ...transitions, default: body.default, cuts: transitions.cuts.map((c) => ({ ...c, transition: c.chosen ?? body.default, duration_s: 0.5 })) };
+          }
+          if (path.endsWith("/transition")) {
+            const id = Number(path.split("/")[3]);
+            transitions = { ...transitions, cuts: transitions.cuts.map((c) => (c.scene_id === id ? { ...c, chosen: body.transition, transition: body.transition, duration_s: 0.5 } : c)) };
+          }
+          return new Response(JSON.stringify(transitions));
+        }
+        if (path.endsWith("/transitions")) return new Response(JSON.stringify(transitions));
         if (init?.method === "POST") {
           posts.push({ path, body: JSON.parse(String(init.body)) });
           if (path.endsWith("/render")) return new Response(JSON.stringify(renderJob), { status: 202 });
@@ -211,7 +244,9 @@ describe("etapa de timeline", () => {
     server = timeline();
     renderStage();
     await screen.findByTestId("preview-canvas");
-    const blocks = screen.getByTestId("track-video").children;
+    await screen.findByLabelText(/Transición entre las escenas 1 y 2/);
+    // Tres escenas y una marca por cada corte.
+    const blocks = [...screen.getByTestId("track-video").children].filter((el) => !el.getAttribute("aria-label")?.startsWith("Transición"));
     expect(blocks).toHaveLength(3);
     expect((blocks[2] as HTMLElement).style.left).toMatch(/^53\.06/);
     expect(screen.getByText("«SIN RESPUESTA»")).toBeTruthy();
@@ -333,6 +368,46 @@ describe("etapa de timeline", () => {
     await waitFor(() => expect(posts.some((p) => p.path.endsWith("/render"))).toBe(true));
     const body = posts.find((p) => p.path.endsWith("/render"))!.body as { text_style: Record<string, unknown> };
     expect(body.text_style).toMatchObject({ animation: "typewriter", box: true, font: "Montserrat" });
+  });
+
+  it("transiciones: la de por defecto, la de un corte y las marcas en la pista", async () => {
+    server = timeline();
+    renderStage();
+    await screen.findByTestId("preview-canvas");
+    // Marcas en cada corte de la pista de video (sin transición: corte directo).
+    expect(await screen.findByLabelText("Transición entre las escenas 1 y 2: Corte directo")).toBeTruthy();
+
+    openSection("Transiciones");
+    const box = screen.getByLabelText("Transiciones");
+    // Radix Select no se abre en jsdom con clic: se elige con el teclado.
+    fireEvent.keyDown(within(box).getByLabelText("Transición por defecto"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Fundido cruzado" }));
+    await waitFor(() => expect(puts).toContainEqual({ path: "/api/projects/7/transitions", body: { default: "fade" } }));
+    expect(await screen.findByLabelText("Transición entre las escenas 1 y 2: Fundido cruzado")).toBeTruthy();
+
+    // Otro corte (imagen → texto) con la suya.
+    expect(within(box).getByTestId("cut-2").textContent).toContain("Imagen → Texto");
+    fireEvent.keyDown(within(box).getByLabelText("Transición después de la escena 2"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Círculo que se abre" }));
+    await waitFor(() => expect(puts).toContainEqual({ path: "/api/scenes/12/transition", body: { transition: "circleopen" } }));
+    expect(await screen.findByLabelText("Transición entre las escenas 2 y 3: Círculo que se abre")).toBeTruthy();
+    expect(screen.getByText("Aplicar la de por defecto a todos los cortes")).toBeTruthy();
+  });
+
+  it("vista previa: durante la transición se ven las dos escenas", async () => {
+    server = timeline();
+    const base = previewState(server);
+    const withFade = { ...base, scenes: base.scenes.map((sc) => (sc.position === 2 ? { ...sc, transition_in: "fade", transition_in_s: 0.4 } : sc)) };
+    render(<PreviewCanvas preview={withFade} time={1.4} playing={false} burnSubtitles={false} style={withFade.subtitle_style} />);
+    const outgoing = screen.getByTestId("preview-outgoing");
+    expect(outgoing.dataset.position).toBe("1");
+    const incoming = screen.getByTestId("preview-scene");
+    expect(incoming.dataset.position).toBe("2");
+    expect(Number(incoming.style.opacity)).toBeCloseTo(0.25);
+    cleanup();
+    // Pasada la transición, solo la escena actual.
+    render(<PreviewCanvas preview={withFade} time={1.8} playing={false} burnSubtitles={false} style={withFade.subtitle_style} />);
+    expect(screen.queryByTestId("preview-outgoing")).toBeNull();
   });
 
   it("estilo rápido «Reel cursiva»: fuente, cursiva, sombra y pop en la vista previa y el render", async () => {

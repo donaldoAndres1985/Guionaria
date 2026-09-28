@@ -118,6 +118,13 @@ class TextStyle(BaseModel):
     text_color: str = Field("#FFFFFF", pattern=HEX)
 
 
+class TransitionPrefs(BaseModel):
+    """Transición de por defecto entre escenas (cada corte puede tener la suya)."""
+
+    default: str = "none"  # none = corte directo; si no, un id de xfade (render/transitions.py)
+    duration: float = Field(0.5, ge=0.2, le=1.5)
+
+
 class AppSettings(BaseModel):
     claude_model: str = ""  # vacío = el modelo por defecto de la CLI (alias: sonnet, opus, haiku)
     searxng_url: str = "http://127.0.0.1:8888"
@@ -135,6 +142,7 @@ class AppSettings(BaseModel):
     research_max_searches: int = Field(default=6, ge=2, le=15)
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
     text_style: TextStyle = Field(default_factory=TextStyle)
+    transitions: TransitionPrefs = Field(default_factory=TransitionPrefs)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

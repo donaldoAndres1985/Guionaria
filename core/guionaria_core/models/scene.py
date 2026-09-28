@@ -23,6 +23,8 @@ class Scene(SQLModel, table=True):
     approved_asset_id: int | None = Field(default=None, foreign_key="asset.id")
     sfx_sound_id: int | None = None  # efecto de la biblioteca que suena al inicio de la escena
     music_sound_id: int | None = None  # tema que empieza en la escena (hasta el siguiente)
+    # Transición hacia la escena siguiente: None = la de por defecto; «none» = corte.
+    transition: str | None = None
 
 
 class SceneCandidate(SQLModel, table=True):

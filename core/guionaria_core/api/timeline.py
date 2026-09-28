@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from ..db import get_session
 from ..services.projects import get_project
-from ..services.timeline import preview
+from ..services.timeline import cuts, preview
 from ..services.timeline import service as timeline
 
 router = APIRouter(tags=["timeline"])
@@ -33,3 +33,21 @@ def get_timeline(project_id: int, session: SessionDep) -> timeline.TimelineState
 @router.post("/api/projects/{project_id}/timeline:export", response_model=timeline.ExportResult)
 def export(project_id: int, data: ExportRequest, session: SessionDep) -> timeline.ExportResult:
     return timeline.export_timeline(session, project_id, data.formats)
+
+
+@router.get("/api/projects/{project_id}/transitions", response_model=cuts.TransitionsState)
+def get_transitions(project_id: int, session: SessionDep) -> cuts.TransitionsState:
+    return cuts.transitions_state(session, get_project(session, project_id))
+
+
+@router.put("/api/projects/{project_id}/transitions", response_model=cuts.TransitionsState)
+def put_transitions(
+    project_id: int, data: cuts.TransitionsUpdate, session: SessionDep
+) -> cuts.TransitionsState:
+    return cuts.update_transitions(session, get_project(session, project_id), data)
+
+
+@router.put("/api/scenes/{scene_id}/transition", response_model=cuts.TransitionsState)
+def put_cut(scene_id: int, data: cuts.CutUpdate, session: SessionDep) -> cuts.TransitionsState:
+    """Transición del corte entre esta escena y la siguiente."""
+    return cuts.set_cut(session, scene_id, data)

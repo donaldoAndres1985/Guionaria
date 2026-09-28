@@ -283,3 +283,22 @@ def subtitle_filter(srt_name: str, portrait: bool) -> str:
     margin = 90 if portrait else 40
     style = f"FontName=Arial,FontSize={size},Bold=1,Outline=2,Shadow=0,Alignment=2,MarginV={margin}"
     return f"subtitles={srt_name}:force_style='{style}'"
+
+
+def join_filter(count: int, cuts: list, starts: list[float]) -> tuple[str, str]:
+    """Une `count` segmentos: corte directo (concat) o transición (xfade) en cada corte.
+    `starts[i]` es el inicio nominal de la escena i: la transición empieza ahí, sobre la
+    cola de la escena anterior, así el video dura lo mismo. Devuelve (filtro, etiqueta)."""
+    parts = [f"[{i}:v]settb=AVTB,fps={FPS}[s{i}]" for i in range(count)]
+    acc = "s0"
+    for i in range(count - 1):
+        cut, nxt, out = cuts[i], f"s{i + 1}", f"j{i + 1}"
+        if cut.transition:
+            parts.append(
+                f"[{acc}][{nxt}]xfade=transition={cut.transition}:duration={cut.duration:.3f}:"
+                f"offset={starts[i + 1]:.3f}[{out}]"
+            )
+        else:
+            parts.append(f"[{acc}][{nxt}]concat=n=2:v=1:a=0[{out}]")
+        acc = out
+    return ";".join(parts), acc

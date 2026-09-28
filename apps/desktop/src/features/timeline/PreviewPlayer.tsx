@@ -16,6 +16,7 @@ import {
   TEXT_MARGIN,
   textLook,
   textTop,
+  transitionLook,
 } from "./previewMeta";
 
 const DEFAULT_TEXT: TextStyle = { font: "Montserrat", size: "medium", uppercase: false, animation: "pop", box: false, text_color: "#FFFFFF" };
@@ -111,6 +112,12 @@ export function PreviewCanvas({
   const index = sceneIndexAt(preview.scenes, time);
   const scene = preview.scenes[index];
   const next = preview.scenes[index + 1];
+  const prev = index > 0 ? preview.scenes[index - 1] : undefined;
+  // Transición con la que entra esta escena (sobre la cola de la anterior, como en el render).
+  const sinceStart = scene ? time - scene.start_s : 0;
+  const transS = scene?.transition_in_s ?? 0;
+  const trans =
+    scene?.transition_in && transS > 0 && sinceStart < transS ? transitionLook(scene.transition_in, sinceStart / transS) : null;
 
   const layout = captionLayout(style, portrait);
   const groups = useMemo(
@@ -127,12 +134,38 @@ export function PreviewCanvas({
       className="relative overflow-hidden rounded-md bg-black shadow-lg"
       style={{ aspectRatio: `${preview.width} / ${preview.height}`, height: "100%", maxWidth: "100%" }}
     >
-      {scene && <SceneLayer key={scene.position} scene={scene} time={time} playing={playing} visible zoom={preview.zoom} />}
+      {scene && (
+        <SceneLayer
+          key={scene.position}
+          scene={scene}
+          time={time}
+          playing={playing}
+          visible
+          zoom={preview.zoom}
+          layerStyle={{ ...trans?.incoming, zIndex: trans?.outgoingOnTop ? 1 : 2 }}
+        />
+      )}
+      {/* Durante la transición, la escena anterior sigue (su cola) y se funde con esta */}
+      {trans && prev && (
+        <SceneLayer
+          key={prev.position}
+          scene={prev}
+          time={time}
+          playing={playing}
+          visible
+          outgoing
+          zoom={preview.zoom}
+          layerStyle={{ ...trans.outgoing, zIndex: trans.outgoingOnTop ? 2 : 1 }}
+        />
+      )}
+      {trans?.overlay && (
+        <div className="absolute inset-0 z-[3]" style={{ background: trans.overlay.color, opacity: trans.overlay.opacity }} />
+      )}
       {next && next.media && (
         <SceneLayer key={next.position} scene={next} time={time} playing={false} visible={false} zoom={preview.zoom} />
       )}
 
-      {look && look.fade > 0 && <div className="absolute inset-0 bg-black" style={{ opacity: look.fade }} />}
+      {look && look.fade > 0 && <div className="absolute inset-0 z-[3] bg-black" style={{ opacity: look.fade }} />}
 
       {/* Texto en pantalla de la escena */}
       {scene?.text && (
@@ -158,7 +191,7 @@ export function PreviewCanvas({
           title="Clic para editar el estilo de los subtítulos"
           onClick={onSubtitlesClick}
           className={cn(
-            "absolute left-[4%] right-[4%] flex justify-center",
+            "absolute z-[4] left-[4%] right-[4%] flex justify-center",
             style.position === "middle" ? "top-1/2 -translate-y-1/2" : "",
           )}
           style={style.position === "middle" ? undefined : { bottom: `${(portrait ? 22 : 8)}%` }}
@@ -222,19 +255,29 @@ function SceneLayer({
   playing,
   visible,
   zoom,
+  outgoing,
+  layerStyle,
 }: {
   scene: PreviewScene;
   time: number;
   playing: boolean;
   visible: boolean;
   zoom: number;
+  /** La escena que sale durante una transición (se ve pasado su final). */
+  outgoing?: boolean;
+  layerStyle?: React.CSSProperties;
 }) {
   const local = Math.max(time - scene.start_s, 0);
   const look = effectLook(scene.effect, local / scene.duration_s, zoom, scene.duration_s);
   const media = scene.media;
   const common = "absolute inset-0 size-full object-cover";
   return (
-    <div className={cn("absolute inset-0 overflow-hidden", !visible && "invisible")} data-testid={visible ? "preview-scene" : undefined} data-position={scene.position}>
+    <div
+      className={cn("absolute inset-0 overflow-hidden", !visible && "invisible")}
+      data-testid={outgoing ? "preview-outgoing" : visible ? "preview-scene" : undefined}
+      data-position={scene.position}
+      style={layerStyle}
+    >
       {media?.kind === "video" ? (
         <VideoLayer scene={scene} local={local} playing={playing && visible} visible={visible} rate={look.playbackRate} style={{ transform: look.transform, filter: look.filter }} className={common} />
       ) : media?.kind === "image" ? (
@@ -315,7 +358,7 @@ function SceneText({
   return (
     <div
       data-testid="scene-text"
-      className="pointer-events-none absolute text-center"
+      className="pointer-events-none absolute z-[4] text-center"
       style={{
         left: margin,
         right: margin,
