@@ -100,6 +100,13 @@ describe("voz con ElevenLabs", () => {
     expect(estimateCredits(51, 0.5)).toBe(26);
   });
 
+  it("abre con el motor por defecto de Ajustes", async () => {
+    server = state({ default_engine: "elevenlabs" });
+    renderStage();
+    expect(await screen.findByText("Generar voz con ElevenLabs")).toBeTruthy();
+    expect((screen.getByRole("radio", { name: /ElevenLabs/ }) as HTMLInputElement).getAttribute("aria-checked")).toBe("true");
+  });
+
   it("sin clave ofrece ir a Ajustes y no deja generar", async () => {
     server = state({ elevenlabs_configured: false });
     renderStage();

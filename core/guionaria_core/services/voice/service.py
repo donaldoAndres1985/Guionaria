@@ -12,6 +12,7 @@ import json
 import shutil
 import wave
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 from sqlmodel import Session, col, delete, select
@@ -64,6 +65,8 @@ class VoiceState(BaseModel):
     # Ajustes de ElevenLabs de la voz actual (o los últimos usados) y si hay clave.
     elevenlabs: ElevenLabsPrefs
     elevenlabs_configured: bool
+    # Motor que la pantalla propone: el de Ajustes (el último usado), si está disponible.
+    default_engine: Literal["piper", "elevenlabs"]
 
 
 # --- utilidades ---
@@ -171,7 +174,15 @@ def voice_state(session: Session, project_id: int) -> VoiceState:
         if data.get("elevenlabs")
         else load_settings().elevenlabs,
         elevenlabs_configured=bool(load_settings().api_keys.elevenlabs),
+        default_engine=default_engine(),
     )
+
+
+def default_engine() -> Literal["piper", "elevenlabs"]:
+    settings = load_settings()
+    if settings.tts_engine == "elevenlabs" and settings.api_keys.elevenlabs:
+        return "elevenlabs"
+    return "piper"
 
 
 def timed_words(session: Session, project_id: int) -> list[Word]:
@@ -308,6 +319,11 @@ async def generate_voice(
             if engine == "elevenlabs":
                 eleven = elevenlabs.ElevenSettings(**previous["elevenlabs"])
         if engine == "elevenlabs":
+            prefs = load_settings().elevenlabs
+            if eleven is None and prefs.voice_id:
+                # Sin ajustes explícitos: los últimos usados (Ajustes › ElevenLabs).
+                fields = set(elevenlabs.ElevenSettings.model_fields)
+                eleven = elevenlabs.ElevenSettings(**prefs.model_dump(include=fields))
             if eleven is None:
                 raise DomainError("Elige una voz de ElevenLabs")
             voice_id, speed = eleven.voice_id, eleven.speed
@@ -381,6 +397,11 @@ async def generate_voice(
         "segment_files": {k: _rel(seg_dir / f"{k}.wav") for k, _ in segments},
         "hashes": {k: text_hash(t) for k, t in segments},
     }
+    if not only_segment and load_settings().tts_engine != engine:
+        # El motor usado queda como el propuesto para la próxima voz.
+        settings = load_settings()
+        settings.tts_engine = engine
+        save_settings(settings)
     if engine != "elevenlabs":
         # Piper no da tiempos por palabra: se sacan del propio audio (silencios y puntuación).
         data["words"] = [

@@ -172,7 +172,9 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                     media_len = frames(rendered) if rendered else None
                 elif is_video:
                     source_in = frames(row.trim_in_s)
-                    end = row.trim_out_s if row.trim_out_s is not None else asset.duration_s
+                    # El tramo marca dónde empieza: si la escena creció (otra voz), el video
+                    # sigue más allá de la salida elegida mientras el archivo tenga metraje.
+                    end = asset.duration_s or row.trim_out_s
                     media_len = frames(end) if end else None
                 else:
                     source_in, media_len = 0, None
@@ -180,9 +182,9 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 if media_len is not None and source_in + clip_len > media_len:
                     clip_len = max(media_len - source_in, 1)
                     warnings.append(
-                        f"Escena {scene.position}: el tramo del video dura "
-                        f"{(media_len - source_in) / FPS:.1f} s y la "
-                        f"escena {duration / FPS:.1f} s; queda un hueco al final"
+                        f"Escena {scene.position}: el video alcanza para "
+                        f"{(media_len - source_in) / FPS:.1f} s de "
+                        f"{duration / FPS:.1f} s; el último cuadro queda congelado"
                     )
                 clip = Clip(
                     path.name,

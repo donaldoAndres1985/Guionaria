@@ -128,6 +128,34 @@ def probe(path: Path) -> dict:
     return info
 
 
+def stream_durations(path: Path) -> tuple[float, float]:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration",
+         "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    found = dict(line.split(",")[:2] for line in out.splitlines() if line)
+    return float(found["audio"]), float(found["video"])
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="requiere ffmpeg")
+def test_jpeg_segment_uses_limited_range(tmp_path):
+    # Un JPG (rango completo) debe salir igual que los demás segmentos: si el formato cambia
+    # a mitad del video unido, FFmpeg reinicia los filtros del paso final.
+    jpg = tmp_path / "foto.jpg"
+    Image.new("RGB", (320, 240), (200, 80, 40)).save(jpg)
+    q = plan.quality(1080, 1920, "draft")
+    seg = plan.Segment(1, 0.5, "image", jpg, 0, None, None)
+    out = tmp_path / "s.mp4"
+    subprocess.run(plan.segment_command(seg, q, out, None, None), check=True)
+    fmt = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=pix_fmt,color_range",
+         "-of", "csv=p=0", str(out)],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()  # fmt: skip
+    assert fmt == "yuv420p,tv"
+
+
 @pytest.mark.skipif(not HAS_FFMPEG, reason="requiere ffmpeg")
 def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noqa: F811
     pid = media_project["id"]
@@ -166,6 +194,9 @@ def test_full_render(client, media_project, web, engines_fake, tmp_path):  # noq
     info = probe(out)
     assert sorted(info["streams"]) == ["audio", "video"]
     assert info["duration"] == pytest.approx(4.9, abs=0.15)
+    # La voz no se adelanta a los subtítulos: el audio dura lo mismo que el video.
+    audio, video_len = stream_durations(out)
+    assert audio == pytest.approx(video_len, abs=0.1)
     thumb = tmp_path / "miniatura.jpg"
     thumb.write_bytes(client.get(files["thumbnail"]["url"]).content)
     with Image.open(thumb) as im:

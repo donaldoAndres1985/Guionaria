@@ -1,6 +1,8 @@
 """Herramientas MCP añadidas: elegir y «descargar y aprobar», tramo, ElevenLabs, render con
 calidad y estilo, cancelar."""
 
+import json
+
 import pytest
 
 from guionaria_core.services.render import service as render_svc
@@ -21,7 +23,7 @@ def test_new_tools_are_listed(mcp):
         "cancel_job", "render_video", "generate_voice",
     } <= set(tools)  # fmt: skip
     engine = tools["generate_voice"]["inputSchema"]["properties"]["engine"]
-    assert engine["enum"] == ["piper", "elevenlabs"]
+    assert '"enum": ["piper", "elevenlabs"]' in json.dumps(engine)  # opcional: el de Ajustes
     quality = tools["render_video"]["inputSchema"]["properties"]["quality"]
     assert "max" in str(quality)
 

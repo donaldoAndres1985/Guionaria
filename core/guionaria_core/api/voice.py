@@ -27,7 +27,7 @@ class GenerateRequest(BaseModel):
     voice_id: str | None = None  # por defecto: la del canal o la de Ajustes
     speed: float = Field(1.0, ge=0.7, le=1.4)
     pause_s: float = Field(voice.DEFAULT_PAUSE_S, ge=0, le=2)
-    engine: Literal["piper", "elevenlabs"] = "piper"
+    engine: Literal["piper", "elevenlabs"] | None = None  # por defecto: el de Ajustes
     elevenlabs: eleven_api.ElevenSettings | None = None
 
 
@@ -76,7 +76,7 @@ async def generate(project_id: int, data: GenerateRequest, session: SessionDep) 
             data.speed,
             data.pause_s,
             ctx,
-            engine=data.engine,
+            engine=data.engine or voice.default_engine(),
             eleven=data.elevenlabs,
         )
 

@@ -38,7 +38,9 @@ export function useVoiceController(project: Project) {
   };
   const selectedVoice = voiceId ?? state?.voice_id ?? state?.default_voice ?? null;
   const selectedSpeed = speed ?? state?.speed ?? 1;
-  const engine = engineChoice ?? (state?.source === "elevenlabs" ? "elevenlabs" : "piper");
+  // Sin elegir en pantalla: el motor por defecto de Ajustes (el último usado).
+  const engine =
+    engineChoice ?? state?.default_engine ?? (state?.source === "elevenlabs" ? "elevenlabs" : "piper");
   const eleven: ElevenLabsPrefs | null = state ? { ...state.elevenlabs, ...elevenPatch } : null;
   const characters = state?.segments.reduce((n, s) => n + s.text.length, 0) ?? 0;
   const canGenerate = engine === "piper" || (!!state?.elevenlabs_configured && !!eleven?.voice_id);

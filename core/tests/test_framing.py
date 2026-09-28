@@ -125,10 +125,19 @@ def test_video_trim_only_goes_to_timeline(client, media_project, web, home):
 
     with Session(get_engine()) as s:
         m = build_timeline(s, s.get(Project, media_project["id"]))
-    clip = m.scenes[0].clip
-    assert (clip.source_in, clip.media_duration) == (75, 90)  # 2,5 s y 3 s a 30 fps
-    assert clip.duration == 15  # el tramo (0,5 s) es más corto que la escena
-    assert any("el tramo del video dura 0.5 s" in w for w in m.warnings)
+    span = m.scenes[0]
+    clip = span.clip
+    assert (clip.source_in, clip.media_duration) == (75, 300)  # desde 2,5 s; el archivo, 10 s
+    # El tramo (0,5 s) es más corto que la escena: el video sigue en vez de dejar un hueco.
+    assert clip.duration == span.duration
+    assert not any("congelado" in w for w in m.warnings)
+
+    # Si el archivo no alcanza, se avisa (el render congela el último cuadro).
+    client.put(furl(scene, asset["id"]), json={"trim_in_s": 9.5, "trim_out_s": 10.0})
+    with Session(get_engine()) as s:
+        m = build_timeline(s, s.get(Project, media_project["id"]))
+    assert m.scenes[0].clip.duration == 15
+    assert any("el video alcanza para 0.5 s" in w for w in m.warnings)
 
 
 def test_video_framing_job(client, media_project, web, home, monkeypatch):
