@@ -170,10 +170,13 @@ def segment_command(
             text_filter(textfile, font, q, centered=seg.kind == "color", raised=raise_text)
         )
     # Un video más corto que la escena se congela en su último cuadro.
-    chain += [f"tpad=stop_mode=clone:stop_duration={dur}", f"trim=duration={dur}", "format=yuv420p"]
+    chain += [f"tpad=stop_mode=clone:stop_duration={dur}", f"trim=duration={dur}"]
+    # Todos los segmentos con el mismo formato y rango: un JPG saldría en rango completo
+    # (yuvj420p) y, al cambiar a mitad del video unido, FFmpeg reinicia los filtros.
+    chain += ["scale=out_range=tv", "format=yuv420p"]
     args += [
         "-vf", ",".join(chain),
-        "-r", str(FPS), "-an",
+        "-r", str(FPS), "-an", "-color_range", "tv",
         "-c:v", "libx264", "-preset", q.preset, "-crf", str(q.crf),
         str(out),
     ]  # fmt: skip

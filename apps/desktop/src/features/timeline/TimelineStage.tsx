@@ -137,15 +137,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
           {state.reason}
         </NoticeBanner>
       )}
-      {state.warnings.length > 0 && (
-        <NoticeBanner>
-          <ul className="grid gap-0.5">
-            {state.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </NoticeBanner>
-      )}
+      {state.warnings.length > 0 && <TimelineWarnings warnings={state.warnings} />}
 
       <div className="flex min-h-0 flex-1">
         {/* Reproductor: vista previa en vivo o el MP4 renderizado */}
@@ -562,5 +554,29 @@ function SoundClips({
         </div>
       ))}
     </div>
+  );
+}
+
+/** Avisos del timeline: uno se muestra entero; varios, en una línea que se despliega. */
+function TimelineWarnings({ warnings }: { warnings: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (warnings.length === 1) return <NoticeBanner>{warnings[0]}</NoticeBanner>;
+  return (
+    <NoticeBanner
+      action={
+        <Button variant="ghost" size="sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {open ? "Ocultar" : "Ver detalles"}
+        </Button>
+      }
+    >
+      {warnings.length} avisos en el timeline
+      {open && (
+        <ul className="mt-1 grid max-h-32 gap-0.5 overflow-y-auto text-[12px] text-muted-foreground">
+          {warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
+    </NoticeBanner>
   );
 }

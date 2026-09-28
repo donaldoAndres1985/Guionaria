@@ -293,9 +293,12 @@ def _render_sync(
         args = ["ffmpeg", "-y", "-v", "error", "-i", video.name]
         for clip in audio_inputs:
             args += ["-i", str(clip.path)]
-        filters = []
+        # El audio va en -filter_complex y el video en -vf: son grafos separados, así que si
+        # FFmpeg reinicia los filtros de video (cambio de formato entre escenas) no toca el
+        # audio. En un mismo grafo, ese reinicio adelantaba la voz a los subtítulos.
         if afilter:
-            filters.append(afilter)
+            args += ["-filter_complex", afilter]
+        vfilter = None
         if srt and words:
             # Subtítulos con estilo: frases cortas y la palabra que se dice resaltada.
             ass = captions.build_ass(words, style or SubtitleStyle(), q.width, q.height)
@@ -303,16 +306,15 @@ def _render_sync(
             # Fuentes incluidas (Montserrat…) en una carpeta local: sin escapar rutas de Windows.
             if captions.FONTS_DIR.exists():
                 shutil.copytree(captions.FONTS_DIR, tmp / "fonts", dirs_exist_ok=True)
-                filters.append("[0:v]ass=subs.ass:fontsdir=fonts[vout]")
+                vfilter = "ass=subs.ass:fontsdir=fonts"
             else:
-                filters.append("[0:v]ass=subs.ass[vout]")
+                vfilter = "ass=subs.ass"
         elif srt:
             shutil.copy2(srt, tmp / "subs.srt")  # nombre simple: evita escapar la ruta en Windows
-            portrait = m.height > m.width
-            filters.append(f"[0:v]{plan.subtitle_filter('subs.srt', portrait)}[vout]")
-        if filters:
-            args += ["-filter_complex", ";".join(filters)]
-        args += ["-map", "[vout]" if srt else "0:v"]
+            vfilter = plan.subtitle_filter("subs.srt", m.height > m.width)
+        args += ["-map", "0:v"]
+        if vfilter:
+            args += ["-vf", vfilter]
         if afilter:
             args += ["-map", "[aout]", "-c:a", "aac", "-b:a", q.audio_bitrate]
         if srt:

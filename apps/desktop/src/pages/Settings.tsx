@@ -208,6 +208,23 @@ export function SettingsPage() {
             {category === "prefs" && current && (
               <div className="grid max-w-xl gap-5 p-5">
                 <Field
+                  label="Motor de voz por defecto"
+                  hint="El que propone la etapa Voz. Cambia solo cuando generas con el otro motor."
+                >
+                  <Select
+                    value={current.tts_engine === "elevenlabs" ? "elevenlabs" : "piper"}
+                    onValueChange={(v) => update({ tts_engine: v })}
+                  >
+                    <SelectTrigger className="w-full" aria-label="Motor de voz por defecto">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="piper">Piper (local y gratis)</SelectItem>
+                      <SelectItem value="elevenlabs">ElevenLabs (requiere su clave)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field
                   label="Voz por defecto"
                   hint="Voz de Piper para los canales sin voz propia. Se descarga la primera vez que se usa."
                 >

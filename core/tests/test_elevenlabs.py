@@ -256,3 +256,18 @@ def test_key_check_reports_credits(client, eleven):
     result = resp.json()
     assert result["status"] == "valid"
     assert result["quota_remaining"] == 8800
+
+
+def test_last_engine_becomes_the_default(client, media_project, eleven):
+    pid = media_project["id"]
+    assert client.get(f"/api/projects/{pid}/voice").json()["default_engine"] == "piper"
+    generate(client, pid, engine="elevenlabs", elevenlabs=SETTINGS)
+    assert client.get("/api/settings").json()["tts_engine"] == "elevenlabs"
+    assert client.get(f"/api/projects/{pid}/voice").json()["default_engine"] == "elevenlabs"
+
+    # Sin motor ni ajustes: ElevenLabs con los últimos ajustes usados.
+    eleven.requests.clear()
+    job = generate(client, pid)
+    assert job["status"] == "done", job["error"]
+    tts = [r for r in eleven.requests if "text-to-speech" in r.url.path]
+    assert tts and tts[0].url.path == "/v1/text-to-speech/v-mine/with-timestamps"

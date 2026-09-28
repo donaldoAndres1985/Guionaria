@@ -539,6 +539,8 @@ export interface VoiceState {
   whisper_model: string;
   elevenlabs: ElevenLabsPrefs;
   elevenlabs_configured: boolean;
+  /** Motor propuesto: el de Ajustes (el último usado), si está disponible. */
+  default_engine?: "piper" | "elevenlabs";
 }
 
 export type TimelineFormat = "otio" | "fcpxml" | "edl";

@@ -91,6 +91,7 @@ SAVE_SCENES_DOC = (
 )
 GENERATE_VOICE_DOC = (
     "Genera la voz segmento por segmento y aplica los tiempos reales a las escenas. "
+    "Sin engine usa el motor por defecto de Ajustes (el último usado). "
     "engine=piper (local y gratis; voice_id: por defecto la del canal o "
     f"{DEFAULT_VOICE}) o engine=elevenlabs (profesional, requiere su clave; voice_id de "
     "list_elevenlabs_voices, model_id, stability, similarity_boost, style; subtítulos exactos "
@@ -791,7 +792,7 @@ def build_mcp() -> MCPServer:
     @tool(description=GENERATE_VOICE_DOC)
     def generate_voice(
         project_id: int,
-        engine: Literal["piper", "elevenlabs"] = "piper",
+        engine: Literal["piper", "elevenlabs"] | None = None,
         voice_id: str | None = None,
         speed: Annotated[float, Field(ge=0.7, le=1.4)] = 1.0,
         pause_s: Annotated[float, Field(ge=0, le=2)] = voice.DEFAULT_PAUSE_S,
@@ -802,6 +803,7 @@ def build_mcp() -> MCPServer:
     ) -> dict[str, Any]:
         with _session() as s:
             voice._require_ready(s, projects.get_project(s, project_id))
+        engine = engine or voice.default_engine()
         eleven = None
         if engine == "elevenlabs":
             prefs = load_settings().elevenlabs

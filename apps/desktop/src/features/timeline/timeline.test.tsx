@@ -256,6 +256,22 @@ describe("etapa de timeline", () => {
     expect(screen.getByText("Sin voz")).toBeTruthy();
   });
 
+  it("varios avisos quedan en una línea que se despliega", async () => {
+    server = timeline({
+      warnings: [
+        "Escena 1: el video alcanza para 1.0 s de 1.3 s; el último cuadro queda congelado",
+        "Escena 2: no tiene medio aprobado",
+      ],
+    });
+    renderStage();
+    expect(await screen.findByText("2 avisos en el timeline")).toBeTruthy();
+    expect(screen.queryByText(/Escena 2: no tiene medio/)).toBeNull();
+    fireEvent.click(screen.getByText("Ver detalles"));
+    expect(screen.getByText(/Escena 2: no tiene medio/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Ocultar"));
+    expect(screen.queryByText(/Escena 2: no tiene medio/)).toBeNull();
+  });
+
   it("render: calidad elegida, progreso y archivos", async () => {
     server = timeline();
     renderStage();
