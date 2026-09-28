@@ -60,6 +60,15 @@ class PreviewState(BaseModel):
     sfx_volume: float
 
 
+def _version(path) -> str:
+    """Versión del archivo para la URL: si cambia (voz nueva, otro tramo o encuadre), el
+    navegador no reutiliza la copia que tenía en caché."""
+    try:
+        return f"?v={path.stat().st_mtime_ns}"
+    except OSError:
+        return ""
+
+
 def _sec(m: TimelineModel, frames: int) -> float:
     return round(frames / m.fps, 3)
 
@@ -72,7 +81,8 @@ def preview_state(session: Session, project: Project) -> PreviewState:
         if s.clip and s.asset_id and s.scene_id:
             media = PreviewMedia(
                 kind=s.clip.kind,
-                url=f"/api/scenes/{s.scene_id}/assets/{s.asset_id}/approved-file",
+                url=f"/api/scenes/{s.scene_id}/assets/{s.asset_id}/approved-file"
+                + _version(s.clip.path),
                 source_in_s=_sec(m, s.clip.source_in),
                 duration_s=_sec(m, s.clip.duration),
             )
@@ -93,7 +103,7 @@ def preview_state(session: Session, project: Project) -> PreviewState:
         return [
             PreviewSound(
                 name=c.name,
-                url=f"/api/sounds/{c.sound_id}/file",
+                url=f"/api/sounds/{c.sound_id}/file" + _version(c.path),
                 start_s=_sec(m, c.start),
                 duration_s=_sec(m, c.duration),
             )
@@ -108,7 +118,9 @@ def preview_state(session: Session, project: Project) -> PreviewState:
         fps=m.fps,
         duration_s=_sec(m, m.duration),
         scenes=scenes,
-        voice_url=f"/api/projects/{project.id}/voice/audio" if m.voice else None,
+        voice_url=(
+            f"/api/projects/{project.id}/voice/audio" + _version(m.voice.path) if m.voice else None
+        ),
         sfx=sounds(m.sfx),
         music=sounds(m.music),
         words=[
