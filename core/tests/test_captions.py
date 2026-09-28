@@ -127,3 +127,54 @@ def test_libass_renders_the_generated_file(tmp_path):
     )
     assert proc.returncode == 0, proc.stderr.decode(errors="replace")
     assert (tmp_path / "out.mp4").stat().st_size > 0
+
+
+def test_reel_style_italic_shadow_and_pop():
+    style = SubtitleStyle(font="Montserrat", italic=True, edge="shadow", animation="pop")
+    ass = captions.build_ass(WORDS, style, 1080, 1920)
+    fields = next(x for x in ass.splitlines() if x.startswith("Style:")).split(",")
+    assert fields[1] == "Montserrat ExtraBold"  # familia real de la fuente incluida
+    assert (fields[7], fields[8]) == ("0", "-1")  # sin negrita sintética, cursiva
+    assert int(fields[16]) <= 2 and int(fields[17]) > 0  # borde fino y sombra
+    line = events(ass)[1]
+    assert r"{\blur3}" in line  # sombra suave
+    assert r"\fscx118\fscy118\t(0,140,\fscx100\fscy100)}LANZÓ" in line  # la palabra salta
+
+
+def test_pop_without_highlight_keeps_the_color():
+    style = SubtitleStyle(highlight=False, animation="pop")
+    line = events(captions.build_ass(WORDS, style, 1080, 1920))[1]
+    assert r"\fscx118" in line and "&H0000D4FF" not in line
+
+
+def test_bundled_fonts_exist():
+    names = {p.name for p in captions.FONTS_DIR.glob("*.ttf")}
+    assert {"Montserrat-ExtraBold.ttf", "Montserrat-ExtraBoldItalic.ttf"} <= names
+    assert (captions.FONTS_DIR / "OFL.txt").exists()
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="requiere FFmpeg")
+def test_libass_uses_the_bundled_font(tmp_path):
+    style = SubtitleStyle(font="Montserrat", italic=True, edge="shadow", animation="pop")
+    (tmp_path / "subs.ass").write_text(captions.build_ass(WORDS, style, 360, 640), encoding="utf-8")
+    shutil.copytree(captions.FONTS_DIR, tmp_path / "fonts")
+    proc = subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=360x640:d=1",
+            "-vf",
+            "ass=subs.ass:fontsdir=fonts",
+            "-frames:v",
+            "5",
+            "out.mp4",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stderr.decode(errors="replace")

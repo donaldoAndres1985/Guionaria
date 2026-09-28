@@ -26,6 +26,7 @@ try {
         --distpath build\dist --workpath build\work --specpath build `
         --add-data "$coreDir\guionaria_core\migrations;guionaria_core\migrations" `
         --add-data "$coreDir\guionaria_core\prompts;guionaria_core\prompts" `
+        --add-data "$coreDir\guionaria_core\assets;guionaria_core\assets" `
         --collect-submodules uvicorn `
         --collect-submodules guionaria_core `
         --collect-submodules yt_dlp `

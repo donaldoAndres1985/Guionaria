@@ -34,7 +34,11 @@ export const DEFAULT_STYLE: SubtitleStyle = {
   highlight: true,
   highlight_color: "#FFD400",
   background: false,
+  italic: false,
+  edge: "outline",
+  animation: "none",
 };
+
 
 /** Estado compartido del render: calidad, subtítulos (y su estilo) y el trabajo en curso. */
 export function useRenderController(project: Project) {

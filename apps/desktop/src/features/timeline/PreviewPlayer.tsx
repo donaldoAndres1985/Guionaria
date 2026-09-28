@@ -5,6 +5,7 @@ import {
   captionAt,
   captionGroups,
   captionLayout,
+  subtitleTextCss,
   effectLook,
   musicVolume,
   sceneIndexAt,
@@ -149,18 +150,28 @@ export function PreviewCanvas({
           <span
             className={cn("text-center leading-tight font-bold", style.background && "rounded bg-black/60 px-[0.3em]")}
             style={{
-              fontFamily: style.font,
+              ...subtitleTextCss(style, scale),
               fontSize: subtitleFontPx(style, preview.width, preview.height) * scale,
-              color: style.text_color,
-              WebkitTextStroke: style.background ? undefined : `${Math.max(1, 4 * scale)}px ${style.outline_color}`,
-              paintOrder: "stroke fill",
             }}
           >
             {caption.words.map((w, i) => {
               const text = style.uppercase ? w.text.toUpperCase() : w.text;
               return (
-                <span key={`${w.start}-${i}`} style={style.highlight && i === caption.active ? { color: style.highlight_color } : undefined}>
-                  {text}
+                <span key={`${w.start}-${i}`}>
+                  <span
+                    // Con «pop», la palabra activa se vuelve a montar para repetir la animación.
+                    key={i === caption.active ? `activa-${w.start}` : "normal"}
+                    data-active={i === caption.active || undefined}
+                    className={style.animation === "pop" && i === caption.active ? "inline-block" : undefined}
+                    style={{
+                      ...(style.highlight && i === caption.active ? { color: style.highlight_color } : {}),
+                      ...(style.animation === "pop" && i === caption.active
+                        ? { animation: "subtitle-pop 140ms ease-out" }
+                        : {}),
+                    }}
+                  >
+                    {text}
+                  </span>
                   {i < caption.words.length - 1 ? " " : ""}
                 </span>
               );

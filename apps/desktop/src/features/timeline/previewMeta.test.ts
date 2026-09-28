@@ -8,7 +8,9 @@ import {
   musicVolume,
   sceneIndexAt,
   sceneTextPx,
+  SUBTITLE_PRESETS,
   subtitleFontPx,
+  subtitleTextCss,
 } from "./previewMeta";
 import { DEFAULT_STYLE } from "./RenderPanel";
 
@@ -71,5 +73,18 @@ describe("vista previa: cálculos", () => {
     expect(musicVolume(0.35, words, 0.5)).toBeCloseTo(0.35 * 0.35);
     expect(musicVolume(0.35, words, 5)).toBe(0.35);
     expect(formatClock(75.25)).toBe("1:15.3");
+  });
+
+  it("CSS del texto: cursiva, sombra suave o borde, como en el render", () => {
+    const reel = { ...DEFAULT_STYLE, ...SUBTITLE_PRESETS.find((p) => p.id === "reel")!.style };
+    const css = subtitleTextCss(reel, 1);
+    expect(css.fontFamily).toContain("Montserrat");
+    expect(css.fontStyle).toBe("italic");
+    expect(css.fontWeight).toBe(800);
+    expect(css.textShadow).toContain("rgba(0,0,0,0.75)");
+    const classic = subtitleTextCss(DEFAULT_STYLE, 1);
+    expect(classic.textShadow).toBeUndefined();
+    expect(classic.WebkitTextStroke).toBe("8px #000000");
+    expect(subtitleTextCss({ ...DEFAULT_STYLE, background: true }, 1).WebkitTextStroke).toBeUndefined();
   });
 });

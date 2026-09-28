@@ -300,7 +300,12 @@ def _render_sync(
             # Subtítulos con estilo: frases cortas y la palabra que se dice resaltada.
             ass = captions.build_ass(words, style or SubtitleStyle(), q.width, q.height)
             (tmp / "subs.ass").write_text(ass, encoding="utf-8")
-            filters.append("[0:v]ass=subs.ass[vout]")
+            # Fuentes incluidas (Montserrat…) en una carpeta local: sin escapar rutas de Windows.
+            if captions.FONTS_DIR.exists():
+                shutil.copytree(captions.FONTS_DIR, tmp / "fonts", dirs_exist_ok=True)
+                filters.append("[0:v]ass=subs.ass:fontsdir=fonts[vout]")
+            else:
+                filters.append("[0:v]ass=subs.ass[vout]")
         elif srt:
             shutil.copy2(srt, tmp / "subs.srt")  # nombre simple: evita escapar la ruta en Windows
             portrait = m.height > m.width

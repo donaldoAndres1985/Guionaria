@@ -1,6 +1,30 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Montserrat (licencia OFL, incluida con la app): la misma fuente que usa el render. */
+@font-face {
+  font-family: "Montserrat";
+  font-weight: 800;
+  font-style: normal;
+  src: url("../assets/fonts/Montserrat-ExtraBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Montserrat";
+  font-weight: 800;
+  font-style: italic;
+  src: url("../assets/fonts/Montserrat-ExtraBoldItalic.ttf") format("truetype");
+}
+
+/* Palabra que «salta» en los subtítulos (como \fscx118 → 100 en el render). */
+@keyframes subtitle-pop {
+  from {
+    transform: scale(1.18);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
 @custom-variant dark (&:is([data-theme="dark"] *));
 
 /* Tokens de diseño (sección 15.1 de SPEC.md). Modo oscuro por defecto. */

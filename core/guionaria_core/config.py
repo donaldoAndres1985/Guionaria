@@ -91,7 +91,12 @@ class SubtitleStyle(BaseModel):
 
     uppercase: bool = True
     words_per_line: int = Field(0, ge=0, le=12)  # 0 = automático (3 en vertical, 6 en horizontal)
-    font: Literal["Arial", "Impact", "Verdana", "Segoe UI"] = "Arial"
+    font: Literal["Arial", "Montserrat", "Impact", "Verdana", "Segoe UI"] = "Arial"
+    italic: bool = False
+    # Contorno: borde grueso, sombra suave (estilo reel) o ambos.
+    edge: Literal["outline", "shadow", "both"] = "outline"
+    # La palabra que se dice «salta» (crece y vuelve a su tamaño).
+    animation: Literal["none", "pop"] = "none"
     size: Literal["small", "medium", "large"] = "medium"
     position: Literal["bottom", "middle"] = "bottom"
     text_color: str = Field("#FFFFFF", pattern=HEX)
