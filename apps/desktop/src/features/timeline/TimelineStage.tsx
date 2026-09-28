@@ -130,7 +130,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
       <div className="flex h-12 shrink-0 items-center gap-3 border-b px-5">
         <span className="text-[13px] font-medium">Timeline</span>
         <span className="text-[12px] text-muted-foreground">{resolutionLabel(state)}</span>
-        <Button size="sm" variant="ghost" className="ml-auto" onClick={() => reveal.mutate(project.id)}>
+        <Button size="sm" className="ml-auto" onClick={() => reveal.mutate(project.id)}>
           <FolderOpen /> Abrir carpeta
         </Button>
       </div>
