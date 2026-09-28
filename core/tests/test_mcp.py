@@ -183,7 +183,7 @@ def test_full_flow_without_calling_claude(
     project = mcp.call("get_project", project_id=pid)
     assert project["project"]["status"] == "VOZ_LISTA"
     assert project["voice"]["timing_source"] == "voice"
-    assert project["next_step"] == "Exporta el timeline con export_timeline."
+    assert "render_video" in project["next_step"] and "set_trim" in project["next_step"]
     exported = mcp.call("export_timeline", project_id=pid, format="otio")
     assert exported["files"][0].endswith("proyecto.otio")
     assert mcp.call("get_project", project_id=pid)["project"]["status"] == "TIMELINE_LISTO"
