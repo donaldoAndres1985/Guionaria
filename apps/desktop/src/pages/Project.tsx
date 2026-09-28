@@ -1,6 +1,6 @@
 import { Check, FileText, FolderOpen, Info, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useBlocker, useNavigate, useParams } from "react-router";
+import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -34,6 +34,7 @@ import { TimelineStage } from "@/features/timeline/TimelineStage";
 import { useVoiceController } from "@/features/voice/useVoiceController";
 import { VoiceBottomBar } from "@/features/voice/VoiceBottomBar";
 import { VoiceStage } from "@/features/voice/VoiceStage";
+import { PublishBottomBar, PublishStage, usePublishController } from "@/features/publishing/PublishStage";
 import { useDeleteProject, useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useRestoreProject } from "@/hooks/useHistory";
 import { useRevealProject } from "@/hooks/useManualMedia";
@@ -85,7 +86,10 @@ const toDraft = (p: Project) => ({
 
 function ProjectView({ project }: { project: Project }) {
   const navigate = useNavigate();
-  const [view, setView] = useState<ViewId>(currentStage(project.status)?.id ?? "resumen");
+  // ?etapa=publicacion (desde la cola de publicación) abre esa etapa.
+  const [params] = useSearchParams();
+  const asked = STAGES.find((s) => s.id === params.get("etapa"))?.id;
+  const [view, setView] = useState<ViewId>(asked ?? currentStage(project.status)?.id ?? "resumen");
   const initial = toDraft(project);
   const [draft, setDraft] = useState(initial);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -93,6 +97,7 @@ function ProjectView({ project }: { project: Project }) {
   const remove = useDeleteProject();
   const restore = useRestoreProject();
   const script = useScriptEditor(project);
+  const publish = usePublishController(project, view === "publicacion");
   const generation = useScriptGeneration(project);
   const scenesGeneration = useScenesGeneration(project);
   const { data: scenesState } = useScenes(project.id);
@@ -156,6 +161,8 @@ function ProjectView({ project }: { project: Project }) {
           <VoiceBottomBar ctl={voice} />
         ) : view === "timeline" ? (
           <TimelineBottomBar project={project} />
+        ) : view === "publicacion" ? (
+          <PublishBottomBar ctl={publish} />
         ) : (
           <BottomBar
             stats={[
@@ -344,6 +351,8 @@ function ProjectView({ project }: { project: Project }) {
               <TimelineStage project={project} onGoToMedia={() => setView("medios")} />
             ) : view === "voz" ? (
               <VoiceStage ctl={voice} onGoToScript={() => setView("guion")} />
+            ) : view === "publicacion" ? (
+              <PublishStage project={project} ctl={publish} onGoToTimeline={() => setView("timeline")} />
             ) : view === "escenas" ? (
               <ScenesStage
                 project={project}

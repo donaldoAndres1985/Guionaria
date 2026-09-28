@@ -1,0 +1,727 @@
+"""Publicación de un proyecto: una fila por plataforma del canal (YouTube, TikTok, Instagram,
+Facebook) con sus metadatos, la lista de verificación y el estado.
+
+- Los textos los propone Claude (prompt «metadatos_publicacion») a partir del guion, la ficha
+  verificada y las reglas del canal; la app agrega los créditos de los medios y recorta a los
+  límites de cada plataforma.
+- Publicar a mano: copiar los textos, abrir la plataforma y pegar la URL publicada.
+- YouTube además se sube directo (youtube.py).
+- Estado del proyecto: PROGRAMADO cuando todas las plataformas activas están programadas o
+  publicadas; PUBLICADO cuando todas están publicadas.
+"""
+
+import json
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+
+from PIL import Image, ImageOps
+from sqlmodel import Session, col, select
+
+from ...config import get_paths
+from ...domain.states import ORDER, ProjectStatus
+from ...models import Channel, Project, Publication
+from ...models._base import now_iso
+from ...schemas.publishing import (
+    CheckItem,
+    MetadatosClaude,
+    PublicationMeta,
+    PublicationRead,
+    PublicationUpdate,
+    PublishingState,
+    QueueItem,
+    YouTubeStatus,
+)
+from .. import prompts
+from ..channels import get_channel
+from ..errors import Conflict, DomainError, NotFound
+from ..jobs import JobContext
+from ..llm.claude_cli import ClaudeRunner, generate_structured
+from ..oplog import log_operation
+from ..projects import get_project, project_dir
+from ..research import read_research
+from ..rights import rights_report
+from ..script import read_script
+
+PLATFORMS: dict[str, dict] = {
+    "youtube": {
+        "label": "YouTube",
+        "limits": {"title": 100, "description": 5000, "tags": 500, "hashtags": 5},
+        "upload_url": "https://www.youtube.com/upload",
+    },
+    "tiktok": {
+        "label": "TikTok",
+        "limits": {"title": 150, "description": 2200, "tags": 0, "hashtags": 5},
+        "upload_url": "https://www.tiktok.com/tiktokstudio/upload",
+    },
+    "instagram": {
+        "label": "Instagram",
+        "limits": {"title": 150, "description": 2200, "tags": 0, "hashtags": 5},
+        "upload_url": "https://www.instagram.com/",
+    },
+    "facebook": {
+        "label": "Facebook",
+        "limits": {"title": 255, "description": 5000, "tags": 0, "hashtags": 5},
+        "upload_url": "https://www.facebook.com/",
+    },
+}
+FOLDER = "publicacion"
+COVER = "miniatura.jpg"
+KIDS_WORDS = ("infantil", "niños", "ninos", "kids", "children", "preescolar")
+CRIME_WORDS = (
+    "crimen",
+    "crímenes",
+    "asesinat",
+    "true crime",
+    "policial",
+    "caso real",
+    "casos real",
+)
+
+
+# --- utilidades ---
+
+
+def _meta(pub: Publication) -> PublicationMeta:
+    return (
+        PublicationMeta.model_validate_json(pub.meta_json) if pub.meta_json else PublicationMeta()
+    )
+
+
+def _set_meta(pub: Publication, meta: PublicationMeta) -> None:
+    pub.meta_json = meta.model_dump_json()
+
+
+def _tags(pub: Publication) -> list[str]:
+    return json.loads(pub.tags) if pub.tags else []
+
+
+def _clip(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _channel_platforms(channel: Channel) -> list[str]:
+    try:
+        wanted = json.loads(channel.platforms or "[]")
+    except ValueError:
+        wanted = []
+    return [p for p in PLATFORMS if p in wanted] or ["youtube"]
+
+
+def _about(channel: Channel) -> str:
+    return f"{channel.name} {channel.niche or ''} {channel.style_prompt or ''}".lower()
+
+
+def is_kids_channel(channel: Channel) -> bool:
+    return any(w in _about(channel) for w in KIDS_WORDS)
+
+
+def _is_crime(channel: Channel) -> bool:
+    return any(w in _about(channel) for w in CRIME_WORDS)
+
+
+def final_video(project: Project) -> Path:
+    from ..render.service import OUTPUTS
+
+    return project_dir(project) / "render" / OUTPUTS["final"]
+
+
+def subtitles_file(project: Project) -> Path:
+    return project_dir(project) / "subs" / "voz.srt"
+
+
+def cover_path(project: Project) -> Path | None:
+    """Miniatura elegida en Publicación o, si no, la sugerida por el render."""
+    from ..render.service import THUMBNAIL
+
+    for path in (
+        project_dir(project) / FOLDER / COVER,
+        project_dir(project) / "render" / THUMBNAIL,
+    ):
+        if path.exists():
+            return path
+    return None
+
+
+def _voice_engine(session: Session, project_id: int) -> str | None:
+    from ..voice.service import _data, latest_track
+
+    return _data(latest_track(session, project_id)).get("engine")
+
+
+def _hashtag_line(hashtags: list[str]) -> str:
+    return " ".join("#" + re.sub(r"\s+", "", h.lstrip("#")) for h in hashtags if h.strip())
+
+
+def _chapters_text(meta: PublicationMeta) -> str:
+    if len(meta.chapters) < 3:  # YouTube pide al menos tres, empezando en 0:00
+        return ""
+    return "\n".join(f"{c.tiempo} {c.titulo}" for c in meta.chapters)
+
+
+def full_text(pub: Publication, credits: str, fmt: str) -> str:
+    """Texto listo para pegar: descripción, capítulos, hashtags y (YouTube/Facebook) créditos."""
+    meta = _meta(pub)
+    parts = [pub.description or ""]
+    if pub.platform == "youtube" and fmt == "video":
+        parts.append(_chapters_text(meta))
+    parts.append(_hashtag_line(meta.hashtags))
+    if pub.platform in ("youtube", "facebook") and credits:
+        parts.append(credits)
+    text = "\n\n".join(p.strip() for p in parts if p and p.strip())
+    return _clip(text, PLATFORMS[pub.platform]["limits"]["description"])
+
+
+# --- filas por plataforma ---
+
+
+def ensure_publications(session: Session, project: Project) -> list[Publication]:
+    """Una fila por plataforma del canal (se crean la primera vez)."""
+    channel = get_channel(session, project.channel_id)
+    rows = session.exec(
+        select(Publication)
+        .where(Publication.project_id == project.id)
+        .order_by(col(Publication.id))
+    ).all()
+    have = {r.platform for r in rows}
+    created = False
+    for platform in _channel_platforms(channel):
+        if platform in have:
+            continue
+        pub = Publication(
+            project_id=project.id,
+            platform=platform,
+            title=project.title,
+            description="",
+            tags="[]",
+            visibility="public",
+            status="draft",
+        )
+        meta = PublicationMeta()
+        if platform == "youtube":
+            meta.made_for_kids = True if is_kids_channel(channel) else None
+            meta.category_id = "27" if is_kids_channel(channel) else "22"
+        _set_meta(pub, meta)
+        session.add(pub)
+        created = True
+    if created:
+        session.commit()
+        rows = session.exec(
+            select(Publication)
+            .where(Publication.project_id == project.id)
+            .order_by(col(Publication.id))
+        ).all()
+    order = list(PLATFORMS)
+    return sorted(rows, key=lambda r: order.index(r.platform) if r.platform in order else 99)
+
+
+def checklist(
+    pub: Publication, channel: Channel, project: Project, credits: str, engine: str | None
+) -> list[CheckItem]:
+    meta = _meta(pub)
+    text = full_text(pub, credits, project.format)
+    auto = [
+        ("render", "Video final renderizado", final_video(project).exists()),
+        ("title", "Título elegido", bool((pub.title or "").strip())),
+        ("description", "Descripción escrita", bool((pub.description or "").strip())),
+    ]
+    if pub.platform in ("youtube", "facebook"):
+        auto.append(("thumbnail", "Miniatura", cover_path(project) is not None))
+    items = [CheckItem(id=i, label=label, done=done, manual=False) for i, label, done in auto]
+    if pub.platform in ("youtube", "facebook"):
+        items.append(
+            CheckItem(
+                id="credits",
+                label="Créditos de los medios en la descripción",
+                done=bool(credits) and credits.strip() in text,
+                manual=False,
+            )
+        )
+    else:
+        items.append(
+            CheckItem(
+                id="credits",
+                label="Créditos en el primer comentario o en la bio",
+                done=meta.checks.get("credits", False),
+                manual=True,
+                hint="Copia los créditos desde el panel de la izquierda",
+            )
+        )
+    if pub.platform == "youtube":
+        items.append(
+            CheckItem(
+                id="kids",
+                label="Decidido si es contenido para niños",
+                done=meta.made_for_kids is not None,
+                manual=False,
+                hint="Obligatorio en YouTube (COPPA)",
+            )
+        )
+    if _is_crime(channel):
+        items.append(
+            CheckItem(
+                id="respect",
+                label="Sin detalles gráficos; víctimas y no condenados tratados con respeto",
+                done=meta.checks.get("respect", False),
+                manual=True,
+                hint="Evita restricciones de edad y desmonetización",
+            )
+        )
+    items.append(
+        CheckItem(
+            id="synthetic",
+            label="Revisado si hay que avisar de contenido alterado o sintético",
+            done=meta.checks.get("synthetic", False),
+            manual=True,
+            hint="Imágenes o voces realistas generadas que puedan confundirse con reales",
+        )
+    )
+    if engine == "elevenlabs":
+        items.append(
+            CheckItem(
+                id="license",
+                label="Mi plan de ElevenLabs permite uso comercial (si monetizo)",
+                done=meta.checks.get("license", False),
+                manual=True,
+                hint="El plan gratuito no lo permite",
+            )
+        )
+    return items
+
+
+def _read(pub: Publication, channel, project, credits, engine) -> PublicationRead:
+    info = PLATFORMS[pub.platform]
+    cover = cover_path(project)
+    return PublicationRead(
+        id=pub.id,
+        platform=pub.platform,
+        label=info["label"],
+        enabled=pub.enabled,
+        title=pub.title or "",
+        description=pub.description or "",
+        tags=_tags(pub),
+        visibility=pub.visibility or "public",
+        scheduled_at=pub.scheduled_at,
+        published_at=pub.published_at,
+        external_url=pub.external_url,
+        status=pub.status or "draft",
+        error=pub.error,
+        meta=_meta(pub),
+        checklist=checklist(pub, channel, project, credits, engine),
+        limits=info["limits"],
+        full_text=full_text(pub, credits, project.format),
+        upload_url=info["upload_url"],
+        thumbnail_url=(
+            f"/api/projects/{project.id}/publishing/thumbnail?v={cover.stat().st_mtime_ns}"
+            if cover
+            else None
+        ),
+    )
+
+
+def publishing_state(session: Session, project_id: int, redirect_uri: str = "") -> PublishingState:
+    from . import youtube
+
+    project = get_project(session, project_id)
+    channel = get_channel(session, project.channel_id)
+    rows = ensure_publications(session, project)
+    settle_scheduled(session, project, rows)
+    credits = rights_report(session, project_id).credits
+    engine = _voice_engine(session, project_id)
+    video = final_video(project)
+    reason = None if video.exists() else "Renderiza el video final en el Timeline para publicarlo"
+    return PublishingState(
+        project_id=project.id,
+        channel_id=channel.id,
+        channel_name=channel.name,
+        format=project.format,
+        can_publish=video.exists(),
+        reason=reason,
+        video_url=f"/api/projects/{project.id}/render/files/{video.name}"
+        if video.exists()
+        else None,
+        video_file=str(video) if video.exists() else None,
+        subtitles=subtitles_file(project).exists(),
+        credits=credits,
+        publications=[_read(p, channel, project, credits, engine) for p in rows],
+        youtube=YouTubeStatus(
+            configured=youtube.configured(),
+            connected=youtube.is_connected(channel.id),
+            account=youtube.account_name(channel.id),
+            redirect_uri=redirect_uri,
+        ),
+    )
+
+
+def settle_scheduled(session: Session, project: Project, rows: list[Publication]) -> None:
+    """Lo subido con fecha (YouTube lo publica solo) cuenta como publicado al llegar la hora."""
+    now = datetime.now(UTC)
+    changed = False
+    for pub in rows:
+        due = pub.scheduled_at and datetime.fromisoformat(pub.scheduled_at) <= now
+        if pub.status == "scheduled" and pub.external_id and due:
+            pub.status, pub.published_at = "published", pub.scheduled_at
+            changed = True
+    if changed:
+        session.commit()
+        sync_project_status(session, project)
+
+
+def _get_pub(session: Session, pub_id: int) -> Publication:
+    pub = session.get(Publication, pub_id)
+    if not pub:
+        raise NotFound("No existe esa publicación")
+    return pub
+
+
+def _parse_when(value: str) -> datetime:
+    try:
+        when = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise DomainError("Fecha de publicación no válida") from exc
+    if when.tzinfo is None:
+        when = when.astimezone()  # hora local del equipo
+    return when
+
+
+def update_publication(session: Session, pub_id: int, data: PublicationUpdate) -> PublishingState:
+    pub = _get_pub(session, pub_id)
+    if pub.status in ("published", "uploading"):
+        allowed = {"enabled", "checks"}
+        if set(data.model_dump(exclude_unset=True)) - allowed:
+            raise Conflict("Ya está publicada: cámbiala en la plataforma")
+    limits = PLATFORMS[pub.platform]["limits"]
+    meta = _meta(pub)
+    fields = data.model_dump(exclude_unset=True)
+    if "enabled" in fields:
+        pub.enabled = data.enabled
+    if data.title is not None:
+        pub.title = _clip(data.title, limits["title"])
+    if data.description is not None:
+        pub.description = data.description
+    if data.tags is not None:
+        pub.tags = json.dumps([t.strip() for t in data.tags if t.strip()], ensure_ascii=False)
+    if data.hashtags is not None:
+        meta.hashtags = [h.strip().lstrip("#") for h in data.hashtags if h.strip()]
+    if data.visibility is not None:
+        pub.visibility = data.visibility
+    if data.clear_schedule:
+        pub.scheduled_at = None
+        if pub.status == "scheduled" and not pub.external_id:
+            pub.status = "draft"
+    elif data.scheduled_at:
+        when = _parse_when(data.scheduled_at)
+        if when <= datetime.now(UTC):
+            raise DomainError("La fecha programada ya pasó")
+        pub.scheduled_at = when.isoformat()
+        if pub.status in ("draft", "failed", None):
+            pub.status = "scheduled"
+    for key in (
+        "pinned_comment",
+        "made_for_kids",
+        "synthetic",
+        "playlist_id",
+        "captions",
+        "category_id",
+    ):
+        if key in fields:
+            setattr(meta, key, fields[key])
+    if data.checks:
+        meta.checks = {**meta.checks, **data.checks}
+    _set_meta(pub, meta)
+    pub.updated_at = now_iso()
+    session.commit()
+    project = get_project(session, pub.project_id)
+    sync_project_status(session, project)
+    write_texts(session, project)
+    return publishing_state(session, project.id)
+
+
+def mark_published(session: Session, pub_id: int, url: str) -> PublishingState:
+    pub = _get_pub(session, pub_id)
+    if not re.match(r"https?://", url.strip()):
+        raise DomainError("Pega la dirección completa de la publicación (https://…)")
+    pub.status = "published"
+    pub.external_url = url.strip()
+    pub.published_at = now_iso()
+    pub.error = None
+    pub.updated_at = now_iso()
+    session.commit()
+    project = get_project(session, pub.project_id)
+    log_operation(session, "publish", "project", project.id, {"platform": pub.platform, "url": url})
+    sync_project_status(session, project)
+    return publishing_state(session, project.id)
+
+
+def reopen(session: Session, pub_id: int) -> PublishingState:
+    """Vuelve a borrador (p. ej. se marcó publicada por error)."""
+    pub = _get_pub(session, pub_id)
+    pub.status = "scheduled" if pub.scheduled_at else "draft"
+    pub.published_at = None
+    pub.external_url = None
+    pub.external_id = None
+    pub.error = None
+    session.commit()
+    project = get_project(session, pub.project_id)
+    sync_project_status(session, project)
+    return publishing_state(session, project.id)
+
+
+def sync_project_status(session: Session, project: Project) -> None:
+    rows = session.exec(select(Publication).where(Publication.project_id == project.id)).all()
+    active = [r for r in rows if r.enabled]
+    if ORDER.index(project.status) < ORDER.index(ProjectStatus.RENDERIZADO):
+        return
+    if active and all(r.status == "published" for r in active):
+        new = ProjectStatus.PUBLICADO
+    elif active and all(r.status in ("scheduled", "published") for r in active):
+        new = ProjectStatus.PROGRAMADO
+    else:
+        new = ProjectStatus.RENDERIZADO
+    if project.status != new:
+        project.status = new
+        project.updated_at = now_iso()
+        session.commit()
+
+
+# --- textos para copiar (carpeta publicacion/) ---
+
+
+def write_texts(session: Session, project: Project) -> None:
+    folder = project_dir(project) / FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    credits = rights_report(session, project.id).credits
+    for pub in ensure_publications(session, project):
+        meta = _meta(pub)
+        lines = [
+            f"# {PLATFORMS[pub.platform]['label']} — {project.title}",
+            "",
+            "## Título",
+            pub.title or "",
+        ]
+        if meta.title_options:
+            lines += ["", "Otras opciones:", *[f"- {t}" for t in meta.title_options]]
+        lines += ["", "## Descripción", full_text(pub, credits, project.format)]
+        if _tags(pub):
+            lines += ["", "## Etiquetas", ", ".join(_tags(pub))]
+        if meta.pinned_comment:
+            lines += ["", "## Comentario fijado", meta.pinned_comment]
+        (folder / f"{pub.platform}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+# --- metadatos con Claude ---
+
+
+def _script_text(session: Session, project_id: int) -> str:
+    try:
+        script = read_script(session, project_id)
+    except (NotFound, DomainError):
+        return "(sin guion)"
+    return "\n".join(s.text for s in script.segments) or "(sin guion)"
+
+
+def _dossier_text(project: Project) -> tuple[str, str]:
+    research = read_research(project.research_json)
+    if not research:
+        return project.research_notes or "(sin ficha verificada)", "Trata el caso con respeto."
+    d = research.dossier
+    facts = [f"- {x.afirmacion} ({x.certeza})" for x in d.datos]
+    care = "; ".join(d.cuidados) or "Trata el caso con respeto."
+    return d.resumen + "\n" + "\n".join(facts), care
+
+
+def _prompt(session: Session, project: Project, channel: Channel, platforms: list[str]) -> str:
+    ficha, cuidados = _dossier_text(project)
+    minutes = (project.target_duration_s or 60) / 60
+    chapters = (
+        "- Capítulos (solo si el video dura más de 3 minutos): 3 a 8, el primero en 0:00."
+        if project.format == "video" and minutes > 3
+        else "- Sin capítulos (lista vacía)."
+    )
+    return prompts.render(
+        prompts.load_prompt("metadatos_publicacion"),
+        canal=channel.name,
+        estilo=channel.style_prompt or "Claro y directo.",
+        nicho=channel.niche or "general",
+        idioma=channel.language,
+        formato="video horizontal" if project.format == "video" else "reel vertical",
+        duracion=f"{minutes:.1f} min",
+        titulo=project.title,
+        guion=_script_text(session, project.id),
+        ficha=ficha,
+        plataformas=", ".join(PLATFORMS[p]["label"] for p in platforms),
+        max_titulo=PLATFORMS["youtube"]["limits"]["title"],
+        capitulos=chapters,
+        cuidados=cuidados
+        + (" Es un canal infantil: lenguaje apto para niños." if is_kids_channel(channel) else ""),
+    )
+
+
+def apply_metadata(session: Session, project: Project, data: MetadatosClaude) -> int:
+    """Guarda lo que propuso Claude en cada plataforma que aún no está publicada."""
+    by_platform = {p.plataforma: p for p in data.plataformas}
+    changed = 0
+    for pub in ensure_publications(session, project):
+        got = by_platform.get(pub.platform)
+        if not got or pub.status in ("published", "uploading"):
+            continue
+        limits = PLATFORMS[pub.platform]["limits"]
+        meta = _meta(pub)
+        titles = [_clip(t, limits["title"]) for t in got.titulos if t.strip()]
+        meta.title_options = titles
+        meta.hashtags = [h.strip().lstrip("#") for h in got.hashtags if h.strip()][
+            : limits["hashtags"]
+        ]
+        meta.pinned_comment = got.comentario_fijado
+        meta.chapters = data.capitulos if pub.platform == "youtube" else []
+        pub.title = titles[0] if titles else pub.title
+        pub.description = got.descripcion.strip()
+        if pub.platform == "youtube":
+            tags, total = [], 0
+            for tag in (t.strip() for t in got.etiquetas if t.strip()):
+                if total + len(tag) + 1 > limits["tags"]:
+                    break
+                tags.append(tag)
+                total += len(tag) + 1
+            pub.tags = json.dumps(tags, ensure_ascii=False)
+        _set_meta(pub, meta)
+        pub.updated_at = now_iso()
+        changed += 1
+    session.commit()
+    write_texts(session, project)
+    return changed
+
+
+async def generate_metadata(
+    session_factory, project_id: int, runner: ClaudeRunner, ctx: JobContext
+) -> dict:
+    with session_factory() as session:
+        project = get_project(session, project_id)
+        channel = get_channel(session, project.channel_id)
+        pubs = [
+            p
+            for p in ensure_publications(session, project)
+            if p.enabled and p.status != "published"
+        ]
+        platforms = [p.platform for p in pubs] or _channel_platforms(channel)
+        prompt = _prompt(session, project, channel, platforms)
+    ctx.progress(0.1, "Claude está escribiendo títulos, descripciones y hashtags…")
+    data = await generate_structured(runner, prompt, MetadatosClaude)
+    with session_factory() as session:
+        project = get_project(session, project_id)
+        changed = apply_metadata(session, project, data)
+        log_operation(
+            session,
+            "publishing_metadata",
+            "project",
+            project_id,
+            {"platforms": changed},
+            actor="system",
+        )
+        session.commit()
+    return {"platforms": changed}
+
+
+# --- miniatura ---
+
+
+def make_cover(
+    session: Session, project_id: int, time_s: float, text: str | None
+) -> PublishingState:
+    """Miniatura desde el cuadro del instante `time_s` (del medio original, sin subtítulos
+    quemados) con el título encima, a 1280×720 (video) o 1080×1920 (reel)."""
+    import subprocess
+    import tempfile
+
+    from ..render import plan
+    from ..render.thumbnail import compose
+    from ..timeline.model import build_timeline
+
+    project = get_project(session, project_id)
+    m = build_timeline(session, project)
+    frame_at = round(time_s * m.fps)
+    span = next(
+        (s for s in m.scenes if s.start <= frame_at < s.start + s.duration),
+        m.scenes[-1] if m.scenes else None,
+    )
+    source, at = final_video(project), time_s
+    if span and span.clip and span.clip.path.exists():
+        source = span.clip.path
+        at = (
+            (span.clip.source_in + (frame_at - span.start)) / m.fps
+            if span.clip.kind == "video"
+            else 0.0
+        )
+    if not source.exists():
+        raise Conflict("Renderiza el video o aprueba los medios para elegir la miniatura")
+    folder = project_dir(project) / FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    size = (1280, 720) if m.width > m.height else (1080, 1920)
+    with tempfile.TemporaryDirectory(prefix="guionaria-") as tmp:
+        frame = Path(tmp) / "cuadro.png"
+        if source.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+            frame = source
+        else:
+            subprocess.run(
+                ["ffmpeg", "-y", "-v", "error", "-ss", f"{at:.2f}", "-i", str(source),
+                 "-frames:v", "1", str(frame)],
+                capture_output=True,
+                check=False,
+            )  # fmt: skip
+            if not frame.exists():
+                raise DomainError("No se pudo sacar el cuadro del video")
+        with Image.open(frame) as img:
+            if text and text.strip():
+                cover = compose(img, text.strip(), size, plan.find_font())
+            else:
+                cover = ImageOps.fit(img.convert("RGB"), size, Image.Resampling.LANCZOS)
+            cover.save(folder / COVER, "JPEG", quality=88)
+    for pub in ensure_publications(session, project):
+        meta = _meta(pub)
+        meta.thumbnail_time_s, meta.thumbnail_text = time_s, text
+        _set_meta(pub, meta)
+        pub.thumbnail_path = str((folder / COVER).relative_to(get_paths().home))
+    session.commit()
+    return publishing_state(session, project_id)
+
+
+# --- cola (página Publicación) ---
+
+
+def queue(session: Session, channel_id: int | None = None) -> list[QueueItem]:
+    q = select(Publication, Project, Channel).where(
+        Publication.project_id == Project.id, Project.channel_id == Channel.id, Publication.enabled
+    )
+    if channel_id:
+        q = q.where(Project.channel_id == channel_id)
+    items = [
+        QueueItem(
+            id=pub.id,
+            project_id=project.id,
+            project_title=project.title,
+            channel_id=channel.id,
+            channel_name=channel.name,
+            platform=pub.platform,
+            label=PLATFORMS[pub.platform]["label"],
+            title=pub.title or project.title,
+            status=pub.status or "draft",
+            scheduled_at=pub.scheduled_at,
+            published_at=pub.published_at,
+            external_url=pub.external_url,
+            target_publish_at=project.target_publish_at,
+        )
+        for pub, project, channel in session.exec(q).all()
+        if pub.platform in PLATFORMS
+    ]
+    # Primero lo pendiente (por fecha), después lo publicado (lo más reciente arriba).
+    pending = sorted(
+        (i for i in items if i.status != "published"),
+        key=lambda i: (i.scheduled_at or i.target_publish_at or "9999", i.project_id, i.id),
+    )
+    done = sorted(
+        (i for i in items if i.status == "published"),
+        key=lambda i: i.published_at or "",
+        reverse=True,
+    )
+    return pending + done
