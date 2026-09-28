@@ -558,3 +558,77 @@ def test_tape_text_is_readable_on_any_accent():
         # El resaltado usa un color distinto al de la cinta (si no, rojo sobre rojo no se ve).
         near = sum(1 for p in pixels if all(abs(a - b) < 40 for a, b in zip(p, want, strict=True)))
         assert near > 300, color
+
+
+def test_upload_own_thumbnail(client, pub_project):
+    from io import BytesIO
+
+    from PIL import Image
+
+    pid = pub_project["id"]
+    buf = BytesIO()
+    Image.new("RGB", (1600, 900), (200, 30, 30)).save(buf, "PNG")  # 16:9 en un reel
+    resp = client.post(
+        f"/api/projects/{pid}/publishing/thumbnail:upload",
+        files={"file": ("mi_miniatura.png", buf.getvalue(), "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    url = resp.json()["publications"][0]["thumbnail_url"]
+    got = client.get(url)
+    assert got.headers["content-type"] == "image/jpeg" and len(got.content) <= 2 * 1024 * 1024
+    assert Image.open(BytesIO(got.content)).size == (1080, 1920)  # encuadrada al reel
+    bad = client.post(
+        f"/api/projects/{pid}/publishing/thumbnail:upload",
+        files={"file": ("x.png", b"no es imagen", "image/png")},
+    )
+    assert bad.status_code == 400 and "imagen válida" in bad.json()["detail"]
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="requiere FFmpeg")
+def test_mcp_chat_claude_looks_at_frames_and_draws(client, media_project, web):
+    from tests.media_support import downloaded
+    from tests.test_mcp import Mcp
+
+    pid = media_project["id"]
+    image_scene = media_project["scenes"][1]
+    [asset, *_] = downloaded(client, image_scene)
+    client.post(f"/api/scenes/{image_scene}/assets/{asset['id']}:approve")
+    mcp = Mcp(client)
+
+    def content(name, **args):
+        body = mcp.rpc("tools/call", {"name": name, "arguments": args}).json()["result"]
+        assert not body.get("isError"), body
+        return body["content"]
+
+    frames = content("get_thumbnail_frames", project_id=pid)
+    assert frames[0]["type"] == "text" and "draw_thumbnails" in frames[0]["text"]
+    images = [c for c in frames if c["type"] == "image"]
+    assert len(images) == 1 and images[0]["mimeType"] == "image/jpeg"
+
+    design = {
+        **BASE_DESIGN,
+        "plantilla": "impacto",
+        "texto": "¿Un accidente?",
+        "resaltar": "accidente",
+    }
+    drawn = content(
+        "draw_thumbnails", project_id=pid, designs=[design, {**design, "plantilla": "documental"}]
+    )
+    assert [c["type"] for c in drawn].count("image") == 2  # las ve para revisarlas
+    assert [o["index"] for o in state_of(client, pid)["cover_options"]] == [1, 2]
+    body = mcp.rpc(
+        "tools/call",
+        {
+            "name": "draw_thumbnails",
+            "arguments": {"project_id": pid, "designs": [{**design, "cuadro": 7}]},
+        },
+    ).json()["result"]
+    assert body["isError"] and "Cuadros inexistentes" in body["content"][0]["text"]
+    state = mcp.call("choose_thumbnail", project_id=pid, index=2)
+    assert state["publications"][0]["thumbnail_url"]
+
+
+def test_mcp_title_guide(client):
+    from tests.test_mcp import Mcp
+
+    assert "Tipos de gancho" in Mcp(client).call("get_title_guide")

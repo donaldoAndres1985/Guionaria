@@ -59,6 +59,14 @@ export function usePublishingActions(projectId: number) {
         api.post<PublishingState>(`/api/projects/${projectId}/publishing/cover:redraw`, body),
       onSuccess: done,
     }),
+    uploadCover: useMutation({
+      mutationFn: (file: File) => {
+        const body = new FormData();
+        body.append("file", file, file.name || "miniatura.png");
+        return api.upload<PublishingState>(`/api/projects/${projectId}/publishing/thumbnail:upload`, body);
+      },
+      onSuccess: done,
+    }),
     generate: () => api.post<Job>(`/api/projects/${projectId}/publishing:generate`, {}),
     suggestTitles: (id: number) => api.post<Job>(`/api/publications/${id}:titles`, {}),
     designCover: () => api.post<Job>(`/api/projects/${projectId}/publishing/cover:design`, {}),

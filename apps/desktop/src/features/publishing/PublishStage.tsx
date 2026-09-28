@@ -154,15 +154,80 @@ function PlatformList({ state, ctl }: { state: PublishingState; ctl: PublishCont
 /** Miniatura: se elige un cuadro del video y, si se quiere, un texto encima. */
 function Cover({ state, ctl, project }: { state: PublishingState; ctl: PublishController; project: Project }) {
   const video = useRef<HTMLVideoElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const first = state.publications[0];
   const [text, setText] = useState(first?.meta.thumbnail_text ?? project.title);
+  const [over, setOver] = useState(false);
   const thumb = state.publications.find((p) => p.thumbnail_url)?.thumbnail_url;
+  const upload = ctl.actions.uploadCover;
+  const send = useCallback(
+    (file: File | null | undefined) => {
+      if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        toast.error("Eso no es una imagen: usa JPG, PNG o WebP");
+        return;
+      }
+      upload.mutate(file, { onSuccess: () => toast.success("Miniatura propia lista") });
+    },
+    [upload],
+  );
+  // Ctrl+V en cualquier parte de la etapa: si el portapapeles trae una imagen, es la miniatura.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
+      if (!file) return;
+      e.preventDefault();
+      send(file);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [send]);
   return (
     <div className="grid gap-2" aria-label="Miniatura">
       <h3 className="flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground">
-        <ImageIcon className="size-3.5" /> Miniatura actual · o elige un cuadro a mano
+        <ImageIcon className="size-3.5" /> Miniatura actual
       </h3>
-      {thumb && <img src={coreUrl(thumb) ?? ""} alt="Miniatura" className="max-h-48 w-fit rounded border" />}
+      <div
+        data-testid="cover-drop"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          send(e.dataTransfer.files[0]);
+        }}
+        className={cn(
+          "grid place-items-center gap-2 rounded-md border border-dashed p-2 text-center text-[11px] text-muted-foreground transition-colors",
+          over && "border-brand bg-active",
+        )}
+      >
+        {thumb ? (
+          <img src={coreUrl(thumb) ?? ""} alt="Miniatura" className="max-h-48 w-fit rounded" />
+        ) : (
+          <ImageIcon className="size-6 text-subtle" />
+        )}
+        <span>
+          ¿La hiciste con otra herramienta? Arrástrala aquí, pégala con <span className="font-mono">Ctrl+V</span> o
+        </span>
+        <Button size="sm" variant="outline" disabled={upload.isPending} onClick={() => picker.current?.click()}>
+          {upload.isPending ? <LoaderCircle className="animate-spin" /> : <Upload />} Subir imagen
+        </Button>
+        <input
+          ref={picker}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          aria-label="Archivo de miniatura"
+          onChange={(e) => {
+            send(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <h4 className="text-[11px] text-muted-foreground">O elige un cuadro del video a mano:</h4>
       {state.video_url && (
         <video ref={video} src={coreUrl(state.video_url) ?? ""} controls muted preload="metadata" className="max-h-44 rounded bg-black" />
       )}
