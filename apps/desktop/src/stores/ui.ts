@@ -22,6 +22,9 @@ interface UiState {
   /** Guía «cómo funciona» de la etapa de medios. */
   mediaHelpHidden: boolean;
   setMediaHelpHidden: (hidden: boolean) => void;
+  /** Proyectos: lista o miniaturas. */
+  projectsView: "list" | "grid";
+  setProjectsView: (view: "list" | "grid") => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -37,6 +40,8 @@ export const useUiStore = create<UiState>()(
       setRenderQuality: (q) => set({ renderQuality: q }),
       mediaHelpHidden: false,
       setMediaHelpHidden: (hidden) => set({ mediaHelpHidden: hidden }),
+      projectsView: "list",
+      setProjectsView: (view) => set({ projectsView: view }),
       stagePanelWidth: STAGE_PANEL_WIDTH.default,
       setStagePanelWidth: (width) =>
         set({

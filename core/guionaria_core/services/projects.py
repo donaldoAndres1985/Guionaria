@@ -8,7 +8,7 @@ from sqlmodel import Session, col, select
 
 from ..config import get_paths
 from ..domain.states import ProjectStatus
-from ..models import Channel, Project, Publication
+from ..models import Channel, Job, Project, Publication, Scene, SceneAsset
 from ..models._base import now_iso
 from ..schemas.project import (
     DEFAULT_DURATION_S,
@@ -19,7 +19,7 @@ from ..schemas.project import (
 )
 from ..util.slug import slugify
 from .channels import get_channel
-from .errors import Conflict, NotFound
+from .errors import Conflict, DomainError, NotFound
 from .oplog import log_operation
 
 # Subcarpetas de cada proyecto (sección 8). render/ se crea en la fase de render.
@@ -58,13 +58,71 @@ def publish_badges(session: Session, ids: list[int]) -> dict[int, list[PublishBa
     return out
 
 
+MEDIA_THUMBS = 5
+
+
+def cover_path(project: Project) -> Path | None:
+    """Portada del proyecto: la miniatura elegida en Publicación o la del render."""
+    folder = project_dir(project)
+    for path in (folder / "publicacion" / "miniatura.jpg", folder / "render" / "miniatura.jpg"):
+        if path.exists():
+            return path
+    return None
+
+
+def media_previews(session: Session, ids: list[int]) -> dict[int, tuple[list[int], int]]:
+    """Medios aprobados (principales) de cada proyecto, en el orden de las escenas:
+    (hasta MEDIA_THUMBS ids de asset, total)."""
+    if not ids:
+        return {}
+    rows = session.exec(
+        select(Scene.project_id, SceneAsset.asset_id)
+        .join(SceneAsset, SceneAsset.scene_id == Scene.id)
+        .where(col(Scene.project_id).in_(ids), SceneAsset.role == "main")
+        .order_by(Scene.project_id, Scene.position)
+    ).all()
+    out: dict[int, tuple[list[int], int]] = {}
+    for project_id, asset_id in rows:
+        thumbs, count = out.get(project_id, ([], 0))
+        if len(thumbs) < MEDIA_THUMBS:
+            thumbs.append(asset_id)
+        out[project_id] = (thumbs, count + 1)
+    return out
+
+
+def _extras(session: Session, projects: list[Project]) -> dict[int, dict]:
+    ids = [p.id for p in projects]
+    badges = publish_badges(session, ids)
+    media = media_previews(session, ids)
+    out = {}
+    for p in projects:
+        cover = cover_path(p)
+        thumbs, count = media.get(p.id, ([], 0))
+        out[p.id] = {
+            "publications": badges.get(p.id, []),
+            "cover_url": (
+                f"/api/projects/{p.id}/cover?v={cover.stat().st_mtime_ns}" if cover else None
+            ),
+            "media_thumbs": [f"/api/assets/{a}/thumb" for a in thumbs],
+            "media_count": count,
+        }
+    return out
+
+
 def to_read(
-    project: Project, channel: Channel, badges: list[PublishBadge] | None = None
+    project: Project,
+    channel: Channel,
+    badges: list[PublishBadge] | None = None,
+    extras: dict | None = None,
 ) -> ProjectRead:
     from .research import read_research  # import local: research usa este módulo
 
+    extras = extras or {}
     return ProjectRead(
-        publications=badges or [],
+        publications=extras.get("publications", badges or []),
+        cover_url=extras.get("cover_url"),
+        media_thumbs=extras.get("media_thumbs", []),
+        media_count=extras.get("media_count", 0),
         research=read_research(project.research_json),
         id=project.id,
         channel_id=project.channel_id,
@@ -97,8 +155,8 @@ def get_project(session: Session, project_id: int) -> Project:
 
 def read_project(session: Session, project_id: int) -> ProjectRead:
     project = get_project(session, project_id)
-    badges = publish_badges(session, [project.id]).get(project.id)
-    return to_read(project, get_channel(session, project.channel_id), badges)
+    extras = _extras(session, [project])[project.id]
+    return to_read(project, get_channel(session, project.channel_id), extras=extras)
 
 
 def _fts_query(q: str) -> str | None:
@@ -128,8 +186,8 @@ def list_projects(
         ).all()
         stmt = stmt.where(Project.id.in_([row[0] for row in ids]))
     rows = session.exec(stmt.order_by(Project.updated_at.desc())).all()
-    badges = publish_badges(session, [p.id for p, _c in rows])
-    return [to_read(p, c, badges.get(p.id)) for p, c in rows]
+    extras = _extras(session, [p for p, _c in rows])
+    return [to_read(p, c, extras=extras[p.id]) for p, c in rows]
 
 
 def index_fts(session: Session, project: Project, script_text: str | None = None) -> None:
@@ -223,10 +281,28 @@ def update_project(session: Session, project_id: int, data: ProjectUpdate) -> Pr
 
 
 def delete_project(session: Session, project_id: int) -> None:
-    """Mueve el proyecto a la papelera: se puede restaurar durante 30 días."""
+    """Mueve el proyecto a la papelera (en cualquier etapa): se puede restaurar durante 30
+    días. No se borra mientras un trabajo usa su carpeta (render, voz, subida…)."""
+    from .jobs import ACTIVE
     from .trash import trash_project  # import local: la papelera depende de este módulo
 
-    trash_project(session, get_project(session, project_id))
+    project = get_project(session, project_id)
+    busy = session.exec(
+        select(Job).where(Job.project_id == project_id, col(Job.status).in_(ACTIVE))
+    ).first()
+    if busy:
+        raise Conflict(
+            f"Hay un trabajo en curso ({busy.type}): cancélalo o espera a que termine "
+            "antes de eliminar el proyecto"
+        )
+    try:
+        trash_project(session, project)
+    except OSError as exc:
+        session.rollback()
+        raise DomainError(
+            "No se pudo mover la carpeta a la papelera: cierra los archivos del proyecto "
+            "abiertos en otro programa (video, explorador) y vuelve a intentarlo"
+        ) from exc
 
 
 def purge_project_data(session: Session, project: Project) -> None:

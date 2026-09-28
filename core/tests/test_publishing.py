@@ -720,3 +720,48 @@ def test_status_is_recalculated_on_startup(client, pub_project):
         assert s.get(Project, pid).status == "RENDERIZADO"
         assert resync_statuses(s) == 1
         assert s.get(Project, pid).status == "PUBLICADO"
+
+
+def test_projects_list_has_cover_and_media_thumbs(client, media_project, web):
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Project
+    from guionaria_core.services.projects import project_dir
+    from tests.media_support import downloaded
+
+    pid = media_project["id"]
+    image_scene = media_project["scenes"][1]
+    [asset, *_] = downloaded(client, image_scene)
+    client.post(f"/api/scenes/{image_scene}/assets/{asset['id']}:approve")
+    listed = next(p for p in client.get("/api/projects").json() if p["id"] == pid)
+    assert listed["media_count"] == 1
+    assert listed["media_thumbs"] == [f"/api/assets/{asset['id']}/thumb"]
+    assert listed["cover_url"] is None
+    assert client.get(f"/api/projects/{pid}/cover").status_code == 404
+    with Session(get_engine()) as s:
+        folder = project_dir(s.get(Project, pid)) / "render"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "miniatura.jpg").write_bytes(b"\xff\xd8jpeg")
+    cover = client.get(f"/api/projects/{pid}").json()["cover_url"]
+    assert cover.startswith(f"/api/projects/{pid}/cover?v=")
+    assert client.get(cover).headers["content-type"] == "image/jpeg"
+
+
+def test_delete_started_project_but_not_while_a_job_runs(client, pub_project):
+    from sqlmodel import select
+
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Job
+
+    pid = pub_project["id"]
+    with Session(get_engine()) as s:
+        s.add(Job(type="render", project_id=pid, status="running", progress=0.3))
+        s.commit()
+    busy = client.delete(f"/api/projects/{pid}")
+    assert busy.status_code == 409 and "trabajo en curso (render)" in busy.json()["detail"]
+    with Session(get_engine()) as s:
+        for job in s.exec(select(Job)).all():
+            job.status = "done"
+        s.commit()
+    # Renderizado (etapa avanzada): se elimina igual, a la papelera.
+    assert client.delete(f"/api/projects/{pid}").status_code in (200, 204)
+    assert client.get(f"/api/projects/{pid}").status_code == 404
