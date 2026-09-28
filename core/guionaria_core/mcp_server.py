@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from . import __version__
+from .config import SubtitleStyle, load_settings
 from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
@@ -37,15 +38,21 @@ from .services.media import service as media
 from .services.oplog import current_actor
 from .services.package import _approved_by_scene, credits_text
 from .services.timeline import service as timeline
+from .services.voice import elevenlabs
 from .services.voice import service as voice
 from .services.voice.models import DEFAULT_VOICE
 
 INSTRUCTIONS = """Guionaria convierte una idea en un video listo para editar, por etapas:
-guion → escenas → medios → voz → timeline. Cada etapa se aprueba antes de pasar a la siguiente.
-Tú redactas el guion y las escenas y los guardas con save_script y save_scenes: la app no vuelve
-a llamar a Claude. Usa get_project para ver el estado y el paso siguiente. Las herramientas que
-devuelven un trabajo (job) corren en segundo plano: consulta su avance con job_status.
-Escribe el guion y las escenas en el idioma del canal (normalmente español)."""
+guion → escenas → medios → voz → timeline → render. Cada etapa se aprueba antes de pasar a la
+siguiente. Tú redactas el guion y las escenas y los guardas con save_script y save_scenes: la app
+no vuelve a llamar a Claude. Usa get_project para ver el estado y el paso siguiente.
+Medios: busca con search_media, elige con choose_media (el primero es el principal) y baja todo
+con download_and_approve; afina el momento exacto de un video con set_trim.
+Voz: generate_voice con Piper (gratis) o ElevenLabs (list_elevenlabs_voices para elegir la voz).
+Render: render_video con quality (draft, standard, high, max) y subtitle_preset (reel, clasico,
+caja); cancel_job lo detiene. Las herramientas que devuelven un trabajo (job) corren en segundo
+plano: consulta su avance con job_status. Escribe el guion y las escenas en el idioma del canal
+(normalmente español). La revisión visual final conviene hacerla en la app."""
 
 NEXT_STEP = {
     ProjectStatus.IDEA: "Redacta el guion y guárdalo con save_script; luego approve_script.",
@@ -53,15 +60,22 @@ NEXT_STEP = {
     ProjectStatus.GUION_APROBADO: "Redacta las escenas y guárdalas con save_scenes.",
     ProjectStatus.ESCENAS_BORRADOR: "Revisa las escenas y apruébalas con approve_scenes.",
     ProjectStatus.ESCENAS_APROBADAS: (
-        "Para cada escena de list_pending: search_media, select_candidates y approve_media."
+        "Para cada escena de list_pending: search_media y choose_media; después "
+        "download_and_approve para bajar y aprobar todo junto."
     ),
     ProjectStatus.MEDIOS_EN_REVISION: (
-        "Completa las escenas de list_pending y luego aprueba todo con approve_all_media."
+        "Completa las escenas de list_pending (choose_media + download_and_approve) y luego "
+        "cierra la etapa con approve_all_media."
     ),
     ProjectStatus.MEDIOS_APROBADOS: (
-        "Genera la voz con generate_voice, o importa una grabación (import_voice) y transcríbela."
+        "Genera la voz con generate_voice (Piper o ElevenLabs), o importa una grabación "
+        "(import_voice) y transcríbela."
     ),
-    ProjectStatus.VOZ_LISTA: "Exporta el timeline con export_timeline.",
+    ProjectStatus.VOZ_LISTA: (
+        "Afina tramos con set_trim si hace falta y renderiza con render_video "
+        "(o exporta el timeline con export_timeline)."
+    ),
+    ProjectStatus.TIMELINE_LISTO: "Renderiza con render_video.",
 }
 
 SAVE_SCENES_DOC = (
@@ -73,9 +87,31 @@ SAVE_SCENES_DOC = (
     f"sin escenas o con escenas para revisar. Efectos: {', '.join(EFFECTS)}."
 )
 GENERATE_VOICE_DOC = (
-    "Genera la voz con Piper (local y gratis) segmento por segmento y aplica los tiempos reales "
-    f"a las escenas. voice_id: por defecto la del canal o {DEFAULT_VOICE}. Devuelve el job."
+    "Genera la voz segmento por segmento y aplica los tiempos reales a las escenas. "
+    "engine=piper (local y gratis; voice_id: por defecto la del canal o "
+    f"{DEFAULT_VOICE}) o engine=elevenlabs (profesional, requiere su clave; voice_id de "
+    "list_elevenlabs_voices, model_id, stability, similarity_boost, style; subtítulos exactos "
+    "por palabra). El plan gratuito de ElevenLabs no permite uso comercial. Devuelve el job."
 )
+
+# Estilos rápidos de subtítulos (los mismos que en la app).
+SUBTITLE_PRESETS: dict[str, dict[str, Any]] = {
+    "reel": {
+        "font": "Montserrat", "italic": True, "edge": "shadow", "animation": "pop",
+        "uppercase": True, "highlight": True, "highlight_color": "#FFD400",
+        "text_color": "#FFFFFF", "background": False,
+    },
+    "clasico": {
+        "font": "Arial", "italic": False, "edge": "outline", "animation": "none",
+        "uppercase": True, "highlight": True, "highlight_color": "#FFD400",
+        "text_color": "#FFFFFF", "background": False,
+    },
+    "caja": {
+        "font": "Arial", "italic": False, "edge": "outline", "animation": "none",
+        "uppercase": False, "highlight": True, "highlight_color": "#FFD400",
+        "text_color": "#FFFFFF", "background": True,
+    },
+}  # fmt: skip
 
 
 def _session() -> Session:
@@ -461,6 +497,31 @@ def build_mcp() -> MCPServer:
         return _job_summary(job)
 
     @tool
+    def choose_media(scene_id: int, candidate_ids: list[int]) -> dict[str, Any]:
+        """Marca candidatos como elegidos (en ese orden: el primero será el principal) sin
+        descargarlos todavía. Después usa download_and_approve para bajar lo elegido de todas
+        las escenas a la vez."""
+        with _session() as s:
+            result = None
+            for cid in candidate_ids:
+                result = media.select_candidate(s, scene_id, cid, True)
+            return _scene_media(result or media.scene_media(s, scene_id))
+
+    @tool
+    def download_and_approve(project_id: int) -> dict[str, Any]:
+        """Descarga lo elegido (choose_media) en todas las escenas y deja como principal el primero
+        elegido de cada escena sin medio. El resultado incluye «trim»: videos más largos que su
+        escena, candidatos a set_trim. Devuelve el job."""
+        with _session() as s:
+            if not media.media_overview(s, project_id).editable:
+                raise DomainError("Los medios están aprobados: desbloquéalos para cambiarlos")
+
+        async def work(ctx: JobContext) -> dict:
+            return await media.download_selected(_session, project_id, ctx)
+
+        return _job_summary(jobs.jobs.submit("download_selected", work, project_id=project_id))
+
+    @tool
     def search_library(
         query: str | None = None,
         kind: Literal["image", "video"] | None = None,
@@ -533,6 +594,41 @@ def build_mcp() -> MCPServer:
             state, pending = framing.save_framing(s, scene_id, asset_id, data)
             scene = media.get_scene(s, scene_id)
         out: dict[str, Any] = {"framing": state.model_dump()}
+        if pending:
+
+            async def work(ctx: JobContext) -> dict:
+                return await framing.render_framed_video(_session, scene_id, asset_id, ctx)
+
+            job = jobs.jobs.submit(
+                "frame_media",
+                work,
+                project_id=scene.project_id,
+                payload={"scene_id": scene_id, "asset_id": asset_id},
+                exclusive=False,
+            )
+            out["job"] = _job_summary(job)
+        return out
+
+    @tool
+    def set_trim(
+        scene_id: int, asset_id: int, trim_in_s: float | None, trim_out_s: float | None
+    ) -> dict[str, Any]:
+        """Tramo del video aprobado de una escena (el momento exacto que se usa), sin cambiar su
+        encuadre. Funciona también con los medios ya aprobados. null en ambos = clip completo.
+        Mira get_project (duración de cada escena) para elegir un tramo del mismo largo."""
+        with _session() as s:
+            current = framing.get_framing(s, scene_id, asset_id)
+            data = framing.FramingIn(
+                mode=current.mode, crop=current.crop, trim_in_s=trim_in_s, trim_out_s=trim_out_s
+            )
+            state, pending = framing.save_framing(s, scene_id, asset_id, data)
+            scene = media.get_scene(s, scene_id)
+        out: dict[str, Any] = {
+            "trim_in_s": state.trim_in_s,
+            "trim_out_s": state.trim_out_s,
+            "source_duration_s": state.source_duration_s,
+            "scene_duration_s": state.scene_duration_s,
+        }
         if pending:
 
             async def work(ctx: JobContext) -> dict:
@@ -657,19 +753,63 @@ def build_mcp() -> MCPServer:
     @tool(description=GENERATE_VOICE_DOC)
     def generate_voice(
         project_id: int,
-        engine: Literal["piper"] = "piper",
+        engine: Literal["piper", "elevenlabs"] = "piper",
         voice_id: str | None = None,
         speed: Annotated[float, Field(ge=0.7, le=1.4)] = 1.0,
         pause_s: Annotated[float, Field(ge=0, le=2)] = voice.DEFAULT_PAUSE_S,
+        model_id: str = elevenlabs.DEFAULT_MODEL,
+        stability: Annotated[float, Field(ge=0, le=1)] = 0.5,
+        similarity_boost: Annotated[float, Field(ge=0, le=1)] = 0.75,
+        style: Annotated[float, Field(ge=0, le=1)] = 0.0,
     ) -> dict[str, Any]:
         with _session() as s:
             voice._require_ready(s, projects.get_project(s, project_id))
+        eleven = None
+        if engine == "elevenlabs":
+            prefs = load_settings().elevenlabs
+            chosen = voice_id or prefs.voice_id
+            if not chosen:
+                raise DomainError("Indica voice_id (usa list_elevenlabs_voices)")
+            eleven = elevenlabs.ElevenSettings(
+                voice_id=chosen,
+                model_id=model_id,
+                stability=stability,
+                similarity_boost=similarity_boost,
+                style=style,
+                speed=min(max(speed, 0.7), 1.2),
+            )
 
         async def work(ctx: JobContext) -> dict:
-            return await voice.generate_voice(_session, project_id, voice_id, speed, pause_s, ctx)
+            return await voice.generate_voice(
+                _session, project_id, voice_id, speed, pause_s, ctx, engine=engine, eleven=eleven
+            )
 
         job = jobs.jobs.submit("voice", work, project_id=project_id, payload={"action": "generate"})
         return _job_summary(job)
+
+    @tool
+    async def list_elevenlabs_voices(query: str | None = None) -> dict[str, Any]:
+        """Voces de la cuenta de ElevenLabs (propias, clonadas y de la biblioteca añadidas a «My
+        Voices») y los créditos que quedan este mes. query filtra por nombre, acento, género…"""
+        voices = await elevenlabs.list_voices()
+        q = (query or "").lower()
+        found = [
+            v
+            for v in voices
+            if not q or q in " ".join([v.name, v.description or "", *v.labels.values()]).lower()
+        ]
+        try:
+            account = (await elevenlabs.account()).model_dump()
+        except DomainError:
+            account = None
+        return {
+            "voices": [
+                {"voice_id": v.voice_id, "name": v.name, "category": v.category, "labels": v.labels}
+                for v in found
+            ],
+            "models": [m.model_dump() for m in elevenlabs.MODELS],
+            "account": account,
+        }
 
     @tool
     def import_voice(project_id: int, path: str) -> dict[str, Any]:
@@ -717,20 +857,45 @@ def build_mcp() -> MCPServer:
 
     @tool
     def render_video(
-        project_id: int, draft: bool = False, burn_subtitles: bool | None = None
+        project_id: int,
+        quality: Literal["draft", "standard", "high", "max"] | None = None,
+        burn_subtitles: bool | None = None,
+        subtitle_preset: Literal["reel", "clasico", "caja"] | None = None,
+        subtitle_style: SubtitleStyle | None = None,
+        draft: bool = False,
     ) -> dict[str, Any]:
-        """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos
-        quemados en reels). draft=true: borrador a 720p, más rápido. Devuelve el job."""
+        """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos).
+        quality: draft (720p rápido), standard (1080p), high (1080p nítido), max (4K reescalado,
+        YouTube le da más bitrate). burn_subtitles: por defecto sí en reels. Estilo de subtítulos:
+        subtitle_preset (reel = Montserrat cursiva con sombra y pop; clasico; caja) o
+        subtitle_style completo; sin ninguno, el último usado. Cancelable con cancel_job."""
         from .services.render import service as render
 
         with _session() as s:
             projects.get_project(s, project_id)
+        level = quality or ("draft" if draft else "standard")
+        style = subtitle_style
+        if subtitle_preset:
+            base = (subtitle_style or load_settings().subtitle_style).model_dump()
+            style = SubtitleStyle(**{**base, **SUBTITLE_PRESETS[subtitle_preset]})
 
         async def work(ctx: JobContext) -> dict:
-            return await render.render_project(_session, project_id, draft, burn_subtitles, ctx)
+            return await render.render_project(
+                _session, project_id, level, burn_subtitles, ctx, style=style
+            )
 
-        job = jobs.jobs.submit("render", work, project_id=project_id, payload={"draft": draft})
+        job = jobs.jobs.submit(
+            "render",
+            work,
+            project_id=project_id,
+            payload={"quality": level, "draft": level == "draft"},
+        )
         return _job_summary(job)
+
+    @tool
+    def cancel_job(job_id: int) -> dict[str, Any]:
+        """Detiene un trabajo en curso (por ahora, el render). El render anterior se conserva."""
+        return _job_summary(jobs.jobs.cancel(job_id))
 
     @tool
     def get_credits(project_id: int) -> str:
@@ -744,7 +909,8 @@ def build_mcp() -> MCPServer:
 
     @tool
     def job_status(job_id: int) -> dict[str, Any]:
-        """Estado y avance de un trabajo en segundo plano (descargas, voz, transcripción)."""
+        """Estado y avance de un trabajo en segundo plano (descargas, voz, render…). status:
+        queued, running, done, failed o cancelled."""
         return _job_summary(jobs.get_job(job_id))
 
     # --- recursos de solo lectura ---
