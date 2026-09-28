@@ -213,6 +213,8 @@ export interface Project extends ProjectInput {
   updated_at: string;
   /** Ficha de «Investigar con fuentes». */
   research?: Research | null;
+  /** Plataformas activas de la publicación: estado y enlace publicado. */
+  publications?: { platform: string; status: string; url: string | null }[];
 }
 
 export interface SegmentInput {

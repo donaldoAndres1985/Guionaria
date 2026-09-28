@@ -6,6 +6,7 @@ import { BottomBar } from "@/components/layout/BottomBar";
 import { ChannelSelector } from "@/components/layout/ChannelSelector";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
+import { PublishBadges } from "@/features/publishing/PublishBadges";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { Button } from "@/components/ui/button";
 import { useChannels } from "@/hooks/useChannels";
@@ -144,7 +145,10 @@ export function ProjectsPage() {
                   </td>
                   <td className="truncate px-3 text-muted-foreground">{p.channel_name}</td>
                   <td className="px-3">
-                    <StatusBadge status={p.status} />
+                    <span className="flex flex-col items-start gap-1">
+                      <StatusBadge status={p.status} />
+                      <PublishBadges project={p} />
+                    </span>
                   </td>
                   <td className="px-3 font-mono text-[12px]">{formatDuration(p.target_duration_s)}</td>
                   <td

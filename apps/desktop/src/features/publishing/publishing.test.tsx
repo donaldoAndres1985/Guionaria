@@ -6,6 +6,7 @@ import type { Project, Publication, PublishingState, QueueItem } from "@/lib/api
 import { PublishingPage } from "@/pages/Publishing";
 import { PublishBottomBar, PublishStage, usePublishController } from "./PublishStage";
 import { kitSteps, kitSummary } from "./ManualKit";
+import { PublishBadges, publishProgress } from "./PublishBadges";
 import { fromLocalInput, splitList, toLocalInput } from "./publishingMeta";
 
 const project = { id: 7, title: "El secuestro", status: "RENDERIZADO", format: "reel", channel_id: 1 } as Project;
@@ -257,6 +258,21 @@ describe("publicación", () => {
     expect(uploads()).toHaveLength(3);
   });
 
+  it("publicado: se ve el enlace, se puede cambiar y copiar", async () => {
+    state = baseState({
+      publications: [publication({ status: "published", external_url: "https://youtu.be/abc", published_at: "2026-09-28T17:30:00+00:00" })],
+    });
+    renderStage();
+    const box = await screen.findByLabelText("Publicado en YouTube");
+    expect(within(box).getByText("https://youtu.be/abc")).toBeTruthy();
+    fireEvent.click(within(box).getByText("Cambiar enlace"));
+    fireEvent.change(within(box).getByLabelText("Enlace publicado en YouTube"), { target: { value: "https://youtube.com/shorts/abc" } });
+    fireEvent.click(within(box).getByText("Guardar enlace"));
+    await waitFor(() =>
+      expect(calls).toContainEqual({ method: "POST", path: "/api/publications/1:published", body: { url: "https://youtube.com/shorts/abc" } }),
+    );
+  });
+
   it("generar los textos con Claude desde la barra inferior", async () => {
     renderStage();
     fireEvent.click(await screen.findByText("Regenerar textos con Claude"));
@@ -432,6 +448,26 @@ describe("kit de publicación manual", () => {
     expect(summary).toContain("TÍTULO:\nEl secuestro que nadie vio");
     expect(summary).toContain("ETIQUETAS:\ncaso priscila");
     expect(summary).toContain("VIDEO: C:\\Guionaria\\proyecto.mp4");
+  });
+});
+
+describe("avance de la publicación en las listas", () => {
+  it("un punto por plataforma y cuántas están publicadas", () => {
+    const project = {
+      publications: [
+        { platform: "youtube", status: "published", url: "https://youtu.be/x" },
+        { platform: "tiktok", status: "scheduled", url: null },
+        { platform: "facebook", status: "draft", url: null },
+      ],
+    };
+    expect(publishProgress(project)).toEqual({ done: 1, total: 3 });
+    render(<PublishBadges project={project} />);
+    const badges = screen.getByTestId("publish-badges");
+    expect(badges.textContent).toBe("1/3");
+    expect(screen.getByLabelText("YouTube: publicado")).toBeTruthy();
+    expect(screen.getByLabelText("TikTok: programado")).toBeTruthy();
+    expect(badges.getAttribute("title")).toBe("YouTube: publicado · TikTok: programado · Facebook: pendiente");
+    cleanup();
   });
 });
 

@@ -33,6 +33,14 @@ class ProjectUpdate(BaseModel):
     tags: list[str] | None = None
 
 
+class PublishBadge(BaseModel):
+    """Una plataforma activa del proyecto: estado y enlace (para listas y paneles)."""
+
+    platform: str
+    status: str  # draft | scheduled | uploading | published | failed
+    url: str | None = None
+
+
 class ProjectRead(BaseModel):
     id: int
     channel_id: int
@@ -53,3 +61,4 @@ class ProjectRead(BaseModel):
     created_at: str
     updated_at: str
     research: ResearchRead | None = None  # ficha de «Investigar con fuentes»
+    publications: list[PublishBadge] = Field(default_factory=list)  # plataformas activas

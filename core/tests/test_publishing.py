@@ -148,11 +148,32 @@ def test_schedule_publish_and_project_status(client, pub_project):
         f"/api/publications/{yt['id']}", json={"scheduled_at": when, "made_for_kids": False}
     ).json()
     assert state["publications"][0]["status"] == "scheduled"
-    assert status_of(client, pid) == "RENDERIZADO"  # TikTok sigue pendiente
+    assert status_of(client, pid) == "PROGRAMADO"  # hay una plataforma con fecha
 
-    # TikTok fuera («publicar en» apagado): todo lo activo está programado.
+    # Publicado en una plataforma: el proyecto ya está publicado (las listas muestran 1/2).
+    client.post(f"/api/publications/{tt['id']}:published", json={"url": "https://tiktok.com/@x/1"})
+    assert status_of(client, pid) == "PUBLICADO"
+    badges = client.get(f"/api/projects/{pid}").json()["publications"]
+    assert badges == [
+        {"platform": "youtube", "status": "scheduled", "url": None},
+        {"platform": "tiktok", "status": "published", "url": "https://tiktok.com/@x/1"},
+    ]
+    listed = next(p for p in client.get("/api/projects").json() if p["id"] == pid)
+    assert [b["status"] for b in listed["publications"]] == ["scheduled", "published"]
+    # Cambiar solo el enlace conserva la fecha de publicación.
+    first = state_of(client, pid)["publications"][1]["published_at"]
+    state = client.post(
+        f"/api/publications/{tt['id']}:published", json={"url": "https://tiktok.com/@x/2"}
+    ).json()
+    assert state["publications"][1]["external_url"] == "https://tiktok.com/@x/2"
+    assert state["publications"][1]["published_at"] == first
+
+    # TikTok fuera («publicar en» apagado): solo queda YouTube, programado.
     client.patch(f"/api/publications/{tt['id']}", json={"enabled": False})
     assert status_of(client, pid) == "PROGRAMADO"
+    assert [b["platform"] for b in client.get(f"/api/projects/{pid}").json()["publications"]] == [
+        "youtube"
+    ]
 
     bad = client.post(f"/api/publications/{yt['id']}:published", json={"url": "youtube.com/x"})
     assert bad.status_code in (400, 422)
@@ -371,8 +392,8 @@ def test_upload_scheduled_short_with_thumbnail_captions_and_playlist(
     state = state_of(client, pid)
     yt = state["publications"][0]
     assert (yt["status"], yt["external_url"]) == ("scheduled", "https://youtube.com/shorts/vid123")
-    # TikTok sigue en borrador: el proyecto no pasa a PROGRAMADO hasta que esté todo.
-    assert status_of(client, pid) == "RENDERIZADO"
+    # Programado en YouTube (TikTok sigue en borrador).
+    assert status_of(client, pid) == "PROGRAMADO"
 
 
 def test_upload_errors_and_private_until_audit(client, pub_project, channel, google, no_browser):
@@ -678,3 +699,24 @@ def test_manual_kit_caption_and_files(client, pub_project, fake_claude, no_brows
     assert missing.status_code == 404 and "subtítulos" in missing.json()["detail"]
     assert client.post(f"/api/projects/{pid}/publishing:reveal").status_code == 204
     assert no_browser[-1].endswith("publicacion")
+
+
+def test_status_is_recalculated_on_startup(client, pub_project):
+    from sqlmodel import select
+
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Project, Publication
+    from guionaria_core.services.publishing.service import resync_statuses
+
+    pid = pub_project["id"]
+    state_of(client, pid)  # crea las filas
+    with Session(get_engine()) as s:
+        pub = s.exec(select(Publication).where(Publication.project_id == pid)).first()
+        pub.status, pub.external_url = (
+            "published",
+            "https://youtu.be/x",
+        )  # regla vieja: sin tocar el proyecto
+        s.commit()
+        assert s.get(Project, pid).status == "RENDERIZADO"
+        assert resync_statuses(s) == 1
+        assert s.get(Project, pid).status == "PUBLICADO"

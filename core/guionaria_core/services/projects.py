@@ -8,9 +8,15 @@ from sqlmodel import Session, col, select
 
 from ..config import get_paths
 from ..domain.states import ProjectStatus
-from ..models import Channel, Project
+from ..models import Channel, Project, Publication
 from ..models._base import now_iso
-from ..schemas.project import DEFAULT_DURATION_S, ProjectCreate, ProjectRead, ProjectUpdate
+from ..schemas.project import (
+    DEFAULT_DURATION_S,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+    PublishBadge,
+)
 from ..util.slug import slugify
 from .channels import get_channel
 from .errors import Conflict, NotFound
@@ -32,10 +38,33 @@ def project_dir(project: Project) -> Path:
     return get_paths().home / project.folder_path
 
 
-def to_read(project: Project, channel: Channel) -> ProjectRead:
+PLATFORM_ORDER = ("youtube", "tiktok", "instagram", "facebook")
+
+
+def publish_badges(session: Session, ids: list[int]) -> dict[int, list[PublishBadge]]:
+    """Plataformas activas de cada proyecto con su estado y enlace."""
+    if not ids:
+        return {}
+    rows = session.exec(
+        select(Publication).where(col(Publication.project_id).in_(ids), Publication.enabled)
+    ).all()
+    out: dict[int, list[PublishBadge]] = {}
+    for r in sorted(
+        rows, key=lambda r: PLATFORM_ORDER.index(r.platform) if r.platform in PLATFORM_ORDER else 9
+    ):
+        out.setdefault(r.project_id, []).append(
+            PublishBadge(platform=r.platform, status=r.status or "draft", url=r.external_url)
+        )
+    return out
+
+
+def to_read(
+    project: Project, channel: Channel, badges: list[PublishBadge] | None = None
+) -> ProjectRead:
     from .research import read_research  # import local: research usa este módulo
 
     return ProjectRead(
+        publications=badges or [],
         research=read_research(project.research_json),
         id=project.id,
         channel_id=project.channel_id,
@@ -68,7 +97,8 @@ def get_project(session: Session, project_id: int) -> Project:
 
 def read_project(session: Session, project_id: int) -> ProjectRead:
     project = get_project(session, project_id)
-    return to_read(project, get_channel(session, project.channel_id))
+    badges = publish_badges(session, [project.id]).get(project.id)
+    return to_read(project, get_channel(session, project.channel_id), badges)
 
 
 def _fts_query(q: str) -> str | None:
@@ -98,7 +128,8 @@ def list_projects(
         ).all()
         stmt = stmt.where(Project.id.in_([row[0] for row in ids]))
     rows = session.exec(stmt.order_by(Project.updated_at.desc())).all()
-    return [to_read(p, c) for p, c in rows]
+    badges = publish_badges(session, [p.id for p, _c in rows])
+    return [to_read(p, c, badges.get(p.id)) for p, c in rows]
 
 
 def index_fts(session: Session, project: Project, script_text: str | None = None) -> None:
