@@ -71,6 +71,14 @@ class ApiKeys(BaseModel):
     elevenlabs: str = ""
 
 
+class YouTubeApp(BaseModel):
+    """Cliente OAuth de Google (tipo «App de escritorio») para subir a YouTube. Lo crea cada
+    usuario gratis en Google Cloud; los accesos de cada canal van en config/youtube.json."""
+
+    client_id: str = ""
+    client_secret: str = ""
+
+
 class ElevenLabsPrefs(BaseModel):
     """Últimos ajustes usados con ElevenLabs (se proponen al volver a generar)."""
 
@@ -163,6 +171,7 @@ class AppSettings(BaseModel):
     text_style: TextStyle = Field(default_factory=TextStyle)
     transitions: TransitionPrefs = Field(default_factory=TransitionPrefs)
     look: VideoLook = Field(default_factory=VideoLook)
+    youtube: YouTubeApp = Field(default_factory=YouTubeApp)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

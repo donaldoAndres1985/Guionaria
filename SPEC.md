@@ -871,6 +871,10 @@ Encabezado de cada pantalla: título a la izquierda; a la derecha, **selector de
 ### Fase 4 — Render automático
 - [x] Render con FFmpeg: efectos por escena, texto, voz + SFX + música con ducking, subtítulos quemados, borrador 720p y miniatura.
 ### Fase 5 — Publicación y analítica
+- [x] Paquete de publicación: metadatos por plataforma con Claude (3 títulos, descripción, hashtags, etiquetas, comentario fijado, capítulos), créditos agregados por la app, miniatura desde un cuadro, lista de verificación por canal, cola por canal con fecha y estado, publicar a mano con la URL publicada (PROGRAMADO / PUBLICADO).
+- [x] YouTube directo: OAuth de app de escritorio (127.0.0.1 + PKCE), subida reanudable, fecha programada (`publishAt`), miniatura, subtítulos SRT, playlist, contenido para niños y contenido sintético.
+- [ ] Analítica de YouTube que retroalimenta los prompts del canal.
+- [ ] TikTok (borradores) y Meta (Reels / Facebook).
 
 ---
 

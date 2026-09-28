@@ -16,6 +16,7 @@ PROMPTS: dict[str, str] = {
     "escenas": "Generar escenas",
     "busquedas_alternativas": "Sugerir búsquedas",
     "investigacion": "Investigar con fuentes",
+    "metadatos_publicacion": "Metadatos de publicación",
 }
 
 

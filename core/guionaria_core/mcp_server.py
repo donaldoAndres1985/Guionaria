@@ -27,6 +27,7 @@ from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
 from .schemas.project import ProjectCreate
+from .schemas.publishing import PublicationUpdate
 from .schemas.scene import EFFECTS, EscenaClaude, SceneUpdate
 from .schemas.script import SegmentIn
 from .services import channels, ideas, jobs, library, projects, script, sounds
@@ -647,6 +648,75 @@ def build_mcp() -> MCPServer:
             )
             out["job"] = _job_summary(job)
         return out
+
+    # --- publicación ---
+
+    @tool
+    def get_publishing(project_id: int) -> dict[str, Any]:
+        """Estado de la publicación del proyecto: una entrada por plataforma del canal con
+        título, descripción, hashtags, fecha programada, estado, lista de verificación y el
+        texto listo para pegar (con los créditos). Incluye si el canal tiene YouTube conectado."""
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            return pub_svc.publishing_state(s, project_id).model_dump()
+
+    @tool
+    def prepare_publication(project_id: int) -> dict[str, Any]:
+        """Pide a Claude títulos (3 opciones), descripción, hashtags, etiquetas y comentario
+        fijado para cada plataforma activa, a partir del guion y la ficha verificada. Devuelve
+        el job; luego mira get_publishing."""
+        from .services.llm.claude_cli import get_runner
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            projects.get_project(s, project_id)
+        runner = get_runner()
+
+        async def work(ctx: JobContext) -> dict:
+            return await pub_svc.generate_metadata(_session, project_id, runner, ctx)
+
+        return _job_summary(jobs.jobs.submit("publishing_metadata", work, project_id=project_id))
+
+    @tool
+    def update_publication(publication_id: int, changes: PublicationUpdate) -> dict[str, Any]:
+        """Cambia una publicación: enabled («publicar en»), title, description, tags, hashtags,
+        pinned_comment, visibility, scheduled_at (ISO; fecha futura), made_for_kids, synthetic,
+        playlist_id, captions o checks ({id: true} de la lista de verificación)."""
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            return pub_svc.update_publication(s, publication_id, changes).model_dump()
+
+    @tool
+    def mark_published(publication_id: int, url: str) -> dict[str, Any]:
+        """Marca como publicada a mano (TikTok, Instagram, Facebook) con su dirección."""
+        from .services.publishing import service as pub_svc
+
+        with _session() as s:
+            return pub_svc.mark_published(s, publication_id, url).model_dump()
+
+    @tool
+    def upload_to_youtube(publication_id: int) -> dict[str, Any]:
+        """Sube el video final a YouTube con sus metadatos, fecha programada, miniatura,
+        subtítulos y playlist. Requiere el canal conectado en la app y decidir made_for_kids.
+        Gasta unas 1600 unidades de la cuota diaria gratuita (≈6 subidas al día)."""
+        from .models import Publication
+        from .services.publishing import youtube
+
+        with _session() as s:
+            pub = s.get(Publication, publication_id)
+            if not pub:
+                raise NotFound("No existe esa publicación")
+            project_id = pub.project_id
+
+        async def work(ctx: JobContext) -> dict:
+            return await youtube.upload(_session, publication_id, ctx)
+
+        job = jobs.jobs.submit(
+            "publish", work, project_id=project_id, payload={"publication_id": publication_id}
+        )
+        return _job_summary(job)
 
     @tool
     def set_transitions(

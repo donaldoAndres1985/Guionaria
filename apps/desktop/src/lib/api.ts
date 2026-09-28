@@ -146,6 +146,8 @@ export interface AppSettings {
   research_max_searches?: number;
   subtitle_style?: SubtitleStyle;
   text_style?: TextStyle;
+  /** Cliente OAuth de Google (app de escritorio) para subir a YouTube. */
+  youtube?: { client_id: string; client_secret: string };
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -1002,4 +1004,104 @@ export interface RenderState {
   duration_s: number;
   scenes: number;
   files: RenderFile[];
+}
+
+// --- publicación ---
+
+export type PublishPlatform = "youtube" | "tiktok" | "instagram" | "facebook";
+export type PublicationStatus = "draft" | "scheduled" | "uploading" | "published" | "failed";
+
+export interface PublicationMeta {
+  title_options: string[];
+  hashtags: string[];
+  pinned_comment: string | null;
+  chapters: { tiempo: string; titulo: string }[];
+  made_for_kids: boolean | null;
+  synthetic: boolean;
+  playlist_id: string | null;
+  captions: boolean;
+  category_id: string;
+  thumbnail_time_s: number | null;
+  thumbnail_text: string | null;
+  checks: Record<string, boolean>;
+  warning: string | null;
+}
+
+export interface CheckItem {
+  id: string;
+  label: string;
+  done: boolean;
+  manual: boolean;
+  hint: string | null;
+}
+
+export interface Publication {
+  id: number;
+  platform: PublishPlatform;
+  label: string;
+  enabled: boolean;
+  title: string;
+  description: string;
+  tags: string[];
+  visibility: "public" | "unlisted" | "private";
+  scheduled_at: string | null;
+  published_at: string | null;
+  external_url: string | null;
+  status: PublicationStatus;
+  error: string | null;
+  meta: PublicationMeta;
+  checklist: CheckItem[];
+  limits: { title: number; description: number; tags: number; hashtags: number };
+  full_text: string;
+  upload_url: string;
+  thumbnail_url: string | null;
+}
+
+export interface PublishingState {
+  project_id: number;
+  channel_id: number;
+  channel_name: string;
+  format: "video" | "reel";
+  can_publish: boolean;
+  reason: string | null;
+  video_url: string | null;
+  video_file: string | null;
+  subtitles: boolean;
+  credits: string;
+  publications: Publication[];
+  youtube: { configured: boolean; connected: boolean; account: string | null; redirect_uri: string };
+}
+
+export interface PublicationUpdate {
+  enabled?: boolean;
+  title?: string;
+  description?: string;
+  tags?: string[];
+  hashtags?: string[];
+  pinned_comment?: string | null;
+  visibility?: Publication["visibility"];
+  scheduled_at?: string;
+  clear_schedule?: boolean;
+  made_for_kids?: boolean;
+  synthetic?: boolean;
+  playlist_id?: string | null;
+  captions?: boolean;
+  category_id?: string;
+  checks?: Record<string, boolean>;
+}
+
+export interface QueueItem {
+  id: number;
+  project_id: number;
+  project_title: string;
+  channel_id: number;
+  channel_name: string;
+  platform: PublishPlatform;
+  label: string;
+  title: string;
+  status: PublicationStatus;
+  scheduled_at: string | null;
+  published_at: string | null;
+  external_url: string | null;
+  target_publish_at: string | null;
 }
