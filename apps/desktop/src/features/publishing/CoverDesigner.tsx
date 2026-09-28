@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { coreUrl, type CoverDesign, type PublishingState } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useImagePreview } from "./ImagePreview";
 import type { PublishController } from "./PublishStage";
 
 const TEMPLATES: { id: CoverDesign["plantilla"]; label: string }[] = [
@@ -27,6 +28,7 @@ export function CoverDesigner({ state, ctl }: { state: PublishingState; ctl: Pub
   useEffect(() => setDesign(option?.design ?? null), [option?.url, option?.design]);
   const job = ctl.coverJob;
   const portrait = state.format === "reel";
+  const preview = useImagePreview();
 
   return (
     <div className="grid gap-2" aria-label="Miniatura con Claude">
@@ -47,24 +49,30 @@ export function CoverDesigner({ state, ctl }: { state: PublishingState; ctl: Pub
                 role="radio"
                 aria-checked={o.index === option?.index}
                 aria-label={`Propuesta ${o.index}: ${o.design.texto}`}
+                title="Doble clic: ver grande"
                 onClick={() => setSelected(o.index)}
-                className={cn("overflow-hidden rounded border-2", o.index === option?.index ? "border-brand" : "border-transparent hover:border-border")}
+                onDoubleClick={() => preview({ url: coreUrl(o.url) ?? "", title: `Propuesta ${o.index}: ${o.design.texto}` })}
+                className={cn(
+                  "min-w-0 cursor-zoom-in overflow-hidden rounded border-2",
+                  o.index === option?.index ? "border-brand" : "border-transparent hover:border-border",
+                )}
               >
-                <img src={coreUrl(o.url) ?? ""} alt={o.design.texto} className="w-full" />
+                <img src={coreUrl(o.url) ?? ""} alt={o.design.texto} className="block w-full" />
               </button>
             ))}
           </div>
+          <p className="text-[11px] text-subtle">Clic: elegir para retocar · doble clic: ver grande</p>
           {option && design && (
-            <div className="grid gap-2 rounded-md border p-2 text-[12px]" aria-label="Retocar propuesta">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-2 rounded-md border p-2 text-[12px]" aria-label="Retocar propuesta">
               {option.design.por_que && <p className="text-[11px] text-subtle">{option.design.por_que}</p>}
               <Input aria-label="Texto de la miniatura" value={design.texto} onChange={(e) => setDesign({ ...design, texto: e.target.value })} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 [&>*]:min-w-0">
                 <Input aria-label="Palabra resaltada" placeholder="Resaltar" value={design.resaltar ?? ""} onChange={(e) => setDesign({ ...design, resaltar: e.target.value || null })} />
                 <Input aria-label="Rótulo" placeholder="Rótulo" value={design.etiqueta ?? ""} onChange={(e) => setDesign({ ...design, etiqueta: e.target.value || null })} />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Select value={design.plantilla} onValueChange={(v) => setDesign({ ...design, plantilla: v as CoverDesign["plantilla"] })}>
-                  <SelectTrigger className="h-8 flex-1" aria-label="Plantilla">
+                  <SelectTrigger className="h-8 min-w-0 flex-1" aria-label="Plantilla">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -87,7 +95,7 @@ export function CoverDesigner({ state, ctl }: { state: PublishingState; ctl: Pub
                   />
                 ))}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   variant="outline"
