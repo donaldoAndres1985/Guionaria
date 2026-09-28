@@ -88,7 +88,7 @@ describe("publicación", () => {
         if (url.pathname === "/api/settings") {
           return ok(method === "PUT" ? body : { youtube: { client_id: "", client_secret: "" }, api_keys: {} });
         }
-        if (url.pathname.endsWith(":upload") || url.pathname.endsWith(":generate")) {
+        if (url.pathname.endsWith(":upload") || url.pathname.endsWith(":generate") || url.pathname.endsWith(":titles") || url.pathname.endsWith("cover:design")) {
           return ok({ id: 50, type: "publish", project_id: 7, status: "queued", progress: 0, created_at: "" }, 202);
         }
         if (url.pathname === "/api/jobs/50") return ok({ id: 50, type: "publish", project_id: 7, status: "running", progress: 0.4, message: "Subiendo a YouTube… 40 %", created_at: "" });
@@ -216,6 +216,107 @@ describe("publicación", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/projects/7/publishing:generate")).toBe(true));
     expect(screen.getByText("YouTube · TikTok")).toBeTruthy();
     expect(screen.getByText("0/2")).toBeTruthy();
+  });
+});
+
+describe("títulos con gancho y miniatura con Claude", () => {
+  let state: PublishingState;
+  let calls: { method: string; path: string; body: unknown }[];
+
+  beforeEach(() => {
+    calls = [];
+    const pub = publication();
+    state = baseState({
+      publications: [
+        {
+          ...pub,
+          meta: {
+            ...pub.meta,
+            title_ideas: [
+              { title: "36 días creyendo que fue un accidente", hook: "Cifra concreta", why: "Dato real y verificable." },
+              { title: "¿Quién movió el cuerpo?", hook: "Pregunta abierta", why: "Intriga." },
+            ],
+          },
+        },
+      ],
+      cover_options: [
+        { index: 1, url: "/api/projects/7/publishing/cover/1?v=1", design: { cuadro: 1, plantilla: "impacto", texto: "¿Un accidente?", resaltar: "accidente", etiqueta: "Caso real", color: "#FFD400", foco_x: 0.4, foco_y: 0.3, por_que: "El rostro se ve claro." } },
+        { index: 2, url: "/api/projects/7/publishing/cover/2?v=1", design: { cuadro: 2, plantilla: "expediente", texto: "Nadie vio nada", resaltar: "nada", etiqueta: null, color: "#FFD400", foco_x: 0.5, foco_y: 0.5, por_que: "" } },
+      ],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        const method = init?.method ?? "GET";
+        calls.push({ method, path: url.pathname, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        const ok = (d: unknown, status = 200) => new Response(JSON.stringify(d), { status });
+        if (url.pathname === "/api/projects/7/publishing") return ok(state);
+        if (url.pathname.endsWith(":titles") || url.pathname.endsWith("cover:design")) {
+          return ok({ id: 60, type: "publishing_titles", project_id: 7, status: "queued", progress: 0, created_at: "" }, 202);
+        }
+        if (url.pathname === "/api/jobs/60") return ok({ id: 60, type: "publishing_titles", project_id: 7, status: "running", progress: 0.2, message: "Claude está pensando…", created_at: "" });
+        if (method !== "GET") return ok(state);
+        return ok([]);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  function renderStage() {
+    function Harness() {
+      const ctl = usePublishController(project);
+      return <PublishStage project={project} ctl={ctl} onGoToTimeline={() => {}} />;
+    }
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/proyectos/7"]}>
+          <Routes>
+            <Route path="/proyectos/7" element={<Harness />} />
+            <Route path="/ajustes" element={<p>ajustes abiertos</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("propone títulos con gancho, se elige uno y se puede editar la guía", async () => {
+    renderStage();
+    const ideas = await screen.findByLabelText("Títulos propuestos por Claude");
+    expect(within(ideas).getByText("Cifra concreta")).toBeTruthy();
+    expect(within(ideas).getByText("Dato real y verificable.")).toBeTruthy();
+    fireEvent.click(within(ideas).getByText("¿Quién movió el cuerpo?"));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ title: "¿Quién movió el cuerpo?" }));
+    fireEvent.click(screen.getByText("Proponer otros títulos"));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/publications/1:titles")).toBe(true));
+    expect(await screen.findByText("Claude está pensando títulos…")).toBeTruthy();
+    fireEvent.click(screen.getByText("Editar la guía de títulos"));
+    expect(await screen.findByText("ajustes abiertos")).toBeTruthy();
+  });
+
+  it("miniatura: Claude diseña, se elige una propuesta, se retoca y se usa", async () => {
+    renderStage();
+    const designer = await screen.findByLabelText("Miniatura con Claude");
+    expect(within(designer).getByText("El rostro se ve claro.")).toBeTruthy();
+    fireEvent.click(within(designer).getByRole("radio", { name: "Propuesta 2: Nadie vio nada" }));
+    const edit = within(designer).getByLabelText("Retocar propuesta");
+    fireEvent.change(within(edit).getByLabelText("Texto de la miniatura"), { target: { value: "Silencio total" } });
+    fireEvent.click(within(edit).getByLabelText("Acento #E53935"));
+    fireEvent.click(within(edit).getByText("Volver a dibujar"));
+    await waitFor(() =>
+      expect(calls.find((c) => c.path.endsWith("cover:redraw"))?.body).toMatchObject({
+        index: 2,
+        design: { texto: "Silencio total", color: "#E53935", plantilla: "expediente" },
+      }),
+    );
+    fireEvent.click(within(edit).getByText("Usar esta"));
+    await waitFor(() => expect(calls.find((c) => c.path.endsWith("cover:choose"))?.body).toEqual({ index: 2 }));
+    fireEvent.click(within(designer).getByText("Diseñar otras con Claude"));
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/projects/7/publishing/cover:design")).toBe(true));
   });
 });
 

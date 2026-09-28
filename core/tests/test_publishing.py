@@ -425,3 +425,136 @@ def test_mcp_publishing_tools(client, pub_project, fake_claude):
     state = mcp.call("mark_published", publication_id=yt["id"], url="https://youtu.be/zz")
     assert state["publications"][0]["status"] == "published"
     assert status_of(client, pid) == "PUBLICADO"
+
+
+# --- títulos con gancho y miniatura diseñada por Claude ---
+
+TITLES = {
+    "titulos": [
+        {
+            "titulo": "36 días creyendo que fue un accidente",
+            "gancho": "Cifra concreta",
+            "por_que": "Dato real.",
+        },
+        {"titulo": "¿Quién movió el cuerpo?", "gancho": "Pregunta abierta", "por_que": "Intriga."},
+        {
+            "titulo": "La autopsia lo cambió todo",
+            "gancho": "Giro",
+            "por_que": "Promete revelación.",
+        },
+    ]
+}
+
+
+def test_titles_follow_the_hook_guide(client, pub_project, fake_claude):
+    pid = pub_project["id"]
+    yt = state_of(client, pid)["publications"][0]
+    fake_claude.queue(TITLES)
+    job = client.post(f"/api/publications/{yt['id']}:titles").json()
+    assert wait_job(client, job["id"])["status"] == "done"
+    prompt = fake_claude.calls[0]["prompt"]
+    assert "Guía de títulos con gancho" in prompt and "Contradicción" in prompt
+    assert "8 títulos" in prompt and "YouTube" in prompt
+    ideas = state_of(client, pid)["publications"][0]["meta"]["title_ideas"]
+    assert ideas[0] == {
+        "title": "36 días creyendo que fue un accidente",
+        "hook": "Cifra concreta",
+        "why": "Dato real.",
+    }
+    # Los metadatos de todas las plataformas también siguen la guía.
+    fake_claude.queue(METADATA)
+    wait_job(client, client.post(f"/api/projects/{pid}/publishing:generate").json()["id"])
+    assert "Guía de títulos con gancho" in fake_claude.calls[1]["prompt"]
+
+
+def test_guide_is_added_to_an_old_copy_of_the_prompt(client, pub_project, fake_claude, home):
+    # Un metadatos_publicacion.md copiado antes de existir la guía no tiene {guia_titulos}.
+    prompt_file = home / "config" / "prompts" / "metadatos_publicacion.md"
+    prompt_file.write_text("Escribe metadatos para {plataformas}.", encoding="utf-8")
+    fake_claude.queue(METADATA)
+    wait_job(
+        client, client.post(f"/api/projects/{pub_project['id']}/publishing:generate").json()["id"]
+    )
+    assert "Guía de títulos con gancho" in fake_claude.calls[0]["prompt"]
+
+
+BASE_DESIGN = {"cuadro": 1, "color": "#FFD400", "foco_x": 0.4, "foco_y": 0.3, "por_que": "Rostro."}
+DESIGNS = {
+    "disenos": [
+        {**BASE_DESIGN, "plantilla": "impacto", "texto": "¿Un accidente?", "resaltar": "accidente",
+         "etiqueta": "Caso real"},
+        {**BASE_DESIGN, "plantilla": "expediente", "texto": "Nadie vio nada", "resaltar": "nada",
+         "etiqueta": None},
+    ]
+}  # fmt: skip
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="requiere FFmpeg")
+def test_claude_designs_thumbnails_from_real_frames(client, media_project, web, fake_claude):
+    from io import BytesIO
+
+    from PIL import Image
+
+    from tests.media_support import downloaded
+
+    pid = media_project["id"]
+    image_scene = media_project["scenes"][1]
+    [asset, *_] = downloaded(client, image_scene)
+    client.post(f"/api/scenes/{image_scene}/assets/{asset['id']}:approve")
+
+    bad = {"disenos": [{**DESIGNS["disenos"][0], "cuadro": 9}]}
+    fake_claude.queue(bad, DESIGNS)  # el primero pide un cuadro que no existe: se reintenta
+    job = client.post(f"/api/projects/{pid}/publishing/cover:design").json()
+    done = wait_job(client, job["id"], timeout=60)
+    assert done["status"] == "done", done["error"]
+    call, retry = fake_claude.calls[-2:]  # antes: guion y escenas del proyecto de prueba
+    assert call["tools"] == ["Read"]  # Claude mira los cuadros
+    assert (call["cwd"] / "cuadro_01.jpg").exists()
+    assert "cuadro_01.jpg" in call["prompt"] and "MÍRALOS" in call["prompt"]
+    assert "Cuadros inexistentes: [9]" in retry["prompt"]
+
+    options = state_of(client, pid)["cover_options"]
+    assert [o["index"] for o in options] == [1, 2]
+    assert options[0]["design"]["plantilla"] == "impacto"
+    img = Image.open(BytesIO(client.get(options[0]["url"]).content))
+    assert img.size == (1080, 1920)  # reel
+
+    # Cambiar el texto de una propuesta y elegirla como miniatura.
+    design = {**options[1]["design"], "texto": "Silencio total", "plantilla": "documental"}
+    state = client.post(
+        f"/api/projects/{pid}/publishing/cover:redraw", json={"index": 2, "design": design}
+    ).json()
+    assert state["cover_options"][1]["design"]["texto"] == "Silencio total"
+    state = client.post(f"/api/projects/{pid}/publishing/cover:choose", json={"index": 2}).json()
+    yt = state["publications"][0]
+    assert yt["thumbnail_url"] and yt["meta"]["thumbnail_text"] == "Silencio total"
+    chosen = Image.open(BytesIO(client.get(yt["thumbnail_url"]).content))
+    assert chosen.size == (1080, 1920)
+
+
+def test_thumbnail_design_needs_media(client, pub_project, fake_claude):
+    job = client.post(f"/api/projects/{pub_project['id']}/publishing/cover:design").json()
+    done = wait_job(client, job["id"])
+    assert done["status"] == "failed" and "Aprueba los medios" in done["error"]
+
+
+def test_tape_text_is_readable_on_any_accent():
+    from PIL import Image
+
+    from guionaria_core.schemas.publishing import DisenoClaude
+    from guionaria_core.services.publishing.cover import render
+
+    frame = Image.new("RGB", (800, 600), (90, 110, 120))
+    for color, want in (("#E53935", (255, 212, 0)), ("#FFD400", (229, 57, 53))):
+        design = DisenoClaude(
+            cuadro=1,
+            plantilla="expediente",
+            texto="A puertas cerradas",
+            resaltar="cerradas",
+            color=color,
+        )
+        img = render(design, frame, (1280, 720))
+        pixels = img.get_flattened_data()
+        # El resaltado usa un color distinto al de la cinta (si no, rojo sobre rojo no se ve).
+        near = sum(1 for p in pixels if all(abs(a - b) < 40 for a, b in zip(p, want, strict=True)))
+        assert near > 300, color

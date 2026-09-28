@@ -16,7 +16,9 @@ import { publishingKey, usePlaylists, usePublishing, usePublishingActions } from
 import { coreUrl, type Project, type Publication, type PublicationUpdate, type PublishingState } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PLATFORM_TONE, STATUS_TEXT, fromLocalInput, splitList, toLocalInput } from "./publishingMeta";
+import { CoverDesigner } from "./CoverDesigner";
 import { YouTubeSetup } from "./YouTubeSetup";
+import { useNavigate } from "react-router";
 
 const CATEGORIES = [
   { id: "22", label: "Personas y blogs" },
@@ -46,6 +48,15 @@ export function usePublishController(project: Project, enabled = true) {
   };
   const [selected, setSelected] = useState<number | null>(null);
   const uploadId = useRef<number | null>(null);
+  const titlesFor = useRef<number | null>(null);
+  const titles = useProjectJob(project.id, "publishing_titles", () => actions.suggestTitles(titlesFor.current!), (job) => {
+    toast.success(`${job.result?.titles ?? 0} títulos propuestos`);
+    refresh();
+  });
+  const coverJob = useProjectJob(project.id, "publishing_cover", actions.designCover, (job) => {
+    toast.success(`${job.result?.options ?? 0} miniaturas propuestas`);
+    refresh();
+  });
   const generate = useProjectJob(project.id, "publishing_metadata", actions.generate, (job) => {
     toast.success(`Textos listos para ${job.result?.platforms ?? 0} plataformas`);
     void refresh();
@@ -70,6 +81,13 @@ export function usePublishController(project: Project, enabled = true) {
       void upload.start();
     },
     setWaitingGoogle,
+    titles,
+    /** Claude propone títulos con gancho para la publicación `id`. */
+    startTitles: (id: number) => {
+      titlesFor.current = id;
+      void titles.start();
+    },
+    coverJob,
   };
 }
 
@@ -92,6 +110,7 @@ export function PublishStage({ project, ctl, onGoToTimeline }: { project: Projec
     <div className="flex min-h-0 flex-1">
       <aside className="grid w-72 shrink-0 content-start gap-4 overflow-y-auto border-r p-4" aria-label="Plataformas">
         <PlatformList state={state} ctl={ctl} />
+        <CoverDesigner state={state} ctl={ctl} />
         <Cover state={state} ctl={ctl} project={project} />
         <Credits credits={state.credits} />
       </aside>
@@ -141,7 +160,7 @@ function Cover({ state, ctl, project }: { state: PublishingState; ctl: PublishCo
   return (
     <div className="grid gap-2" aria-label="Miniatura">
       <h3 className="flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground">
-        <ImageIcon className="size-3.5" /> Miniatura
+        <ImageIcon className="size-3.5" /> Miniatura actual · o elige un cuadro a mano
       </h3>
       {thumb && <img src={coreUrl(thumb) ?? ""} alt="Miniatura" className="max-h-48 w-fit rounded border" />}
       {state.video_url && (
@@ -271,6 +290,7 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
           </div>
         )}
         <Input id={`title-${pub.id}`} aria-label="Título" disabled={locked} value={title.value} onChange={(e) => title.setValue(e.target.value)} onBlur={title.commit} />
+        {!locked && <TitleIdeas pub={pub} ctl={ctl} onUse={(t) => save({ title: t })} />}
       </div>
 
       {/* Descripción y hashtags */}
@@ -539,5 +559,49 @@ export function PublishBottomBar({ ctl }: { ctl: PublishController }) {
         {generate.running ? "Claude está escribiendo…" : hasText ? "Regenerar textos con Claude" : "Generar textos con Claude"}
       </Button>
     </BottomBar>
+  );
+}
+
+/** «Proponer títulos con gancho»: Claude sigue la guía de títulos (editable en Ajustes → Claude). */
+function TitleIdeas({ pub, ctl, onUse }: { pub: Publication; ctl: PublishController; onUse: (title: string) => void }) {
+  const navigate = useNavigate();
+  const ideas = pub.meta.title_ideas ?? [];
+  const running = ctl.titles.running;
+  return (
+    <div className="grid gap-1.5" aria-label="Títulos con gancho">
+      <div className="flex flex-wrap items-center gap-3 text-[12px]">
+        <Button size="sm" variant="outline" disabled={running} onClick={() => ctl.startTitles(pub.id)} title="Gasta cuota de tu plan de Claude">
+          {running ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
+          {running ? "Claude está pensando títulos…" : ideas.length ? "Proponer otros títulos" : "Proponer títulos con gancho"}
+        </Button>
+        <button type="button" className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline" onClick={() => navigate("/ajustes?categoria=claude")}>
+          Editar la guía de títulos
+        </button>
+      </div>
+      {ctl.titles.error && <p className="text-[12px] text-danger">{ctl.titles.error}</p>}
+      {ideas.length > 0 && (
+        <ul className="grid gap-1" aria-label="Títulos propuestos por Claude">
+          {ideas.map((idea) => (
+            <li key={idea.title}>
+              <button
+                type="button"
+                onClick={() => onUse(idea.title)}
+                className={cn(
+                  "grid w-full gap-0.5 rounded-md border px-2.5 py-1.5 text-left transition-colors",
+                  pub.title === idea.title ? "border-brand bg-active" : "hover:bg-panel-2",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 text-[13px] font-medium">{idea.title}</span>
+                  <span className="shrink-0 rounded-full bg-panel-2 px-2 py-0.5 text-[10px] text-brand">{idea.hook}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-subtle">{idea.title.length}</span>
+                </span>
+                <span className="text-[11px] text-muted-foreground">{idea.why}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

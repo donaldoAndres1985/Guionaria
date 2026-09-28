@@ -1011,8 +1011,33 @@ export interface RenderState {
 export type PublishPlatform = "youtube" | "tiktok" | "instagram" | "facebook";
 export type PublicationStatus = "draft" | "scheduled" | "uploading" | "published" | "failed";
 
+export interface TitleIdea {
+  title: string;
+  hook: string;
+  why: string;
+}
+
+export interface CoverDesign {
+  cuadro: number;
+  plantilla: "impacto" | "documental" | "expediente";
+  texto: string;
+  resaltar: string | null;
+  etiqueta: string | null;
+  color: string;
+  foco_x: number;
+  foco_y: number;
+  por_que: string;
+}
+
+export interface CoverOption {
+  index: number;
+  url: string;
+  design: CoverDesign;
+}
+
 export interface PublicationMeta {
   title_options: string[];
+  title_ideas?: TitleIdea[];
   hashtags: string[];
   pinned_comment: string | null;
   chapters: { tiempo: string; titulo: string }[];
@@ -1069,6 +1094,7 @@ export interface PublishingState {
   subtitles: boolean;
   credits: string;
   publications: Publication[];
+  cover_options?: CoverOption[];
   youtube: { configured: boolean; connected: boolean; account: string | null; redirect_uri: string };
 }
 
