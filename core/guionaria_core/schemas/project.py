@@ -62,6 +62,7 @@ class ProjectRead(BaseModel):
     updated_at: str
     research: ResearchRead | None = None  # ficha de «Investigar con fuentes»
     publications: list[PublishBadge] = Field(default_factory=list)  # plataformas activas
+    origin: str = "guionaria"  # guionaria | importado
     # Vista en miniaturas: la portada (miniatura de publicación o del render) y los medios.
     cover_url: str | None = None
     media_thumbs: list[str] = Field(default_factory=list)  # hasta 5 medios aprobados

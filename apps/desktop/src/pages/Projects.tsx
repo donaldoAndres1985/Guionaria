@@ -1,4 +1,4 @@
-import { Clapperboard, LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
+import { Clapperboard, FileVideo, LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
@@ -8,6 +8,7 @@ import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
 import { PublishBadges } from "@/features/publishing/PublishBadges";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
+import { ImportVideoDialog } from "@/components/projects/ImportVideoDialog";
 import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog";
 import { MediaStrip, ProjectCover } from "@/components/projects/ProjectThumbs";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ export function ProjectsPage() {
   const [tab, setTab] = useState<TabId>("all");
   const [query, setQuery] = useState("");
   const [toDelete, setToDelete] = useState<Project | null>(null);
+  const [importing, setImporting] = useState(false);
   const view = useUiStore((s) => s.projectsView);
   const setView = useUiStore((s) => s.setProjectsView);
   const selectedChannelId = useUiStore((s) => s.selectedChannelId);
@@ -76,6 +78,9 @@ export function ProjectsPage() {
             { label: "Por publicar este mes", value: thisMonth.length, highlight: true },
           ]}
         >
+          <Button size="lg" variant="outline" onClick={() => setImporting(true)} title="Un video ya editado en CapCut u otro editor">
+            <FileVideo /> Importar video terminado
+          </Button>
           {newButton}
         </BottomBar>
       }
@@ -158,8 +163,9 @@ export function ProjectsPage() {
                 <ProjectCover project={p} className={p.format === "reel" ? "mx-auto h-64" : "w-full"} />
                 <div className="grid gap-1">
                   <span className="line-clamp-2 text-[13px] leading-snug font-medium">{p.title}</span>
-                  <span className="truncate text-[11px] text-muted-foreground">
+                  <span className="flex items-center gap-2 truncate text-[11px] text-muted-foreground">
                     {p.channel_name} · {formatDuration(p.target_duration_s)}
+                    {p.origin === "importado" && <ImportedBadge />}
                   </span>
                   <span className="flex flex-wrap items-center gap-2">
                     <StatusBadge status={p.status} />
@@ -200,6 +206,7 @@ export function ProjectsPage() {
                     <div className="truncate font-medium">{p.title}</div>
                     <div className="mt-0.5 flex items-center gap-3">
                       <FormatBadge format={p.format} />
+                      {p.origin === "importado" && <ImportedBadge />}
                       {p.topic && (
                         <span className="truncate text-[12px] text-muted-foreground">{p.topic}</span>
                       )}
@@ -237,6 +244,7 @@ export function ProjectsPage() {
       )}
 
       <NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <ImportVideoDialog open={importing} onOpenChange={setImporting} />
       {toDelete && (
         <DeleteProjectDialog project={toDelete} open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)} />
       )}
@@ -262,5 +270,13 @@ function DeleteButton({ onClick, className }: { onClick: () => void; className?:
     >
       <Trash2 className="size-4" />
     </button>
+  );
+}
+
+function ImportedBadge() {
+  return (
+    <span className="rounded bg-panel-2 px-1.5 py-0.5 text-[10px] text-muted-foreground" title="Video terminado en otro editor (CapCut…)">
+      Importado
+    </span>
   );
 }

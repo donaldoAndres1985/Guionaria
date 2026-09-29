@@ -45,6 +45,16 @@ def pick_frames(m: TimelineModel) -> list[Frame]:
     return frames
 
 
+def video_frames(video: Path, duration: float, count: int = 8) -> list[Frame]:
+    """Cuadros repartidos por un video terminado (evita el principio y el final)."""
+    if not video.exists() or duration <= 0:
+        return []
+    return [
+        Frame(i, video, round(duration * (0.08 + 0.84 * (i - 1) / max(count - 1, 1)), 2), 0)
+        for i in range(1, count + 1)
+    ]
+
+
 def load_frame(frame: Frame, work: Path) -> Image.Image:
     if frame.source.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
         with Image.open(frame.source) as img:

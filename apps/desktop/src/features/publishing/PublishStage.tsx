@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useOpenUrl } from "@/hooks/useManualMedia";
+import { useActiveJobs } from "@/hooks/useJobs";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { publishingKey, usePlaylists, usePublishing, usePublishingActions } from "@/hooks/usePublishing";
 import { coreUrl, type Project, type Publication, type PublicationUpdate, type PublishingState } from "@/lib/api";
@@ -71,6 +72,7 @@ export function usePublishController(project: Project, enabled = true) {
   });
   const pub = state?.publications.find((p) => p.id === selected) ?? state?.publications[0] ?? null;
   return {
+    projectId: project.id,
     state,
     actions,
     pub,
@@ -587,6 +589,8 @@ function Banner({ tone, icon: Icon, children }: { tone: keyof typeof TONE; icon:
 
 export function PublishBottomBar({ ctl }: { ctl: PublishController }) {
   const { state, generate } = ctl;
+  const { data: running = [] } = useActiveJobs(ctl.projectId);
+  const transcribing = running.some((j) => j.type === "transcribe_video");
   const active = state?.publications.filter((p) => p.enabled) ?? [];
   const published = active.filter((p) => p.status === "published").length;
   const next = active
@@ -603,6 +607,11 @@ export function PublishBottomBar({ ctl }: { ctl: PublishController }) {
       ]}
     >
       {generate.error && <span className="text-[12px] text-danger">{generate.error}</span>}
+      {transcribing && (
+        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground" data-testid="transcribing">
+          <LoaderCircle className="size-3.5 animate-spin" /> Whisper está transcribiendo el video: espera para que los textos lo usen
+        </span>
+      )}
       <Button variant="ghost" onClick={() => ctl.actions.reveal.mutate()} disabled={!state}>
         <FolderOpen /> Abrir carpeta
       </Button>

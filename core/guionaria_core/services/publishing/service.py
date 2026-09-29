@@ -567,11 +567,20 @@ def write_texts(session: Session, project: Project) -> None:
 
 
 def _script_text(session: Session, project_id: int) -> str:
+    """Lo que dice el video: el guion o, en los videos importados, la transcripción."""
+    from ..imported import read_transcript
+
     try:
         script = read_script(session, project_id)
+        text = "\n".join(s.text for s in script.segments)
     except (NotFound, DomainError):
-        return "(sin guion)"
-    return "\n".join(s.text for s in script.segments) or "(sin guion)"
+        text = ""
+    if text.strip():
+        return text
+    transcript = read_transcript(get_project(session, project_id))
+    if transcript:
+        return f"(transcripción del video)\n{transcript}"
+    return "(sin guion ni transcripción)"
 
 
 def _dossier_text(project: Project) -> tuple[str, str]:
@@ -931,6 +940,7 @@ def prepare_cover_frames(session_factory, project_id: int) -> CoverFrames:
         m = build_timeline(session, project)
         covers = _covers_dir(project)
         size = _cover_size(project)
+        video = final_video(project)
         values = {
             "canal": channel.name,
             "estilo": channel.style_prompt or "Claro y directo.",
@@ -939,9 +949,15 @@ def prepare_cover_frames(session_factory, project_id: int) -> CoverFrames:
             "titulo": project.title,
             "titulo_publicacion": chosen_title,
         }
+    # Proyectos hechos en la app: un cuadro por escena (sin subtítulos). Videos importados
+    # (sin escenas): cuadros repartidos a lo largo del propio video.
     frames = cover.pick_frames(m)
+    if not frames and video.exists():
+        from ..media import process
+
+        frames = cover.video_frames(video, process.video_info(video).duration_s or 0)
     if not frames:
-        raise Conflict("Aprueba los medios para elegir el cuadro de la miniatura")
+        raise Conflict("Aprueba los medios (o importa el video) para elegir la miniatura")
     folder = covers / "cuadros"
     names = cover.write_previews(frames, folder)
     if not names:

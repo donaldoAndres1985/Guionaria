@@ -120,6 +120,7 @@ def to_read(
     extras = extras or {}
     return ProjectRead(
         publications=extras.get("publications", badges or []),
+        origin=project.origin or "guionaria",
         cover_url=extras.get("cover_url"),
         media_thumbs=extras.get("media_thumbs", []),
         media_count=extras.get("media_count", 0),
