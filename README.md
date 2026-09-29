@@ -84,7 +84,7 @@ Cada etapa tiene estado *borrador → revisión → aprobado*. Si cambias un seg
 | **3C — Almacenamiento** | Espacio por canal, proyecto y tipo con treemap · limpieza de candidatos sin usar | ✅ Completa |
 | **3D — Historial y papelera** | Historial de operaciones · papelera de 30 días con restauración · registro de derechos | ✅ Completa |
 | **3E — SFX y música** | Biblioteca de efectos y música · Freesound · sonidos por escena en el timeline | ✅ Completa |
-| **4 — Render automático** | FFmpeg: efectos, voz + SFX + música con ducking, subtítulos quemados, borrador 720p, miniatura | ✅ Completa |
+| **4 — Render automático** | FFmpeg: efectos, voz + SFX + música, subtítulos quemados, borrador 720p, miniatura | ✅ Completa |
 | 5 — Publicación | YouTube, Meta y TikTok · analítica | ⏳ Siguiente |
 
 La especificación completa está en [SPEC.md](SPEC.md).
@@ -174,7 +174,7 @@ Lista de escenas a la izquierda; búsqueda y galería a la derecha (imagen princ
 
 - En la etapa Timeline, **Borrador 720p** (rápido, para revisar) o **Render final** a 1920×1080 o 1080×1920: `render/proyecto.mp4` en H.264 + AAC.
 - Cada escena se arma con su **efecto**: zoom lento de entrada o de salida, Ken Burns, estática, glitch, fundido a negro y cámara rápida. El **texto en pantalla** se superpone, y las escenas de texto o negro van sobre fondo negro.
-- **Audio:** la voz, los SFX en su momento y la música con **ducking** (baja sola cuando hay voz), con limitador.
+- **Audio:** la voz, los SFX en su momento y la música a volumen fijo (sin ducking), con limitador.
 - **Subtítulos quemados**, grandes y centrados (por defecto en reels).
 - **Miniatura sugerida:** un fotograma del medio de portada con el título encima.
 - Progreso en vivo por escena y reproductor del resultado. El render final marca el proyecto como *Renderizado*.

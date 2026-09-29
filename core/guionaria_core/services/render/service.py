@@ -2,17 +2,21 @@
 
 1. Cada escena se renderiza a su duración exacta con su efecto y su texto en pantalla.
 2. Los segmentos se unen sin volver a codificar.
-3. Se mezcla el audio (voz, SFX, música con ducking) y, si se pide, se queman los subtítulos.
+3. Se mezcla el audio (voz, SFX, música a volumen fijo) y, si se pide, se queman los subtítulos.
 """
 
 import asyncio
 import contextlib
+import functools
 import json
+import logging
+import os
 import shutil
 import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -44,6 +48,7 @@ from . import look as looks
 from .thumbnail import make_thumbnail
 
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+log = logging.getLogger(__name__)
 OUTPUTS = {"final": "proyecto.mp4", "draft": "proyecto_borrador.mp4"}  # nombres antiguos
 THUMBNAIL = "miniatura.jpg"
 DRAFT_SUFFIX = "_borrador"
@@ -231,6 +236,7 @@ def _join_with_transitions(
     out: Path,
     encode_again: bool,
     cancel: threading.Event | None,
+    hardware: str | None = None,
 ) -> None:
     """Une los segmentos con xfade. Si el paso final vuelve a codificar (subtítulos o
     texto), este va rápido y casi sin pérdida; si no, con la calidad elegida."""
@@ -242,10 +248,9 @@ def _join_with_transitions(
     args = ["ffmpeg", "-y", "-v", "error"]
     for f in files:
         args += ["-i", f.name]
-    preset, crf = ("veryfast", max(q.crf - 6, 10)) if encode_again else (q.preset, q.crf)
     args += [
         "-filter_complex", graph, "-map", f"[{label}]",
-        "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
+        *plan.encoder(q, encode_again, hardware), "-pix_fmt", "yuv420p",
         "-color_range", "tv", "-t", f"{m.duration / m.fps:.3f}", out.name,
     ]  # fmt: skip
     _run(args, cwd=out.parent, cancel=cancel)
@@ -271,6 +276,39 @@ def _segments(
             )
         )
     return out
+
+
+_hardware_failed = False  # la GPU falló en un render: el resto de la sesión, con x264
+
+
+@functools.cache
+def _detect_hardware() -> str | None:
+    """El primer codificador H.264 de la GPU (NVIDIA, Intel) que de verdad codifica: estar
+    compilado en FFmpeg no basta, hace falta la placa y su controlador."""
+    for name in plan.HARDWARE_ENCODERS:
+        q = plan.Quality(256, 256, "veryfast", 20, hardware_ok=True)
+        args = [
+            "ffmpeg", "-v", "error", "-nostdin", "-f", "lavfi",
+            "-i", "color=c=black:s=256x256:r=30:d=0.2", "-pix_fmt", "yuv420p",
+            *plan.encoder(q, False, name), "-f", "null", "-",
+        ]  # fmt: skip
+        try:
+            ok = (
+                subprocess.run(
+                    args, capture_output=True, timeout=20, creationflags=_NO_WINDOW
+                ).returncode
+                == 0
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if ok:
+            log.info("Render con codificador por hardware: %s", name)
+            return name
+    return None
+
+
+def hardware_encoder() -> str | None:
+    return None if _hardware_failed else _detect_hardware()
 
 
 def _popen(args: list[str], cwd: Path | None, stdout=subprocess.DEVNULL) -> subprocess.Popen:
@@ -335,6 +373,53 @@ def _run_with_progress(
         raise _failed(stderr)
 
 
+class _Stop:
+    """Cancelación del trabajo o de las escenas en paralelo (si una falla, paran todas)."""
+
+    def __init__(self, cancel: threading.Event | None) -> None:
+        self.cancel = cancel
+        self.failed = threading.Event()
+
+    def is_set(self) -> bool:
+        return self.failed.is_set() or (self.cancel is not None and self.cancel.is_set())
+
+
+def segment_workers() -> int:
+    """Escenas a la vez: el filtro de movimiento no ocupa todos los núcleos, así que con
+    3 en paralelo las escenas tardan casi la mitad (medido en un portátil de 12 hilos)."""
+    return max(1, min(3, (os.cpu_count() or 2) // 4))
+
+
+def _run_segments(commands: list[list[str]], report, cancel: threading.Event | None) -> None:
+    stop = _Stop(cancel)
+    done = 0
+    lock = threading.Lock()
+
+    def work(args: list[str]) -> None:
+        nonlocal done
+        try:
+            _run(args, cancel=stop)  # type: ignore[arg-type]
+        except BaseException:
+            stop.failed.set()
+            raise
+        with lock:
+            done += 1
+            report(0.05 + 0.75 * done / len(commands), f"Escena {done} de {len(commands)}…")
+
+    report(0.05, f"Escena 1 de {len(commands)}…")
+    with ThreadPoolExecutor(segment_workers()) as pool:
+        futures = [pool.submit(work, args) for args in commands]
+        errors = [f.exception() for f in futures]
+    if cancel is not None and cancel.is_set():
+        raise JobCancelled()
+    # El primer error real (las demás escenas se detuvieron por él).
+    first = next((e for e in errors if e and not isinstance(e, JobCancelled)), None)
+    if first is not None:
+        raise first
+    if any(errors):
+        raise next(e for e in errors if e)
+
+
 def _render_sync(
     m: TimelineModel,
     folder: Path,
@@ -349,6 +434,38 @@ def _render_sync(
     look: VideoLook | None = None,
     names: dict[str, str] | None = None,
 ) -> tuple[Path, Path | None]:
+    """Renderiza con el codificador de la GPU si lo hay (borrador y estándar); si falla a
+    mitad de camino, se repite con x264 y no se vuelve a usar la GPU en esta sesión."""
+    global _hardware_failed
+    ok = plan.quality(m.width, m.height, level).hardware_ok
+    hardware = hardware_encoder() if ok else None
+    rest = (words, style, text_style, prefs, look, names)
+    try:
+        return _render_pass(m, folder, srt, level, report, cancel, *rest, hardware=hardware)
+    except DomainError as exc:
+        if not hardware:
+            raise
+        log.warning("Falló el render con %s (%s); se repite con x264", hardware, exc)
+        _hardware_failed = True
+        report(0.05, "La GPU falló; se renderiza con el procesador…")
+        return _render_pass(m, folder, srt, level, report, cancel, *rest, hardware=None)
+
+
+def _render_pass(
+    m: TimelineModel,
+    folder: Path,
+    srt: Path | None,
+    level: plan.Level,
+    report,
+    cancel: threading.Event | None = None,
+    words: list[Word] | None = None,
+    style: SubtitleStyle | None = None,
+    text_style: TextStyle | None = None,
+    prefs: TransitionPrefs | None = None,
+    look: VideoLook | None = None,
+    names: dict[str, str] | None = None,
+    hardware: str | None = None,
+) -> tuple[Path, Path | None]:
     draft = level == "draft"
     q = plan.quality(m.width, m.height, level)
     font = plan.find_font()
@@ -360,29 +477,33 @@ def _render_sync(
         segments = _segments(m, cuts, look)
         soften = looks.soften_sigma(look)
         motion = (look.motion if look else 100) / 100
-        files = []
-        for i, seg in enumerate(segments):
-            report(0.05 + 0.75 * i / len(segments), f"Escena {seg.position} de {len(segments)}…")
-            out = tmp / f"seg_{i:03d}.mp4"
-            # El texto en pantalla no va aquí: se escribe con libass en el paso final.
-            _run(
-                plan.segment_command(
-                    seg, q, out, None, None, draft=draft, soften=soften, motion=motion
-                ),
-                cancel=cancel,
+        # Si después se escriben subtítulos o texto, o se aplica el look, el paso final vuelve
+        # a codificar: las escenas y la unión son archivos intermedios.
+        graded_look = bool(look and looks.look_filter(look, look.lut))
+        again = bool(srt) or bool(scene_texts(m)) or graded_look
+        files = [tmp / f"seg_{i:03d}.mp4" for i in range(len(segments))]
+        # El texto en pantalla no va aquí: se escribe con libass en el paso final.
+        commands = [
+            plan.segment_command(
+                seg,
+                q,
+                out,
+                None,
+                None,
+                draft=draft,
+                soften=soften,
+                motion=motion,
+                intermediate=again,
+                hardware=hardware,
             )
-            files.append(out)
+            for seg, out in zip(segments, files, strict=True)
+        ]
+        _run_segments(commands, report, cancel)
 
         video = tmp / "video.mp4"
         if any(c.transition for c in cuts):
             report(0.82, "Uniendo las escenas con sus transiciones…")
-            # Si después se escriben subtítulos o texto, se vuelve a codificar.
-            again = (
-                bool(srt)
-                or bool(scene_texts(m))
-                or bool(look and looks.look_filter(look, look.lut))
-            )
-            _join_with_transitions(m, files, cuts, q, video, again, cancel)
+            _join_with_transitions(m, files, cuts, q, video, again, cancel, hardware)
         else:
             report(0.82, "Uniendo las escenas…")
             listing = tmp / "escenas.txt"
@@ -452,16 +573,7 @@ def _render_sync(
         if afilter:
             args += ["-map", "[aout]", "-c:a", "aac", "-b:a", q.audio_bitrate]
         if vfilter:
-            args += [
-                "-c:v",
-                "libx264",
-                "-preset",
-                q.preset,
-                "-crf",
-                str(q.crf),
-                "-pix_fmt",
-                "yuv420p",
-            ]
+            args += [*plan.encoder(q, False, hardware), "-pix_fmt", "yuv420p"]
         else:
             args += ["-c:v", "copy"]
         kind = "draft" if draft else "final"

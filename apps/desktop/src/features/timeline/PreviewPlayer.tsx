@@ -9,7 +9,6 @@ import {
   effectLook,
   layoutText,
   lineChars,
-  musicVolume,
   sceneIndexAt,
   sceneTextPx,
   subtitleFontPx,
@@ -78,7 +77,7 @@ export type PreviewClock = ReturnType<typeof usePreviewClock>;
 
 /**
  * Composición en vivo: escena actual (y la siguiente precargada), efecto, texto en pantalla,
- * subtítulos con el estilo elegido y audio (voz, SFX, música con ducking).
+ * subtítulos con el estilo elegido y audio (voz, SFX, música a volumen fijo).
  */
 export function PreviewCanvas({
   preview,
@@ -268,7 +267,7 @@ export function PreviewCanvas({
           sound={s}
           time={time}
           playing={playing}
-          volume={musicVolume(s.volume ?? preview.music_volume, preview.words, time)}
+          volume={s.volume ?? preview.music_volume}
         />
       ))}
     </div>

@@ -28,6 +28,7 @@ class Quality:
     preset: str
     crf: int
     audio_bitrate: str = "192k"
+    hardware_ok: bool = False  # admite el codificador por hardware (borrador y estándar)
 
     @property
     def size(self) -> str:
@@ -47,7 +48,8 @@ def _scaled(width: int, height: int, short_side: int) -> tuple[int, int]:
 def quality(width: int, height: int, level: Level | bool) -> Quality:
     """Niveles de render:
     - draft: 720p (lado corto) y rápido, para revisar.
-    - standard: la resolución del formato (1080p), equilibrado.
+    - standard: la resolución del formato (1080p), equilibrado: x264 «faster» (medium tardaba
+      2,5 veces más con casi la misma calidad) o el codificador de la GPU si lo hay.
     - high: 1080p más nítido (crf 17, preset slow) y audio a 256 kbps; tarda más.
     - max: reescalado a 4K (2160p): YouTube le asigna más bitrate y se ve mejor incluso en 1080p.
     """
@@ -55,13 +57,13 @@ def quality(width: int, height: int, level: Level | bool) -> Quality:
         level = "draft" if level else "standard"
     if level == "draft":
         w, h = _scaled(width, height, 720)
-        return Quality(w, h, "veryfast", 28)
+        return Quality(w, h, "veryfast", 28, hardware_ok=True)
     if level == "high":
         return Quality(width, height, "slow", 17, "256k")
     if level == "max":
         w, h = _scaled(width, height, 2160)
         return Quality(w, h, "slow", 17, "320k")
-    return Quality(width, height, "medium", 20)
+    return Quality(width, height, "faster", 20, hardware_ok=True)
 
 
 def find_font() -> str | None:
@@ -210,13 +212,18 @@ def segment_command(
     draft: bool = False,
     soften: float = 0.0,
     motion: float = 1.0,
+    intermediate: bool = False,
+    hardware: str | None = None,
 ) -> list[str]:
+    """Comando de una escena. Con `intermediate` (el paso final vuelve a codificar por el
+    texto, los subtítulos o el look) se codifica rápido y casi sin pérdida: la calidad la
+    pone ese paso final y codificar dos veces con el preset lento solo sumaba tiempo."""
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
     args = ["ffmpeg", "-y", "-v", "error", "-nostdin"]
     fast = seg.effect == "camara_rapida" and seg.kind == "video"
     if seg.kind == "image":
-        args += ["-loop", "1", "-framerate", str(FPS), "-t", dur, "-i", str(seg.path)]
+        args += ["-i", str(seg.path)]  # un solo cuadro: se repite con el filtro loop
     elif seg.kind == "video":
         read = frames / FPS * (2 if fast else 1)
         args += ["-ss", f"{seg.source_in:.3f}", "-t", f"{read:.3f}", "-i", str(seg.path)]
@@ -232,10 +239,10 @@ def segment_command(
         chain.append("setsar=1")
     else:
         effect = effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft, motion)
-        if soften and seg.kind == "image":
-            # Look: las fotos, más nítidas que los videos de stock, se suavizan un poco.
-            effect.insert(1, f"gblur=sigma={soften:g}")
-        chain += effect
+        if seg.kind == "image":
+            chain += still_chain(effect, frames, soften)
+        else:
+            chain += effect
     if textfile:
         chain.append(
             text_filter(textfile, font, q, centered=seg.kind == "color", raised=raise_text)
@@ -248,10 +255,47 @@ def segment_command(
     args += [
         "-vf", ",".join(chain),
         "-r", str(FPS), "-an", "-color_range", "tv",
-        "-c:v", "libx264", "-preset", q.preset, "-crf", str(q.crf),
+        *encoder(q, intermediate, hardware),
         str(out),
     ]  # fmt: skip
     return args
+
+
+HARDWARE_ENCODERS = ("h264_nvenc", "h264_qsv")  # NVIDIA e Intel Quick Sync, en ese orden
+
+
+def encoder(q: Quality, intermediate: bool, hardware: str | None = None) -> list[str]:
+    """Codificador de video: el de la GPU (`hardware`, si la calidad lo admite) o x264 con
+    su preset; para un archivo intermedio que se vuelve a codificar, rápido y casi sin pérdida."""
+    crf = max(q.crf - 6, 10) if intermediate else q.crf
+    if hardware and q.hardware_ok:
+        # Su escala de calidad rinde un poco menos que el CRF de x264: 2 puntos más fino.
+        level = str(max(crf - 2, 10))
+        if hardware == "h264_nvenc":
+            return ["-c:v", hardware, "-preset", "p4", "-rc", "vbr", "-cq", level, "-b:v", "0"]
+        return ["-c:v", hardware, "-preset", "medium", "-global_quality", level]
+    preset = "veryfast" if intermediate else q.preset
+    return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
+
+
+def still_chain(effect: list[str], frames: int, soften: float = 0.0) -> list[str]:
+    """Filtros de una foto: lo que no cambia con el tiempo (escalar la imagen original,
+    suavizarla, el brillo difuso) se calcula una sola vez y el cuadro se repite con `loop`;
+    después va el movimiento, ya en 4:2:0. Con `-loop 1` todo eso se recalculaba en cada
+    cuadro y era lo más lento del render."""
+    cover_step, rest = effect[0], effect[1:]
+    still = [cover_step]
+    if soften:
+        # Look: las fotos, más nítidas que los videos de stock, se suavizan un poco.
+        still.append(f"gblur=sigma={soften:g}")
+    if GLOW in rest:  # el brillo de una foto quieta: igual antes que después del zoom
+        rest.remove(GLOW)
+        still.append(GLOW)
+    still += [
+        "scale=out_range=tv", "format=yuv420p",
+        f"loop=loop={frames - 1}:size=1:start=0", f"settb=1/{FPS}", "setpts=N",
+    ]  # fmt: skip
+    return still + rest
 
 
 @dataclass
@@ -266,7 +310,7 @@ class AudioClip:
 def audio_filter(
     voice: AudioClip | None, sfx: list[AudioClip], music: list[AudioClip], first_input: int
 ) -> tuple[str, list[AudioClip]]:
-    """Mezcla: voz + SFX en su tiempo + música con ducking (baja cuando habla la voz).
+    """Mezcla: voz + SFX en su tiempo + música a volumen fijo (sin ducking).
     Devuelve el filtro y las entradas de audio en el orden en que deben pasarse a FFmpeg."""
     inputs: list[AudioClip] = []
     parts: list[str] = []
@@ -303,14 +347,10 @@ def audio_filter(
             )
         else:
             parts[-1] = parts[-1].replace(f"[{music_labels[0][1:-1]}]", "[music]", 1)
+        # Sin ducking: la música queda a su volumen fijo también mientras habla la voz.
         if voice_label:
-            parts.append("[voice]asplit=2[voicemix][voicekey]")
-            parts.append(
-                "[music][voicekey]sidechaincompress=threshold=0.03:ratio=10:attack=15:release=450[ducked]"
-            )
-            labels += ["[voicemix]", "[ducked]"]
-        else:
-            labels.append("[music]")
+            labels.append(voice_label)
+        labels.append("[music]")
     elif voice_label:
         labels.append(voice_label)
     labels += sfx_labels

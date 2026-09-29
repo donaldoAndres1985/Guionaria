@@ -17,7 +17,7 @@ import { exportedAt } from "./timelineMeta";
 
 export const QUALITIES: { id: RenderQuality; label: string; detail: string; hint: string }[] = [
   { id: "draft", label: "Borrador", detail: "720p · rápido", hint: "Para revisar el montaje en poco tiempo" },
-  { id: "standard", label: "Estándar", detail: "1080p", hint: "Buen equilibrio entre calidad y tiempo" },
+  { id: "standard", label: "Estándar", detail: "1080p", hint: "Rápido: usa la GPU si la hay (Intel o NVIDIA)" },
   { id: "high", label: "Alta", detail: "1080p nítido", hint: "Menos compresión y audio a 256 kbps; tarda más" },
   { id: "max", label: "4K", detail: "reescalado 2160p", hint: "YouTube le da más bitrate: se ve mejor incluso en 1080p. Es el más lento" },
 ];

@@ -4,6 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def no_gpu_encoder(monkeypatch):
+    """Las pruebas renderizan con x264: el resultado no depende de la GPU del equipo."""
+    from guionaria_core.services.render import service
+
+    monkeypatch.setattr(service, "hardware_encoder", lambda: None)
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("GUIONARIA_HOME", str(tmp_path / "Guionaria"))
