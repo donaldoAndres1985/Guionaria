@@ -140,7 +140,10 @@ class VideoLook(BaseModel):
     vignette: int = Field(0, ge=0, le=100)
     grain: int = Field(0, ge=0, le=100)  # grano de película: iguala fotos limpias y videos
     soften_photos: int = Field(0, ge=0, le=100)  # suaviza las fotos (más nítidas que el video)
-    zoom_photos: bool = False  # zoom lento en las fotos sin efecto
+    zoom_photos: bool = False  # movimiento en las fotos sin efecto
+    # Efecto de ese movimiento: zoom lento, deriva suave (diagonal) o zoom celestial (con brillo).
+    photo_effect: Literal["zoom_lento_in", "deriva_suave", "zoom_divino"] = "zoom_lento_in"
+    motion: int = Field(100, ge=50, le=250)  # intensidad del movimiento de zooms y derivas (%)
     lut: str | None = None  # archivo .cube de la carpeta luts/
     lut_strength: int = Field(100, ge=0, le=100)
 

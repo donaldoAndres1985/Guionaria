@@ -134,7 +134,8 @@ export function PreviewCanvas({
   const grade = lookProp ?? preview.look ?? NEUTRAL_LOOK;
   const css = lookCss(grade);
   const effect = scene ? sceneEffect(scene.effect, scene.media?.kind, grade) : null;
-  const look = scene ? effectLook(effect, (time - scene.start_s) / scene.duration_s, preview.zoom, scene.duration_s) : null;
+  const motion = (grade.motion ?? 100) / 100;
+  const look = scene ? effectLook(effect, (time - scene.start_s) / scene.duration_s, preview.zoom, scene.duration_s, motion) : null;
 
   return (
     <div
@@ -267,7 +268,7 @@ export function PreviewCanvas({
           sound={s}
           time={time}
           playing={playing}
-          volume={musicVolume(preview.music_volume, preview.words, time)}
+          volume={musicVolume(s.volume ?? preview.music_volume, preview.words, time)}
         />
       ))}
     </div>
@@ -295,7 +296,13 @@ function SceneLayer({
   grade?: VideoLook;
 }) {
   const local = Math.max(time - scene.start_s, 0);
-  const look = effectLook(sceneEffect(scene.effect, scene.media?.kind, grade), local / scene.duration_s, zoom, scene.duration_s);
+  const look = effectLook(
+    sceneEffect(scene.effect, scene.media?.kind, grade),
+    local / scene.duration_s,
+    zoom,
+    scene.duration_s,
+    (grade?.motion ?? 100) / 100,
+  );
   const blur = grade ? lookCss(grade).photoBlur : 0;
   const media = scene.media;
   const common = "absolute inset-0 size-full object-cover";
@@ -427,7 +434,15 @@ function SceneText({
 
 function SoundTrack({ sound, time, playing, volume }: { sound: PreviewSound; time: number; playing: boolean; volume: number }) {
   return (
-    <AudioTrack src={coreUrl(sound.url) ?? ""} start={sound.start_s} duration={sound.duration_s} time={time} playing={playing} volume={volume} />
+    <AudioTrack
+      src={coreUrl(sound.url) ?? ""}
+      start={sound.start_s}
+      duration={sound.duration_s}
+      time={time}
+      playing={playing}
+      volume={volume}
+      loop={sound.loop}
+    />
   );
 }
 
@@ -439,6 +454,7 @@ function AudioTrack({
   time,
   playing,
   volume,
+  loop = false,
 }: {
   src: string;
   start: number;
@@ -446,6 +462,8 @@ function AudioTrack({
   time: number;
   playing: boolean;
   volume: number;
+  /** Audio de fondo: se repite (la posición es el tiempo módulo su largo). */
+  loop?: boolean;
 }) {
   const ref = useRef<HTMLAudioElement>(null);
   const inside = time >= start && time < start + duration;
@@ -453,7 +471,8 @@ function AudioTrack({
     const a = ref.current;
     if (!a) return;
     a.volume = Math.min(Math.max(volume, 0), 1);
-    const target = time - start;
+    a.loop = loop;
+    const target = loop && a.duration > 0 ? (time - start) % a.duration : time - start;
     if (playing && inside) {
       if (Math.abs(a.currentTime - target) > 0.3) a.currentTime = target;
       if (a.paused) void a.play().catch(() => {});
@@ -461,7 +480,7 @@ function AudioTrack({
       if (!a.paused) a.pause();
       if (inside && Math.abs(a.currentTime - target) > 0.1) a.currentTime = target;
     }
-  }, [time, playing, inside, start, volume]);
+  }, [time, playing, inside, start, volume, loop]);
   return <audio ref={ref} src={src} preload="auto" />;
 }
 

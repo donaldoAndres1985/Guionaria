@@ -185,18 +185,35 @@ export interface EffectLook {
   playbackRate: number;
 }
 
-/** Cuánto se acerca el zoom lento (como plan.zoom_amount): 3 %/s, entre 4 % y el máximo. */
-export function zoomAmount(duration: number, max: number): number {
-  return Math.round(Math.min(max, Math.max(0.04, 0.03 * duration)) * 10000) / 10000;
+/** Cuánto se acerca el zoom lento (como plan.zoom_amount): 3 %/s, entre 4 % y el máximo,
+ * por la intensidad del movimiento del Look (1 = 100 %). */
+export function zoomAmount(duration: number, max: number, motion = 1): number {
+  return Math.round(Math.min(max, Math.max(0.04, 0.03 * duration)) * motion * 10000) / 10000;
 }
+
+/** Aceleración suave (smoothstep), como plan._ease. */
+const smooth = (p: number) => p * p * (3 - 2 * p);
 
 const KEN_BURNS = 1.08;
 
-export function effectLook(effect: string | null, progress: number, zoom: number, sceneDuration: number): EffectLook {
+export function effectLook(effect: string | null, progress: number, zoom: number, sceneDuration: number, motion = 1): EffectLook {
   const p = Math.min(Math.max(progress, 0), 1);
   const look: EffectLook = { transform: "none", fade: 0, playbackRate: 1 };
   const r = (v: number) => Math.round(v * 10000) / 10000;
-  const amount = zoomAmount(sceneDuration, zoom);
+  const amount = zoomAmount(sceneDuration, zoom, motion);
+  if (effect === "deriva_suave" || effect === "zoom_divino") {
+    // Ventana que se acerca con aceleración suave (como plan.effect_filter): escala y desplazamiento.
+    const e = smooth(p);
+    const scale = effect === "deriva_suave" ? 1 + 0.04 * motion + amount * 1.3 * e : 1 + amount * 1.5 * e;
+    const f = 1 / scale;
+    const left = effect === "deriva_suave" ? (1 - f) * (0.15 + 0.7 * e) : (1 - f) / 2;
+    const top = effect === "deriva_suave" ? (1 - f) * (0.35 + 0.3 * e) : (1 - f) * 0.4;
+    const dx = (0.5 - (left + f / 2)) * 100;
+    const dy = (0.5 - (top + f / 2)) * 100;
+    look.transform = `scale(${r(scale)}) translate(${r(dx)}%, ${r(dy)}%)`;
+    if (effect === "zoom_divino") look.filter = "brightness(1.06) saturate(1.08)";
+    return look;
+  }
   if (effect === "zoom_lento_in") look.transform = `scale(${r(1 + amount * p)})`;
   else if (effect === "zoom_lento_out") look.transform = `scale(${r(1 + amount - amount * p)})`;
   else if (effect === "ken_burns") {
@@ -332,6 +349,8 @@ export const NEUTRAL_LOOK: VideoLook = {
   grain: 0,
   soften_photos: 0,
   zoom_photos: false,
+  photo_effect: "zoom_lento_in",
+  motion: 100,
   lut: null,
   lut_strength: 100,
 };
@@ -364,6 +383,12 @@ export const LOOK_PRESETS: { id: string; label: string; hint: string; look: Part
     look: { saturation: 0, contrast: 25, brightness: -5, blacks: 50, vignette: 60, grain: 50, soften_photos: 20, zoom_photos: true },
   },
   { id: "vivo", label: "Vivo", hint: "Más color (canales infantiles)", look: { saturation: 125, contrast: 10, brightness: 5, temperature: 10 } },
+  {
+    id: "celestial",
+    label: "Celestial",
+    hint: "Cálido y luminoso, zoom celestial con brillo y más movimiento (videos religiosos)",
+    look: { saturation: 105, contrast: 5, brightness: 8, temperature: 35, vignette: 30, grain: 10, soften_photos: 25, zoom_photos: true, photo_effect: "zoom_divino", motion: 160 },
+  },
 ];
 
 export const presetLook = (id: string): VideoLook => ({ ...NEUTRAL_LOOK, ...LOOK_PRESETS.find((p) => p.id === id)?.look, preset: id });
@@ -399,6 +424,6 @@ export function lookCss(look: VideoLook): LookCss {
 /** Efecto de la escena; con «zoom lento en fotos», las fotos sin efecto lo llevan (como el render). */
 export function sceneEffect(effect: string | null, mediaKind: string | undefined, look: VideoLook | undefined): string | null {
   const chosen = effect && effect !== "ninguno" ? effect : null;
-  if (!chosen && mediaKind === "image" && look?.zoom_photos) return "zoom_lento_in";
+  if (!chosen && mediaKind === "image" && look?.zoom_photos) return look.photo_effect ?? "zoom_lento_in";
   return chosen;
 }

@@ -15,6 +15,9 @@ class Sound(SQLModel, table=True):
     source_url: str | None = None
     author: str | None = None
     license: str | None = None
+    # Texto de atribución que pide la licencia (p. ej. Kevin MacLeod, CC BY 4.0): va en los
+    # créditos de la descripción cuando se usa el sonido.
+    attribution: str | None = None
     duration_s: float | None = None
     tags: str | None = None  # JSON: ["whoosh", "impact"]
     mood: str | None = None  # música: tensión, misterio, triste, épica…

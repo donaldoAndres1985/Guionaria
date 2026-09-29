@@ -8,6 +8,7 @@ import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -197,6 +198,9 @@ function SoundDetail({ sound, onClose }: { sound: Sound; onClose: () => void }) 
   const [title, setTitle] = useState(sound.title);
   const [tags, setTags] = useState(sound.tags.join(", "));
   const [bpm, setBpm] = useState(sound.bpm ? String(sound.bpm) : "");
+  const [author, setAuthor] = useState(sound.author ?? "");
+  const [license, setLicense] = useState(sound.license ?? "");
+  const [attribution, setAttribution] = useState(sound.attribution ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const save = (patch: Parameters<typeof update.mutate>[0]) => update.mutate(patch);
 
@@ -251,13 +255,27 @@ function SoundDetail({ sound, onClose }: { sound: Sound; onClose: () => void }) 
             </FormField>
           </div>
         )}
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="Autor">
+            <Input aria-label="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} onBlur={() => author !== (sound.author ?? "") && save({ id: sound.id, author: author.trim() || null })} />
+          </FormField>
+          <FormField label="Licencia">
+            <Input aria-label="Licencia" placeholder="CC BY 4.0" value={license} onChange={(e) => setLicense(e.target.value)} onBlur={() => license !== (sound.license ?? "") && save({ id: sound.id, license: license.trim() || null })} />
+          </FormField>
+        </div>
+        <FormField label="Atribución" hint="El texto que pide la licencia: va a los créditos de la descripción cuando uses este audio.">
+          <Textarea
+            aria-label="Atribución"
+            rows={3}
+            placeholder={'"Tranquility" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/'}
+            value={attribution}
+            onChange={(e) => setAttribution(e.target.value)}
+            onBlur={() => attribution !== (sound.attribution ?? "") && save({ id: sound.id, attribution: attribution.trim() || null })}
+          />
+        </FormField>
         <dl className="grid grid-cols-[80px_1fr] gap-y-1.5 text-[12px]">
           <dt className="text-muted-foreground">Origen</dt>
           <dd>{sound.provider === "freesound" ? "Freesound" : "Importado"}</dd>
-          <dt className="text-muted-foreground">Autor</dt>
-          <dd>{sound.author ?? "—"}</dd>
-          <dt className="text-muted-foreground">Licencia</dt>
-          <dd>{sound.license ?? "Propio"}</dd>
           <dt className="text-muted-foreground">Duración</dt>
           <dd>{formatSeconds(sound.duration_s)}</dd>
         </dl>

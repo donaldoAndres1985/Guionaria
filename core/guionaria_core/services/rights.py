@@ -69,8 +69,45 @@ def rights_report(session: Session, project_id: int) -> RightsReport:
         project_id=project_id,
         rows=rows,
         review_count=sum(r.needs_review for r in rows),
-        credits=credits_text(project.title, scenes, approved),
+        credits=_with_sounds(
+            credits_text(project.title, scenes, approved), session, project, scenes
+        ),
     )
+
+
+def sound_credits(session: Session, project, scenes) -> list[str]:
+    """Atribución de los audios del proyecto (fondo en bucle, música y SFX de las escenas):
+    el texto que pide su licencia o, si no hay, título, autor y licencia."""
+    from ..models import Sound
+    from .background import background_sound
+
+    ids: list[int] = []
+    bg = background_sound(session, project)
+    if bg:
+        ids.append(bg.id)
+    for scene in scenes:
+        for sid in (scene.music_sound_id, scene.sfx_sound_id):
+            if sid and sid not in ids:
+                ids.append(sid)
+    lines = []
+    for sid in ids:
+        sound = session.get(Sound, sid)
+        if sound is None:
+            continue
+        if sound.attribution and sound.attribution.strip():
+            lines.append(sound.attribution.strip())
+        elif sound.author or sound.license:
+            parts = [f"«{sound.title}»", sound.author, sound.license]
+            lines.append(" — ".join(p for p in parts if p))
+    return lines
+
+
+def _with_sounds(credits: str, session: Session, project, scenes) -> str:
+    lines = sound_credits(session, project, scenes)
+    if not lines:
+        return credits
+    block = "Música y sonidos:\n" + "\n\n".join(lines)
+    return f"{credits.rstrip()}\n\n{block}"
 
 
 def rights_csv(report: RightsReport) -> str:

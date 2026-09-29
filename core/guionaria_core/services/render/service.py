@@ -219,7 +219,7 @@ def _effect(effect: str | None, kind: str | None, look: VideoLook | None) -> str
     """Efecto de la escena; con el look «zoom lento en fotos», las fotos sin efecto lo llevan."""
     chosen = effect if effect != "ninguno" else None
     if chosen is None and kind == "image" and look and look.zoom_photos:
-        return "zoom_lento_in"
+        return look.photo_effect
     return chosen
 
 
@@ -359,13 +359,16 @@ def _render_sync(
         cuts = m.cuts(prefs or TransitionPrefs())
         segments = _segments(m, cuts, look)
         soften = looks.soften_sigma(look)
+        motion = (look.motion if look else 100) / 100
         files = []
         for i, seg in enumerate(segments):
             report(0.05 + 0.75 * i / len(segments), f"Escena {seg.position} de {len(segments)}…")
             out = tmp / f"seg_{i:03d}.mp4"
             # El texto en pantalla no va aquí: se escribe con libass en el paso final.
             _run(
-                plan.segment_command(seg, q, out, None, None, draft=draft, soften=soften),
+                plan.segment_command(
+                    seg, q, out, None, None, draft=draft, soften=soften, motion=motion
+                ),
                 cancel=cancel,
             )
             files.append(out)
@@ -395,11 +398,15 @@ def _render_sync(
         sec = lambda f: f / m.fps  # noqa: E731
         voice = plan.AudioClip(m.voice.path, 0, sec(m.voice.duration)) if m.voice else None
         sfx = [plan.AudioClip(c.path, sec(c.start), sec(c.duration)) for c in m.sfx]
-        music = [plan.AudioClip(c.path, sec(c.start), sec(c.duration)) for c in m.music]
+        music = [
+            plan.AudioClip(c.path, sec(c.start), sec(c.duration), c.loop, c.volume) for c in m.music
+        ]
         afilter, audio_inputs = plan.audio_filter(voice, sfx, music, first_input=1)
 
         args = ["ffmpeg", "-y", "-v", "error", "-i", video.name]
         for clip in audio_inputs:
+            if clip.loop:  # el audio de fondo se repite hasta el final del video
+                args += ["-stream_loop", "-1"]
             args += ["-i", str(clip.path)]
         # El audio va en -filter_complex y el video en -vf: son grafos separados, así que si
         # FFmpeg reinicia los filtros de video (cambio de formato entre escenas) no toca el

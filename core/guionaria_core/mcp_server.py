@@ -856,6 +856,23 @@ def build_mcp() -> MCPServer:
         return out
 
     @tool
+    def set_background_audio(
+        project_id: int,
+        sound_id: int | None,
+        volume: Annotated[int, Field(ge=0, le=150)] = 35,
+    ) -> dict[str, Any]:
+        """Audio de fondo en bucle para todo el video (videos religiosos, reflexiones): un tema
+        de la biblioteca (list_sounds kind=music) que se repite hasta el final, baja cuando
+        habla la voz y entra y sale con fundido. volume en % (35 = como la música normal).
+        sound_id null lo quita. Reemplaza la música por escena. Su atribución va a los créditos."""
+        from .services import background
+
+        with _session() as s:
+            return background.set_background(
+                s, project_id, background.BackgroundSet(sound_id=sound_id, volume=volume)
+            ).model_dump()
+
+    @tool
     def set_transitions(
         project_id: int,
         default: str | None = None,

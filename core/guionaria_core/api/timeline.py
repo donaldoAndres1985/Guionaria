@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from ..db import get_session
+from ..services import background
 from ..services.projects import get_project
 from ..services.timeline import cuts, preview
 from ..services.timeline import service as timeline
@@ -51,3 +52,16 @@ def put_transitions(
 def put_cut(scene_id: int, data: cuts.CutUpdate, session: SessionDep) -> cuts.TransitionsState:
     """Transición del corte entre esta escena y la siguiente."""
     return cuts.set_cut(session, scene_id, data)
+
+
+@router.get("/api/projects/{project_id}/background", response_model=background.BackgroundRead)
+def get_background(project_id: int, session: SessionDep) -> background.BackgroundRead:
+    return background.background_state(session, project_id)
+
+
+@router.put("/api/projects/{project_id}/background", response_model=background.BackgroundRead)
+def put_background(
+    project_id: int, data: background.BackgroundSet, session: SessionDep
+) -> background.BackgroundRead:
+    """Audio de fondo en bucle (sound_id de la biblioteca y volumen %); sound_id null: quitar."""
+    return background.set_background(session, project_id, data)

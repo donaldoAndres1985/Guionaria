@@ -173,10 +173,38 @@ export function LookPanel({
         ))}
       </div>
 
-      <label className="flex items-center justify-between gap-2">
-        <span title="Las fotos sin efecto llevan un zoom lento, para que parezcan video">Zoom lento en las fotos sin efecto</span>
-        <Switch aria-label="Zoom lento en fotos" checked={look.zoom_photos} disabled={disabled} onCheckedChange={(v) => set({ zoom_photos: v })} />
-      </label>
+      <div className="grid gap-2">
+        <span className="font-medium">Movimiento</span>
+        <label className="flex items-center justify-between gap-2">
+          <span title="Las fotos sin efecto llevan movimiento, para que parezcan video">Movimiento en las fotos sin efecto</span>
+          <Switch aria-label="Movimiento en fotos" checked={look.zoom_photos} disabled={disabled} onCheckedChange={(v) => set({ zoom_photos: v })} />
+        </label>
+        {look.zoom_photos && (
+          <label className="grid gap-1 text-muted-foreground">
+            Efecto de las fotos
+            <Select
+              value={look.photo_effect ?? "zoom_lento_in"}
+              disabled={disabled}
+              onValueChange={(v) => set({ photo_effect: v as NonNullable<VideoLook["photo_effect"]> })}
+            >
+              <SelectTrigger className="w-full" aria-label="Efecto de las fotos">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="zoom_lento_in">Zoom lento (acercar)</SelectItem>
+                <SelectItem value="deriva_suave">Deriva suave (acerca y se desplaza)</SelectItem>
+                <SelectItem value="zoom_divino">Zoom celestial (con brillo, ideal religiosos)</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+        )}
+        <SliderRow
+          s={{ key: "motion", label: "Intensidad del movimiento", min: 50, max: 250, hint: "Cuánto se mueven los zooms y derivas", format: (v) => `${v} %` }}
+          look={{ ...look, motion: look.motion ?? 100 }}
+          onChange={set}
+          disabled={disabled}
+        />
+      </div>
       <p className="text-[11px] text-subtle">Todo llena el cuadro sin barras negras: cada medio se escala y recorta (o se encuadra con fondo desenfocado en «Encuadre»). Doble clic en un control: valor neutro.</p>
     </div>
   );

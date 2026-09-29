@@ -54,6 +54,7 @@ class SoundRead(BaseModel):
     source_url: str | None
     author: str | None
     license: str | None
+    attribution: str | None  # texto que pide la licencia (va en los créditos)
     duration_s: float | None
     tags: list[str]
     mood: str | None
@@ -68,6 +69,9 @@ class SoundUpdate(BaseModel):
     tags: list[str] | None = None
     mood: str | None = None
     bpm: int | None = Field(default=None, ge=20, le=300)
+    author: str | None = None
+    license: str | None = None
+    attribution: str | None = Field(default=None, max_length=2000)
 
 
 class TagCount(BaseModel):
@@ -160,6 +164,7 @@ def sound_read(sound: Sound, used_in: int = 0) -> SoundRead:
         source_url=sound.source_url,
         author=sound.author,
         license=sound.license,
+        attribution=sound.attribution,
         duration_s=sound.duration_s,
         tags=json.loads(sound.tags or "[]"),
         mood=sound.mood,
@@ -317,7 +322,9 @@ def update_sound(session: Session, sound_id: int, data: SoundUpdate) -> SoundRea
         tags = [t.strip().lower() for t in changes.pop("tags") or [] if t.strip()]
         sound.tags = json.dumps(sorted(set(tags)), ensure_ascii=False)
     for key, value in changes.items():
-        setattr(sound, key, value.strip() if isinstance(value, str) else value)
+        if isinstance(value, str):
+            value = value.strip() or None if key != "title" else value.strip()
+        setattr(sound, key, value)
     session.commit()
     return sound_read(sound, _usage(session).get(sound.id, 0))
 
