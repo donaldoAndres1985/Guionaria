@@ -7,7 +7,6 @@ import {
   formatClock,
   layoutText,
   lineChars,
-  musicVolume,
   sceneIndexAt,
   sceneTextPx,
   SUBTITLE_PRESETS,
@@ -128,13 +127,11 @@ describe("vista previa: cálculos", () => {
     expect(sceneEffect(null, "image", presetLook("none"))).toBeNull();
   });
 
-  it("tamaños como en el render y ducking de la música", () => {
+  it("tamaños como en el render", () => {
     expect(subtitleFontPx(DEFAULT_STYLE, 1080, 1920)).toBeCloseTo(1080 * 0.078);
     expect(subtitleFontPx({ ...DEFAULT_STYLE, size: "large" }, 1920, 1080)).toBeCloseTo(1080 * 0.062 * 1.25);
     expect(sceneTextPx(1080, 1920, false)).toBe(83); // como captions.scene_text_size
     expect(sceneTextPx(1080, 1920, true, "large")).toBe(118);
-    expect(musicVolume(0.35, words, 0.5)).toBeCloseTo(0.35 * 0.35);
-    expect(musicVolume(0.35, words, 5)).toBe(0.35);
     expect(formatClock(75.25)).toBe("1:15.3");
   });
 

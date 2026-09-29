@@ -862,8 +862,8 @@ def build_mcp() -> MCPServer:
         volume: Annotated[int, Field(ge=0, le=150)] = 35,
     ) -> dict[str, Any]:
         """Audio de fondo en bucle para todo el video (videos religiosos, reflexiones): un tema
-        de la biblioteca (list_sounds kind=music) que se repite hasta el final, baja cuando
-        habla la voz y entra y sale con fundido. volume en % (35 = como la música normal).
+        de la biblioteca (list_sounds kind=music) que se repite hasta el final a volumen fijo
+        (sin ducking) y entra y sale con fundido. volume en % (35 = como la música normal).
         sound_id null lo quita. Reemplaza la música por escena. Su atribución va a los créditos."""
         from .services import background
 
@@ -1173,7 +1173,7 @@ def build_mcp() -> MCPServer:
         look: VideoLook | None = None,
         draft: bool = False,
     ) -> dict[str, Any]:
-        """Renderiza el video con FFmpeg (efectos, voz, SFX, música con ducking y subtítulos).
+        """Renderiza el video con FFmpeg (efectos, voz, SFX, música a volumen fijo y subtítulos).
         quality: draft (720p rápido), standard (1080p), high (1080p nítido), max (4K reescalado,
         YouTube le da más bitrate). burn_subtitles: por defecto sí en reels. Estilo de subtítulos:
         subtitle_preset (reel = Montserrat cursiva con sombra y pop; clasico; caja) o

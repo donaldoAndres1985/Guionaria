@@ -52,7 +52,9 @@ def test_segment_commands(tmp_path):
     q = plan.quality(1920, 1080, True)
     img = plan.Segment(1, 2.0, "image", Path("a.jpg"), 0, "ken_burns", None)
     args = plan.segment_command(img, q, tmp_path / "s.mp4", None, None)
-    assert args[args.index("-loop") + 1] == "1" and args[args.index("-t") + 1] == "2.000"
+    # La foto se lee una vez y se repite con el filtro loop (2 s = 60 cuadros).
+    assert "-loop" not in args and args[args.index("-i") + 1] == "a.jpg"
+    assert "loop=loop=59:size=1:start=0,settb=1/30,setpts=N" in args[args.index("-vf") + 1]
     vid = plan.Segment(2, 1.5, "video", Path("b.mp4"), 3.0, "camara_rapida", None)
     args = plan.segment_command(vid, q, tmp_path / "s.mp4", None, None)
     assert (
@@ -77,10 +79,8 @@ def test_audio_mix():
     assert [c.path.name for c in inputs] == ["v.wav", "s.wav", "m1.mp3", "m2.mp3"]
     assert "[2:a]" in graph and "adelay=2500|2500[sfx0]" in graph
     assert "amix=inputs=2:normalize=0[music]" in graph
-    assert "[music][voicekey]sidechaincompress" in graph  # ducking
-    assert graph.endswith(
-        "[voicemix][ducked][sfx0]amix=inputs=3:normalize=0,alimiter=limit=0.95[aout]"
-    )
+    assert "sidechaincompress" not in graph  # sin ducking: la música no baja con la voz
+    assert graph.endswith("[voice][music][sfx0]amix=inputs=3:normalize=0,alimiter=limit=0.95[aout]")
 
     only_music, _ = plan.audio_filter(None, [], music[:1], first_input=1)
     assert "sidechaincompress" not in only_music and only_music.endswith(
@@ -295,3 +295,36 @@ def test_render_file_names_from_title_and_renamed_files(client, project):
     # Se sirve con su nombre (espacios incluidos), pero nada fuera de la carpeta del render.
     assert client.get(f"/api/projects/{pid}/render/files/Mi%20video%20final.mp4").status_code == 200
     assert client.get(f"/api/projects/{pid}/render/files/..%2F..%2Fguionaria.db").status_code == 404
+
+
+def test_photo_still_work_runs_once():
+    q = plan.quality(1920, 1080, "standard")
+    divine = plan.effect_filter("zoom_divino", q, 90, 3.0)
+    chain = plan.still_chain(divine, 90, soften=0.45)
+    vf = ",".join(chain)
+    loop = vf.index("loop=loop=89")
+    # Escalar, suavizar y el brillo difuso van antes del loop (una sola vez); el zoom, después.
+    assert vf.index(plan.cover(q)) < vf.index("gblur=sigma=0.45") < vf.index(plan.GLOW) < loop
+    assert vf.index("perspective=") > loop and vf.count(plan.GLOW) == 1
+    assert vf.index("format=yuv420p") < loop  # el movimiento ya trabaja en 4:2:0
+    # Lo que cambia cuadro a cuadro (grano, fundido) sigue después del loop.
+    grain = ",".join(plan.still_chain(plan.effect_filter("estatica", q, 90, 3.0), 90))
+    assert grain.index("noise=") > grain.index("loop=")
+
+
+def test_encoder_choice():
+    std = plan.quality(1920, 1080, "standard")
+    assert plan.encoder(std, False) == ["-c:v", "libx264", "-preset", "faster", "-crf", "20"]
+    # Intermedio (el paso final vuelve a codificar): rápido y casi sin pérdida.
+    assert plan.encoder(std, True) == ["-c:v", "libx264", "-preset", "veryfast", "-crf", "14"]
+    assert plan.encoder(std, False, "h264_qsv") == [
+        "-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "18",
+    ]  # fmt: skip
+    nv = plan.encoder(std, False, "h264_nvenc")
+    assert nv[:2] == ["-c:v", "h264_nvenc"] and nv[nv.index("-cq") + 1] == "18"
+    # Alta y 4K no usan la GPU: se eligen por calidad.
+    high = plan.quality(1920, 1080, "high")
+    assert plan.encoder(high, False, "h264_qsv")[:2] == ["-c:v", "libx264"]
+    seg = plan.Segment(1, 1.0, "image", Path("a.jpg"), 0, None, None)
+    args = plan.segment_command(seg, std, Path("s.mp4"), None, None, intermediate=True)
+    assert args[args.index("-preset") + 1] == "veryfast"

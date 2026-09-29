@@ -228,12 +228,6 @@ export function effectLook(effect: string | null, progress: number, zoom: number
   return look;
 }
 
-/** La música baja mientras habla la voz (ducking aproximado). */
-export function musicVolume(base: number, words: PreviewWord[], t: number): number {
-  const speaking = words.some((w) => t >= w.start - 0.15 && t <= w.end + 0.3);
-  return speaking ? base * 0.35 : base;
-}
-
 export function formatClock(t: number): string {
   const s = Math.max(t, 0);
   const m = Math.floor(s / 60);

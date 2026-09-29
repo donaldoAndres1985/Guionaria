@@ -81,7 +81,7 @@ export function BackgroundAudioPanel({
   return (
     <div className="grid gap-3 text-[12px]" aria-label="Audio de fondo">
       <p className="text-[11px] text-subtle">
-        Se repite durante todo el video, entra y sale con fundido y baja cuando habla la voz. Reemplaza la música por escena.
+        Se repite durante todo el video, entra y sale con fundido y mantiene su volumen mientras habla la voz. Reemplaza la música por escena.
       </p>
       <div className="flex gap-2">
         <Select value={bg?.sound_id ? String(bg.sound_id) : NONE} disabled={disabled} onValueChange={(v) => choose(v === NONE ? null : Number(v))}>
