@@ -26,3 +26,6 @@ class Project(SQLModel, table=True):
     updated_at: str = Field(default_factory=now_iso)
     deleted_at: str | None = None  # en la papelera desde esta fecha (30 días para restaurar)
     trash_path: str | None = None  # carpeta dentro de trash/ (relativa a GUIONARIA_HOME)
+    # guionaria: hecho con las etapas de la app; importado: video terminado en otro editor
+    # (CapCut…), que solo se gestiona desde Publicación.
+    origin: str = "guionaria"

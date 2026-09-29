@@ -820,6 +820,42 @@ def build_mcp() -> MCPServer:
         return _job_summary(job)
 
     @tool
+    def import_finished_video(
+        channel: str,
+        path: str,
+        title: str = "",
+        notes: str | None = None,
+        target_publish_at: str | None = None,
+        transcribe: bool = True,
+    ) -> dict[str, Any]:
+        """Importa un video ya terminado en otro editor (CapCut…) al canal (id, slug o nombre):
+        crea un proyecto «importado» listo para publicar (se detecta el formato y la duración).
+        path: ruta del archivo en este equipo (MP4, MOV, M4V, MKV o WebM). notes: de qué trata
+        (ayuda a los textos). Con transcribe, Whisper transcribe el audio (job). Después:
+        prepare_publication, diseño de miniatura y enlaces con mark_published."""
+        from .services import imported
+
+        source = Path(path.strip().strip('"'))
+        if not source.is_file():
+            raise NotFound(f"No existe el archivo {source}")
+        with _session() as s:
+            project = imported.import_video(
+                s, _channel(s, channel).id, source, title or source.stem, notes, target_publish_at
+            )
+            pid = project.id
+            read = projects.read_project(s, pid)
+        out: dict[str, Any] = {"project": read.model_dump()}
+        if transcribe:
+
+            async def work(ctx: JobContext) -> dict:
+                return await imported.transcribe_video(_session, pid, ctx)
+
+            out["transcription_job"] = _job_summary(
+                jobs.jobs.submit("transcribe_video", work, project_id=pid)
+            )
+        return out
+
+    @tool
     def set_transitions(
         project_id: int,
         default: str | None = None,

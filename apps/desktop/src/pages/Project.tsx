@@ -8,6 +8,7 @@ import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { FormatBadge, StatusBadge } from "@/components/projects/badges";
 import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog";
+import { ImportedVideoPanel } from "@/features/imported/ImportedVideoPanel";
 import { StagePanel, useStagePanelCompact } from "@/components/projects/StagePanel";
 import { FormField } from "@/components/FormField";
 import { Button } from "@/components/ui/button";
@@ -89,8 +90,13 @@ function ProjectView({ project }: { project: Project }) {
   const navigate = useNavigate();
   // ?etapa=publicacion (desde la cola de publicación) abre esa etapa.
   const [params] = useSearchParams();
-  const asked = STAGES.find((s) => s.id === params.get("etapa"))?.id;
-  const [view, setView] = useState<ViewId>(asked ?? currentStage(project.status)?.id ?? "resumen");
+  // Video importado (hecho en otro editor): solo Resumen y Publicación.
+  const imported = project.origin === "importado";
+  const stages = imported ? STAGES.filter((s) => s.id === "publicacion") : STAGES;
+  const asked = stages.find((s) => s.id === params.get("etapa"))?.id;
+  const [view, setView] = useState<ViewId>(
+    asked ?? (imported ? "publicacion" : (currentStage(project.status)?.id ?? "resumen")),
+  );
   const initial = toDraft(project);
   const [draft, setDraft] = useState(initial);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -214,7 +220,7 @@ function ProjectView({ project }: { project: Project }) {
             subtitle={`${project.channel_name} · ${FORMAT_LABEL[project.format]}`}
           />
           <div className="my-2 border-t" />
-          {STAGES.map((s) => {
+          {stages.map((s) => {
             const state = stageState(s, project.status);
             return (
               <StageButton
@@ -271,6 +277,7 @@ function ProjectView({ project }: { project: Project }) {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
             {view === "resumen" ? (
               <div className="grid max-w-3xl gap-6 p-5">
+                {imported && <ImportedVideoPanel project={project} />}
                 <FormField label="Título">
                   <Input value={draft.title} onChange={(e) => set({ title: e.target.value })} />
                 </FormField>

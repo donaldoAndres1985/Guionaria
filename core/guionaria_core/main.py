@@ -11,6 +11,7 @@ from .api import (
     health,
     history,
     ideas,
+    imported,
     integrations,
     jobs,
     library,
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
         sounds,
         render,
         publishing,
+        imported,
     ):
         app.include_router(module.router)
     app.router.routes.extend(mcp_app.routes)

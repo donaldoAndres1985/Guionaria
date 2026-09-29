@@ -1,7 +1,10 @@
-import { CalendarClock, ExternalLink, Send } from "lucide-react";
+import { CalendarClock, ExternalLink, FileVideo, Send } from "lucide-react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
 import { ChannelSelector } from "@/components/layout/ChannelSelector";
+import { ImportVideoDialog } from "@/components/projects/ImportVideoDialog";
+import { Button } from "@/components/ui/button";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { PLATFORM_TONE, STATUS_LABEL } from "@/features/publishing/publishingMeta";
 import { useOpenUrl } from "@/hooks/useManualMedia";
@@ -35,14 +38,30 @@ export function PublishingPage() {
   const openUrl = useOpenUrl();
   const pending = items.filter((i) => i.status !== "published");
   const done = items.filter((i) => i.status === "published");
+  const [importing, setImporting] = useState(false);
+  const importButton = (
+    <Button size="sm" variant="outline" onClick={() => setImporting(true)} title="Un video ya editado en CapCut u otro editor">
+      <FileVideo /> Importar video terminado
+    </Button>
+  );
 
   return (
-    <PageLayout title="Publicación" actions={<ChannelSelector />}>
+    <PageLayout
+      title="Publicación"
+      actions={
+        <div className="flex items-center gap-2">
+          {importButton}
+          <ChannelSelector />
+        </div>
+      }
+    >
+      <ImportVideoDialog open={importing} onOpenChange={setImporting} />
       {!isLoading && !items.length ? (
         <EmptyState
           icon={Send}
           title="La cola de publicación está vacía"
-          description="Cuando renderices un proyecto, abre su etapa «Publicación» para preparar los textos y programarlo en cada plataforma."
+          description="Cuando renderices un proyecto, abre su etapa «Publicación» para preparar los textos y programarlo en cada plataforma. ¿Ya tienes el video editado en CapCut? Impórtalo."
+          action={importButton}
         />
       ) : (
         <div className="grid gap-6 overflow-y-auto p-5">
