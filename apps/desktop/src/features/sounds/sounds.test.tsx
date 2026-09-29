@@ -70,6 +70,8 @@ describe("sonidos", () => {
         const ok = (data: unknown) => new Response(JSON.stringify(data));
         if (url.pathname === "/api/sounds/tags") return ok([{ tag: "impact", count: 1 }, { tag: "whoosh", count: 1 }]);
         if (url.pathname === "/api/sounds:upload") return ok([sound(9, { title: "subido" })]);
+        if (url.pathname === "/api/channels") return ok([{ id: 3, name: "Fe y esperanza" }]);
+        if (url.pathname.endsWith(":favorite")) return ok({ ...sounds[0], favorite_channels: [3] });
         if (url.pathname === "/api/sounds") {
           const tag = url.searchParams.get("tag");
           const kind = url.searchParams.get("kind");
@@ -131,6 +133,30 @@ describe("sonidos", () => {
     fireEvent.change(screen.getByTestId("sound-files"), { target: { files: [file] } });
     await waitFor(() => expect(requests.some((r) => r.url.pathname === "/api/sounds:upload")).toBe(true));
     expect((requests.find((r) => r.url.pathname === "/api/sounds:upload")!.body as FormData).get("kind")).toBe("sfx");
+  });
+
+  it("atribuciones: filtrar, copiar y marcar favorito de un canal", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    sounds = [
+      sound(1, { title: "Tranquility", author: "Kevin MacLeod", license: "CC BY 4.0", attribution: "Tranquility — Kevin MacLeod" }),
+      sound(2, { attribution: "sonido 2 — CC0" }),
+    ];
+    wrap(<SfxMusicPage />);
+    expect(await screen.findByText("Tranquility")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Con atribución$/ }));
+    await waitFor(() => expect(requests.some((r) => r.url.searchParams.get("with_attribution") === "true")).toBe(true));
+
+    fireEvent.click(screen.getByRole("button", { name: /Copiar atribuciones/ }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Tranquility — Kevin MacLeod\n\nsonido 2 — CC0"));
+
+    fireEvent.click(screen.getByText("Tranquility"));
+    const detail = screen.getByLabelText("Detalle del sonido");
+    fireEvent.click(await within(detail).findByRole("button", { name: /Fe y esperanza/ }));
+    await waitFor(() => {
+      const fav = requests.find((r) => r.url.pathname === "/api/sounds/1:favorite");
+      expect(fav?.body).toEqual({ channel_id: 3, favorite: true });
+    });
   });
 
   it("Freesound: buscar y guardar", async () => {

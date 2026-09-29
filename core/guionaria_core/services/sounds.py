@@ -55,6 +55,7 @@ class SoundRead(BaseModel):
     author: str | None
     license: str | None
     attribution: str | None  # texto que pide la licencia (va en los créditos)
+    favorite_channels: list[int]  # canales que lo tienen como favorito
     duration_s: float | None
     tags: list[str]
     mood: str | None
@@ -143,7 +144,16 @@ def _duration(path: Path) -> float | None:
 
 
 def _usage(session: Session) -> dict[int, int]:
+    """Escenas y proyectos que usan cada sonido (música, SFX o audio de fondo)."""
+    from ..models import Project
+
     counts: dict[int, int] = {}
+    for project in session.exec(select(Project).where(col(Project.background_json).is_not(None))):
+        if project.deleted_at:
+            continue
+        sid = json.loads(project.background_json or "{}").get("sound_id")
+        if sid:
+            counts[sid] = counts.get(sid, 0) + 1
     for scene in session.exec(
         select(Scene).where(
             col(Scene.sfx_sound_id).is_not(None) | col(Scene.music_sound_id).is_not(None)
@@ -165,6 +175,7 @@ def sound_read(sound: Sound, used_in: int = 0) -> SoundRead:
         author=sound.author,
         license=sound.license,
         attribution=sound.attribution,
+        favorite_channels=json.loads(sound.favorite_channels or "[]"),
         duration_s=sound.duration_s,
         tags=json.loads(sound.tags or "[]"),
         mood=sound.mood,
@@ -198,6 +209,8 @@ def list_sounds(
     q: str | None = None,
     tag: str | None = None,
     mood: str | None = None,
+    favorite_of: int | None = None,
+    with_attribution: bool | None = None,
 ) -> list[SoundRead]:
     stmt = select(Sound).order_by(col(Sound.id).desc())
     if kind:
@@ -209,6 +222,15 @@ def list_sounds(
     for sound in session.exec(stmt).all():
         tags = json.loads(sound.tags or "[]")
         if tag and tag not in tags:
+            continue
+        if favorite_of is not None and favorite_of not in json.loads(
+            sound.favorite_channels or "[]"
+        ):
+            continue
+        if (
+            with_attribution is not None
+            and bool((sound.attribution or "").strip()) != with_attribution
+        ):
             continue
         if q:
             haystack = _plain(" ".join([sound.title, sound.author or "", *tags, sound.mood or ""]))
@@ -325,6 +347,8 @@ def update_sound(session: Session, sound_id: int, data: SoundUpdate) -> SoundRea
         if isinstance(value, str):
             value = value.strip() or None if key != "title" else value.strip()
         setattr(sound, key, value)
+    if changes.get("attribution"):
+        fill_from_attribution(sound, sound.attribution)
     session.commit()
     return sound_read(sound, _usage(session).get(sound.id, 0))
 
@@ -497,3 +521,75 @@ def suggestions(session: Session, scene_id: int, role: Kind, limit: int = 6) -> 
             scored.append((score, s))
     scored.sort(key=lambda pair: (-pair[0], pair[1].title))
     return [s for _score, s in scored[:limit]]
+
+
+# --- atribución y favoritos ---
+
+CC_NAMES = {
+    "by attribution": "CC BY",
+    "attribution-sharealike": "CC BY-SA",
+    "attribution-noderivs": "CC BY-ND",
+    "attribution-noncommercial": "CC BY-NC",
+    "attribution-noncommercial-sharealike": "CC BY-NC-SA",
+    "attribution-noncommercial-noderivs": "CC BY-NC-ND",
+}
+
+
+def parse_attribution(text: str) -> dict[str, str]:
+    """Datos del texto de atribución, p. ej. el de incompetech:
+    «"Tranquility" Kevin MacLeod (incompetech.com) / Licensed under Creative Commons: By
+    Attribution 4.0 License / http://creativecommons.org/licenses/by/4.0/»
+    → título, autor, licencia («CC BY 4.0») y el enlace."""
+    import re
+
+    out: dict[str, str] = {}
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    m = re.match(r'^[«"“]([^"”»]+)[»"”]\s*(?:by\s+|de\s+|-\s*|—\s*)?([^()\n—–|,]*)', first, re.I)
+    if m:
+        out["title"] = m.group(1).strip()
+        author = m.group(2).strip(" -—,")
+        if author:
+            out["author"] = author
+    lic = re.search(r"creative commons:?\s*([a-z\- ]+?)\s*(\d(?:\.\d)?)", text, re.I)
+    if lic:
+        kind = CC_NAMES.get(re.sub(r"\s+", " ", lic.group(1).strip().lower()).removeprefix("by "))
+        kind = kind or CC_NAMES.get(re.sub(r"\s+", " ", lic.group(1).strip().lower()))
+        if kind:
+            out["license"] = f"{kind} {lic.group(2)}"
+    elif re.search(r"\bCC0\b|dominio p[uú]blico|public domain", text, re.I):
+        out["license"] = "Dominio público (CC0)"
+    urls = re.findall(r"https?://\S+", text)
+    if urls:
+        out["license_url"] = urls[-1].rstrip(".,)")
+    return out
+
+
+def fill_from_attribution(sound: Sound, text: str | None, title_too: bool = False) -> None:
+    """Completa autor, licencia y origen (y el título si se pide) con lo que diga la
+    atribución, sin pisar lo que ya esté escrito."""
+    if not text:
+        return
+    data = parse_attribution(text)
+    if data.get("author") and not sound.author:
+        sound.author = data["author"]
+    if data.get("license") and not sound.license:
+        sound.license = data["license"]
+    if data.get("license_url") and not sound.source_url:
+        sound.source_url = data["license_url"]
+    if title_too and data.get("title"):
+        sound.title = data["title"]
+
+
+def set_favorite(session: Session, sound_id: int, channel_id: int, favorite: bool) -> SoundRead:
+    from .channels import get_channel
+
+    sound = get_sound(session, sound_id)
+    get_channel(session, channel_id)
+    channels = set(json.loads(sound.favorite_channels or "[]"))
+    if favorite:
+        channels.add(channel_id)
+    else:
+        channels.discard(channel_id)
+    sound.favorite_channels = json.dumps(sorted(channels)) if channels else None
+    session.commit()
+    return sound_read(sound, _usage(session).get(sound.id, 0))

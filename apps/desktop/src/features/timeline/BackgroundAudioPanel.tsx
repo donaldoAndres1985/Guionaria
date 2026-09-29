@@ -1,15 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Music, Pause, Play, Upload, X } from "lucide-react";
+import { Music, Pause, Play, Star, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useSounds, useUpdateSound, useUploadSounds } from "@/hooks/useSounds";
+import { ATTRIBUTION_EXAMPLE } from "@/features/sounds/attribution";
+import { UploadSoundDialog } from "@/features/sounds/UploadSoundDialog";
+import { useSounds, useToggleFavoriteSound, useUpdateSound } from "@/hooks/useSounds";
 import { timelineKey } from "@/hooks/useTimeline";
-import { api, type BackgroundAudio, coreUrl } from "@/lib/api";
+import { api, type BackgroundAudio, coreUrl, type Sound } from "@/lib/api";
 
 const NONE = "__none__";
+
+/** «Tranquility · Kevin MacLeod»: el autor ayuda a reconocerlo en la lista. */
+const soundLabel = (s: Sound) => (s.author ? `${s.title} · ${s.author}` : s.title);
 
 export function useBackground(projectId: number) {
   return useQuery({
@@ -26,14 +39,27 @@ export const backgroundSummary = (bg: BackgroundAudio | undefined) =>
  * repite todo el video, con su volumen, fundidos y bajando cuando habla la voz. Su atribución
  * (la que pide la licencia) va a los créditos de la descripción.
  */
-export function BackgroundAudioPanel({ projectId, disabled }: { projectId: number; disabled?: boolean }) {
+export function BackgroundAudioPanel({
+  projectId,
+  channelId,
+  disabled,
+}: {
+  projectId: number;
+  /** Canal del proyecto: sus favoritos salen primero. */
+  channelId?: number;
+  disabled?: boolean;
+}) {
   const client = useQueryClient();
   const { data: bg } = useBackground(projectId);
   const { data: music = [] } = useSounds({ kind: "music" });
-  const upload = useUploadSounds();
   const updateSound = useUpdateSound();
-  const picker = useRef<HTMLInputElement>(null);
+  const toggleFavorite = useToggleFavoriteSound();
+  const [uploadOpen, setUploadOpen] = useState(false);
   const player = useRef<HTMLAudioElement>(null);
+  const isFavorite = (s: Sound) => channelId != null && (s.favorite_channels ?? []).includes(channelId);
+  const favorites = music.filter(isFavorite);
+  const others = music.filter((s) => !isFavorite(s));
+  const current = music.find((s) => s.id === bg?.sound_id);
   const [playing, setPlaying] = useState(false);
   const [volume, setVolume] = useState<number | null>(null);
   const [attribution, setAttribution] = useState("");
@@ -64,37 +90,37 @@ export function BackgroundAudioPanel({ projectId, disabled }: { projectId: numbe
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE}>Sin audio de fondo</SelectItem>
-            {music.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.title}
-              </SelectItem>
-            ))}
+            {favorites.length > 0 && (
+              <SelectGroup>
+                <SelectLabel>★ Favoritos del canal</SelectLabel>
+                {favorites.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {soundLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
+            {others.length > 0 && (
+              <SelectGroup>
+                {favorites.length > 0 && <SelectLabel>Toda la biblioteca</SelectLabel>}
+                {others.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {soundLabel(s)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            )}
           </SelectContent>
         </Select>
-        <Button size="sm" variant="outline" disabled={disabled || upload.isPending} onClick={() => picker.current?.click()} title="Sube un MP3, WAV, OGG…">
-          {upload.isPending ? <LoaderCircle className="animate-spin" /> : <Upload />} Subir
+        <Button size="sm" variant="outline" disabled={disabled} onClick={() => setUploadOpen(true)} title="Sube un MP3, WAV, OGG… con su atribución">
+          <Upload /> Subir
         </Button>
-        <input
-          ref={picker}
-          type="file"
-          accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,audio/*"
-          hidden
-          aria-label="Archivo de audio de fondo"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (!file) return;
-            upload.mutate(
-              { files: [file], kind: "music" },
-              {
-                onSuccess: ([added]) => {
-                  if (added) choose(added.id);
-                  toast.success("Audio subido a la biblioteca y puesto de fondo");
-                },
-                onError: (err) => toast.error(err instanceof Error ? err.message : "No se pudo subir el audio"),
-              },
-            );
-          }}
+        <UploadSoundDialog
+          open={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          kind="music"
+          channelId={channelId}
+          onAdded={([added]) => added && choose(added.id)}
         />
       </div>
 
@@ -121,6 +147,18 @@ export function BackgroundAudioPanel({ projectId, disabled }: { projectId: numbe
             </Button>
             <Music className="size-3.5 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{bg.title}</span>
+            {channelId != null && current && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={isFavorite(current) ? "Quitar de favoritos del canal" : "Marcar como favorito del canal"}
+                aria-pressed={isFavorite(current)}
+                title={isFavorite(current) ? "Favorito de este canal" : "Guardar como favorito de este canal"}
+                onClick={() => toggleFavorite.mutate({ id: current.id, channelId, favorite: !isFavorite(current) })}
+              >
+                <Star className={isFavorite(current) ? "fill-brand text-brand" : undefined} />
+              </Button>
+            )}
             <Button size="icon-sm" variant="ghost" aria-label="Quitar audio de fondo" onClick={() => choose(null)}>
               <X />
             </Button>
@@ -154,7 +192,7 @@ export function BackgroundAudioPanel({ projectId, disabled }: { projectId: numbe
             <Textarea
               aria-label="Atribución del audio"
               rows={3}
-              placeholder={'"Tranquility" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/'}
+              placeholder={ATTRIBUTION_EXAMPLE}
               value={attribution}
               onChange={(e) => setAttribution(e.target.value)}
               onBlur={() =>

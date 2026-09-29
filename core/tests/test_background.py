@@ -149,3 +149,66 @@ def test_render_loops_background_input(monkeypatch, tmp_path):
     args = captured["args"]
     i = args.index(str(song))
     assert args[i - 3 : i] == ["-stream_loop", "-1", "-i"]
+
+
+# --- listado de audios con su atribución, favoritos por canal ---
+
+
+def test_parse_attribution():
+    from guionaria_core.services.sounds import parse_attribution
+
+    assert parse_attribution(KEVIN) == {
+        "title": "Tranquility",
+        "author": "Kevin MacLeod",
+        "license": "CC BY 4.0",
+        "license_url": "http://creativecommons.org/licenses/by/4.0/",
+    }
+    assert parse_attribution("«Amanecer» de Ana Ruiz — CC0 dominio público") == {
+        "title": "Amanecer",
+        "author": "Ana Ruiz",
+        "license": "Dominio público (CC0)",
+    }
+    assert parse_attribution("texto libre sin formato") == {}
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="requiere FFmpeg")
+def test_upload_with_attribution_and_channel_favorites(client, channel, tmp_path, media_project):
+    wav = tmp_path / "pista01.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=330",
+         "-t", "1", str(wav)],
+        check=True,
+    )  # fmt: skip
+    with wav.open("rb") as fh:
+        [sound] = client.post(
+            "/api/sounds:upload",
+            files={"file": ("pista01.wav", fh, "audio/wav")},
+            data={"kind": "music", "attribution": KEVIN, "favorite_channel": str(channel["id"])},
+        ).json()
+    # La atribución completa sola el título, el autor, la licencia y el enlace.
+    assert (sound["title"], sound["author"], sound["license"]) == (
+        "Tranquility",
+        "Kevin MacLeod",
+        "CC BY 4.0",
+    )
+    assert sound["source_url"] == "http://creativecommons.org/licenses/by/4.0/"
+    assert sound["attribution"] == KEVIN and sound["favorite_channels"] == [channel["id"]]
+
+    other = upload_music(client, tmp_path, "otra.wav", seconds=2)
+    favs = client.get(f"/api/sounds?kind=music&favorite_of={channel['id']}").json()
+    assert [s["id"] for s in favs] == [sound["id"]]
+    with_attr = client.get("/api/sounds?kind=music&with_attribution=true").json()
+    assert [s["id"] for s in with_attr] == [sound["id"]]
+    assert other["id"] in [s["id"] for s in client.get("/api/sounds?with_attribution=false").json()]
+
+    # Quitar de favoritos; cualquier canal puede usarlo igual.
+    off = client.post(
+        f"/api/sounds/{sound['id']}:favorite", json={"channel_id": channel["id"], "favorite": False}
+    )
+    assert off.json()["favorite_channels"] == []
+
+    # En uso como audio de fondo: no se puede borrar.
+    client.put(f"/api/projects/{media_project['id']}/background", json={"sound_id": sound["id"]})
+    listed = next(s for s in client.get("/api/sounds").json() if s["id"] == sound["id"])
+    assert listed["used_in"] == 1
+    assert client.delete(f"/api/sounds/{sound['id']}").status_code == 409

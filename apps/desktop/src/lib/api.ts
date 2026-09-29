@@ -923,6 +923,8 @@ export interface Sound {
   license: string | null;
   /** Texto de atribución que pide la licencia (va en los créditos de la descripción). */
   attribution?: string | null;
+  /** Canales que lo tienen como favorito (salen primero al elegir). */
+  favorite_channels?: number[];
   duration_s: number | null;
   tags: string[];
   mood: string | null;

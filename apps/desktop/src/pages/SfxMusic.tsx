@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Music, Pause, Play, Search, Trash2, Upload, X } from "lucide-react";
+import { Copy, Download, ExternalLink, FileText, Music, Pause, Play, Plus, Search, Star, Trash2, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -16,7 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { copyText } from "@/features/publishing/ManualKit";
+import { ATTRIBUTION_EXAMPLE, attributionsText } from "@/features/sounds/attribution";
+import { UploadSoundDialog } from "@/features/sounds/UploadSoundDialog";
 import { formatSeconds, MOODS, usePreview } from "@/features/sounds/usePreview";
+import { useChannels } from "@/hooks/useChannels";
 import { useOpenUrl } from "@/hooks/useManualMedia";
 import {
   useDeleteSound,
@@ -24,6 +28,7 @@ import {
   useSaveFreesound,
   useSoundTags,
   useSounds,
+  useToggleFavoriteSound,
   useUpdateSound,
   useUploadSounds,
 } from "@/hooks/useSounds";
@@ -32,6 +37,7 @@ import { cn } from "@/lib/utils";
 
 const AUDIO_ACCEPT = ".wav,.mp3,.ogg,.flac,.m4a,.aac";
 const NO_MOOD = "none";
+const ALL_CHANNELS = "all";
 
 export function SfxMusicPage() {
   const [kind, setKind] = useState<SoundKind>("sfx");
@@ -39,7 +45,12 @@ export function SfxMusicPage() {
   const [tag, setTag] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [freesoundOpen, setFreesoundOpen] = useState(false);
-  const { data: sounds = [], isPending } = useSounds({ kind, q, tag });
+  const [addOpen, setAddOpen] = useState(false);
+  const [favoriteOf, setFavoriteOf] = useState<number | null>(null);
+  const [withAttribution, setWithAttribution] = useState(false);
+  const { data: channels = [] } = useChannels();
+  const { data: sounds = [], isPending } = useSounds({ kind, q, tag, favoriteOf, withAttribution });
+  const credits = attributionsText(sounds);
   const { data: tags = [] } = useSoundTags(kind);
   const upload = useUploadSounds();
   const preview = usePreview();
@@ -71,6 +82,9 @@ export function SfxMusicPage() {
           <Button variant="outline" className="h-10 bg-panel" disabled={upload.isPending} onClick={() => fileInput.current?.click()}>
             <Upload /> Importar archivos
           </Button>
+          <Button variant="outline" className="h-10 bg-panel" onClick={() => setAddOpen(true)}>
+            <Plus /> Agregar con atribución
+          </Button>
           <Button variant="outline" className="h-10 bg-panel" onClick={() => setFreesoundOpen((o) => !o)}>
             <Search /> Buscar en Freesound
           </Button>
@@ -81,6 +95,7 @@ export function SfxMusicPage() {
           stats={[
             { label: kind === "sfx" ? "Efectos" : "Temas", value: sounds.length, highlight: true },
             { label: "En uso", value: sounds.filter((s) => s.used_in > 0).length },
+            { label: "Con atribución", value: sounds.filter((s) => s.attribution?.trim()).length },
           ]}
         />
       }
@@ -105,7 +120,43 @@ export function SfxMusicPage() {
             {label}
           </button>
         ))}
-        <div className="relative ml-auto w-64">
+        <div className="ml-auto flex items-center gap-2">
+          <Select value={favoriteOf ? String(favoriteOf) : ALL_CHANNELS} onValueChange={(v) => setFavoriteOf(v === ALL_CHANNELS ? null : Number(v))}>
+            <SelectTrigger className="h-9 w-48" aria-label="Favoritos del canal">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CHANNELS}>Todos los canales</SelectItem>
+              {channels.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  ★ Favoritos de {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <button
+            type="button"
+            aria-pressed={withAttribution}
+            onClick={() => setWithAttribution((v) => !v)}
+            className={cn(
+              "flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-[12px]",
+              withAttribution ? "border-brand bg-active text-active-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <FileText className="size-3.5" /> Con atribución
+          </button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9"
+            disabled={!credits}
+            title="Copia las atribuciones de los audios de la lista, listas para la descripción"
+            onClick={() => void copyText(credits, "Atribuciones")}
+          >
+            <Copy /> Copiar atribuciones
+          </Button>
+        </div>
+        <div className="relative w-56">
           <Search className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input aria-label="Buscar sonidos" placeholder="Título, etiqueta o mood" className="h-9 pl-8" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
@@ -127,6 +178,7 @@ export function SfxMusicPage() {
           ))}
         </div>
       )}
+      <UploadSoundDialog open={addOpen} onClose={() => setAddOpen(false)} kind={kind} channelId={favoriteOf} onAdded={([first]) => first && setSelectedId(first.id)} />
       {freesoundOpen && <FreesoundPanel kind={kind} preview={preview} onClose={() => setFreesoundOpen(false)} />}
 
       <div className="flex min-h-0 flex-1">
@@ -154,13 +206,19 @@ export function SfxMusicPage() {
                 >
                   <PlayButton playing={preview.playing === `s${s.id}`} onClick={() => preview.toggle(`s${s.id}`, coreUrl(s.file_url)!)} label={s.title} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{s.title}</span>
+                    <span className="flex items-center gap-1.5 truncate font-medium">
+                      {s.title}
+                      {(s.favorite_channels?.length ?? 0) > 0 && <Star aria-label="Favorito" className="size-3 shrink-0 fill-brand text-brand" />}
+                    </span>
                     <span className="block truncate text-[12px] text-muted-foreground">
                       {[s.mood, s.bpm ? `${s.bpm} BPM` : null, ...s.tags].filter(Boolean).join(" · ") || "Sin etiquetas"}
                     </span>
                   </span>
                   <span className="w-20 shrink-0 text-right text-[12px] text-muted-foreground">{formatSeconds(s.duration_s)}</span>
-                  <span className="w-32 shrink-0 truncate text-[12px] text-muted-foreground">{s.license ?? "Propio"}</span>
+                  <span className="w-32 shrink-0 truncate text-[12px] text-muted-foreground" title={s.attribution ?? undefined}>
+                    {s.license ?? "Propio"}
+                    {s.attribution?.trim() && <span className="block truncate text-[11px] text-subtle">{s.author ?? "Con atribución"}</span>}
+                  </span>
                   <span className={cn("w-24 shrink-0 text-[12px]", s.used_in ? "text-success-foreground" : "text-subtle")}>
                     {s.used_in ? `${s.used_in} ${s.used_in === 1 ? "escena" : "escenas"}` : "Sin usar"}
                   </span>
@@ -195,6 +253,8 @@ function SoundDetail({ sound, onClose }: { sound: Sound; onClose: () => void }) 
   const update = useUpdateSound();
   const remove = useDeleteSound();
   const openUrl = useOpenUrl();
+  const toggleFavorite = useToggleFavoriteSound();
+  const { data: channels = [] } = useChannels();
   const [title, setTitle] = useState(sound.title);
   const [tags, setTags] = useState(sound.tags.join(", "));
   const [bpm, setBpm] = useState(sound.bpm ? String(sound.bpm) : "");
@@ -267,12 +327,35 @@ function SoundDetail({ sound, onClose }: { sound: Sound; onClose: () => void }) 
           <Textarea
             aria-label="Atribución"
             rows={3}
-            placeholder={'"Tranquility" Kevin MacLeod (incompetech.com)\nLicensed under Creative Commons: By Attribution 4.0 License\nhttp://creativecommons.org/licenses/by/4.0/'}
+            placeholder={ATTRIBUTION_EXAMPLE}
             value={attribution}
             onChange={(e) => setAttribution(e.target.value)}
             onBlur={() => attribution !== (sound.attribution ?? "") && save({ id: sound.id, attribution: attribution.trim() || null })}
           />
         </FormField>
+        {channels.length > 0 && (
+          <FormField label="Favorito de" hint="Sale primero al elegir audio en esos canales. Cualquier canal puede usarlo.">
+            <div className="flex flex-wrap gap-1.5">
+              {channels.map((c) => {
+                const on = sound.favorite_channels?.includes(c.id) ?? false;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleFavorite.mutate({ id: sound.id, channelId: c.id, favorite: !on })}
+                    className={cn(
+                      "flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[12px]",
+                      on ? "border-brand bg-active text-active-foreground" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Star className={cn("size-3", on && "fill-brand text-brand")} /> {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          </FormField>
+        )}
         <dl className="grid grid-cols-[80px_1fr] gap-y-1.5 text-[12px]">
           <dt className="text-muted-foreground">Origen</dt>
           <dd>{sound.provider === "freesound" ? "Freesound" : "Importado"}</dd>
@@ -285,7 +368,7 @@ function SoundDetail({ sound, onClose }: { sound: Sound; onClose: () => void }) 
               <ExternalLink /> Origen
             </Button>
           )}
-          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-danger" disabled={sound.used_in > 0} title={sound.used_in ? "Quítalo de las escenas antes de borrarlo" : undefined} onClick={() => setConfirmDelete(true)}>
+          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-danger" disabled={sound.used_in > 0} title={sound.used_in ? "Quítalo de las escenas y del audio de fondo antes de borrarlo" : undefined} onClick={() => setConfirmDelete(true)}>
             <Trash2 /> Borrar
           </Button>
         </div>
