@@ -8,11 +8,21 @@ import {
   type SoundKind,
 } from "@/lib/api";
 
-export function useSounds(filters: { kind?: SoundKind | null; q?: string; tag?: string | null }) {
+export function useSounds(filters: {
+  kind?: SoundKind | null;
+  q?: string;
+  tag?: string | null;
+  /** Solo los favoritos de ese canal. */
+  favoriteOf?: number | null;
+  /** Solo los que tienen atribución guardada. */
+  withAttribution?: boolean;
+}) {
   const params = new URLSearchParams();
   if (filters.kind) params.set("kind", filters.kind);
   if (filters.q?.trim()) params.set("q", filters.q.trim());
   if (filters.tag) params.set("tag", filters.tag);
+  if (filters.favoriteOf) params.set("favorite_of", String(filters.favoriteOf));
+  if (filters.withAttribution) params.set("with_attribution", "true");
   const qs = params.toString();
   return useQuery({
     queryKey: ["sounds", filters],
@@ -40,12 +50,25 @@ function useInvalidateSounds() {
 export function useUploadSounds() {
   const invalidate = useInvalidateSounds();
   return useMutation({
-    mutationFn: async ({ files, kind }: { files: File[]; kind: SoundKind }) => {
+    mutationFn: async ({
+      files,
+      kind,
+      attribution,
+      favoriteChannel,
+    }: {
+      files: File[];
+      kind: SoundKind;
+      /** Texto de la licencia: completa solo título, autor, licencia y enlace. */
+      attribution?: string;
+      favoriteChannel?: number | null;
+    }) => {
       const added: Sound[] = [];
       for (const file of files) {
         const form = new FormData();
         form.append("file", file, file.name);
         form.append("kind", kind);
+        if (attribution?.trim()) form.append("attribution", attribution.trim());
+        if (favoriteChannel) form.append("favorite_channel", String(favoriteChannel));
         added.push(...(await api.upload<Sound[]>("/api/sounds:upload", form)));
       }
       return added;
@@ -71,6 +94,15 @@ export function useUpdateSound() {
       attribution?: string | null;
     }) =>
       api.patch<Sound>(`/api/sounds/${id}`, data),
+    onSuccess: invalidate,
+  });
+}
+
+export function useToggleFavoriteSound() {
+  const invalidate = useInvalidateSounds();
+  return useMutation({
+    mutationFn: ({ id, channelId, favorite }: { id: number; channelId: number; favorite: boolean }) =>
+      api.post<Sound>(`/api/sounds/${id}:favorite`, { channel_id: channelId, favorite }),
     onSuccess: invalidate,
   });
 }

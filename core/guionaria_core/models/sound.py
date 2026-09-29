@@ -18,6 +18,9 @@ class Sound(SQLModel, table=True):
     # Texto de atribución que pide la licencia (p. ej. Kevin MacLeod, CC BY 4.0): va en los
     # créditos de la descripción cuando se usa el sonido.
     attribution: str | None = None
+    # Canales que lo tienen como favorito (JSON: [1, 3]): aparecen primero al elegir. La
+    # biblioteca es la misma para todos los canales.
+    favorite_channels: str | None = None
     duration_s: float | None = None
     tags: str | None = None  # JSON: ["whoosh", "impact"]
     mood: str | None = None  # música: tensión, misterio, triste, épica…

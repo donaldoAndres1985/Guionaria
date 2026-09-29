@@ -41,8 +41,11 @@ def list_sounds(
     q: str | None = None,
     tag: str | None = None,
     mood: str | None = None,
+    favorite_of: int | None = None,
+    with_attribution: bool | None = None,
 ) -> list[svc.SoundRead]:
-    return svc.list_sounds(session, kind, q, tag, mood)
+    """favorite_of: solo los favoritos de ese canal; with_attribution: con o sin atribución."""
+    return svc.list_sounds(session, kind, q, tag, mood, favorite_of, with_attribution)
 
 
 @router.get("/api/sounds/tags", response_model=list[svc.TagCount])
@@ -57,8 +60,14 @@ def import_sounds(data: ImportRequest, session: SessionDep) -> list[svc.SoundRea
 
 @router.post("/api/sounds:upload", response_model=list[svc.SoundRead])
 async def upload(
-    session: SessionDep, file: UploadFile, kind: Annotated[svc.Kind, Form()] = "sfx"
+    session: SessionDep,
+    file: UploadFile,
+    kind: Annotated[svc.Kind, Form()] = "sfx",
+    attribution: Annotated[str | None, Form()] = None,
+    favorite_channel: Annotated[int | None, Form()] = None,
 ) -> list[svc.SoundRead]:
+    """Sube un audio a la biblioteca. Con la atribución (la que pide la licencia) se
+    completan solos el título, el autor, la licencia y el enlace."""
     name = Path(file.filename or "sonido.wav").name
     if Path(name).suffix.lower() not in svc.AUDIO_EXT:
         raise DomainError("Formato de audio no admitido: usa WAV, MP3, OGG, FLAC, M4A o AAC")
@@ -71,7 +80,28 @@ async def upload(
                 if size > MAX_UPLOAD:
                     raise DomainError("El archivo supera 300 MB")
                 fh.write(chunk)
-        return svc.import_files(session, [target], kind)
+        added = svc.import_files(session, [target], kind)
+    for read in added:
+        if attribution and attribution.strip():
+            svc.update_sound(session, read.id, svc.SoundUpdate(attribution=attribution))
+            sound = svc.get_sound(session, read.id)
+            svc.fill_from_attribution(sound, sound.attribution, title_too=True)
+            session.commit()
+        if favorite_channel:
+            svc.set_favorite(session, read.id, favorite_channel, True)
+    ids = [r.id for r in added]
+    return [r for r in svc.list_sounds(session) if r.id in ids]
+
+
+class FavoriteRequest(BaseModel):
+    channel_id: int
+    favorite: bool = True
+
+
+@router.post("/api/sounds/{sound_id}:favorite", response_model=svc.SoundRead)
+def favorite(sound_id: int, data: FavoriteRequest, session: SessionDep) -> svc.SoundRead:
+    """Marca o quita el sonido como favorito de un canal (sale primero al elegirlo)."""
+    return svc.set_favorite(session, sound_id, data.channel_id, data.favorite)
 
 
 @router.patch("/api/sounds/{sound_id}", response_model=svc.SoundRead)

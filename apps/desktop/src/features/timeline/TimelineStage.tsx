@@ -234,7 +234,7 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
         <aside className="w-[340px] shrink-0 overflow-y-auto border-l" aria-label="Opciones del render">
           <RenderControls ctl={render} />
           <Section title="Audio de fondo" summary={backgroundSummary(background)} open={open.background} onToggle={() => toggle("background")}>
-            <BackgroundAudioPanel projectId={project.id} disabled={render.job.running} />
+            <BackgroundAudioPanel projectId={project.id} channelId={project.channel_id} disabled={render.job.running} />
           </Section>
           <Section title="Look del video" summary={lookSummary(render.look)} open={open.look} onToggle={() => toggle("look")}>
             <LookPanel

@@ -1009,11 +1009,17 @@ def build_mcp() -> MCPServer:
         query: str | None = None,
         kind: Literal["sfx", "music"] | None = None,
         tag: str | None = None,
+        favorite_of_channel: int | None = None,
+        with_attribution: bool | None = None,
     ) -> dict[str, Any]:
         """Busca en la biblioteca local de efectos de sonido y música (por título, etiquetas o
-        mood). Para asignarlos a una escena usa assign_sound."""
+        mood). La biblioteca es común a todos los canales; favorite_of_channel deja solo los
+        favoritos de ese canal. Para asignarlos a una escena usa assign_sound; para el audio de
+        fondo en bucle, set_background_audio."""
         with _session() as s:
-            found = sounds.list_sounds(s, kind, query, tag)
+            found = sounds.list_sounds(
+                s, kind, query, tag, None, favorite_of_channel, with_attribution
+            )
             return {
                 "sounds": [
                     {
@@ -1024,6 +1030,9 @@ def build_mcp() -> MCPServer:
                         "mood": x.mood,
                         "duration_s": x.duration_s,
                         "license": x.license,
+                        "author": x.author,
+                        "attribution": x.attribution,
+                        "favorite_channels": x.favorite_channels,
                     }
                     for x in found[:50]
                 ]
