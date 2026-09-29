@@ -303,6 +303,8 @@ export type SceneEffect =
   | "fundido_negro"
   | "glitch"
   | "camara_rapida"
+  | "deriva_suave"
+  | "zoom_divino"
   | "ninguno";
 export type SceneStatus = "pending" | "candidates" | "approved" | "manual" | "review";
 
@@ -624,6 +626,21 @@ export interface PreviewSound {
   url: string;
   start_s: number;
   duration_s: number;
+  /** Audio de fondo: se repite hasta cubrir su duración. */
+  loop?: boolean;
+  /** Volumen propio (0–1,5); sin él, el de la pista. */
+  volume?: number | null;
+}
+
+/** Audio de fondo en bucle del proyecto. */
+export interface BackgroundAudio {
+  sound_id: number | null;
+  volume: number; // %
+  title: string | null;
+  duration_s: number | null;
+  file_url: string | null;
+  attribution: string | null;
+  missing: boolean;
 }
 
 export interface PreviewWord {
@@ -904,6 +921,8 @@ export interface Sound {
   source_url: string | null;
   author: string | null;
   license: string | null;
+  /** Texto de atribución que pide la licencia (va en los créditos de la descripción). */
+  attribution?: string | null;
   duration_s: number | null;
   tags: string[];
   mood: string | null;
@@ -991,6 +1010,10 @@ export interface VideoLook {
   grain: number;
   soften_photos: number;
   zoom_photos: boolean;
+  /** Efecto del movimiento de las fotos sin efecto. */
+  photo_effect?: "zoom_lento_in" | "deriva_suave" | "zoom_divino";
+  /** Intensidad del movimiento (%) de zooms y derivas. */
+  motion?: number;
   lut: string | null;
   lut_strength: number;
 }

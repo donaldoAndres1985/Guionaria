@@ -22,6 +22,8 @@ export const EFFECTS: { id: SceneEffect; label: string }[] = [
   { id: "fundido_negro", label: "Fundido a negro" },
   { id: "glitch", label: "Glitch" },
   { id: "camara_rapida", label: "Cámara rápida" },
+  { id: "deriva_suave", label: "Deriva suave" },
+  { id: "zoom_divino", label: "Zoom celestial" },
 ];
 
 export const EFFECT_LABEL = Object.fromEntries(EFFECTS.map((e) => [e.id, e.label])) as Record<

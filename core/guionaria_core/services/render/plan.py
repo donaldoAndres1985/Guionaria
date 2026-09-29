@@ -88,9 +88,26 @@ def cover(q: Quality, factor: int = 1) -> str:
     return f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1"
 
 
-def zoom_amount(duration: float) -> float:
-    """Cuánto se acerca (o aleja) el zoom lento en una escena de `duration` segundos."""
-    return round(min(ZOOM, max(ZOOM_MIN, ZOOM_PER_S * duration)), 4)
+def zoom_amount(duration: float, motion: float = 1.0) -> float:
+    """Cuánto se acerca (o aleja) el zoom lento en una escena de `duration` segundos.
+    `motion` (Look → intensidad del movimiento) lo multiplica: 1,5 = un 50 % más."""
+    base = min(ZOOM, max(ZOOM_MIN, ZOOM_PER_S * duration))
+    return round(base * motion, 4)
+
+
+def _ease(n: int) -> str:
+    """Aceleración suave (smoothstep) del avance de la escena: arranca y frena sin tirones."""
+    p = f"(in/{n})"
+    return f"({p}*{p}*(3-2*{p}))"
+
+
+# Brillo difuso («Zoom celestial»): una copia muy desenfocada y un poco más clara se suma
+# en modo pantalla, como la luz de un amanecer.
+GLOW = (
+    # En RGB: la mezcla «pantalla» sobre los planos de color de YUV tiñe la imagen de rosa.
+    "format=gbrp,split[dzbase][dzcopy];[dzcopy]gblur=sigma=16,eq=brightness=0.05:saturation=1.1[dzglow];"
+    "[dzbase][dzglow]blend=all_mode=screen:all_opacity=0.28"
+)
 
 
 def _window(left: str, top: str, frac: str, interp: str) -> str:
@@ -106,12 +123,31 @@ def _window(left: str, top: str, frac: str, interp: str) -> str:
 
 
 def effect_filter(
-    effect: str | None, q: Quality, frames: int, duration: float, draft: bool = False
+    effect: str | None,
+    q: Quality,
+    frames: int,
+    duration: float,
+    draft: bool = False,
+    motion: float = 1.0,
 ) -> list[str]:
     """Filtros de la sección 11 para una escena ya cubierta a la resolución de salida."""
     n = max(frames - 1, 1)
     interp = "linear" if draft else "cubic"
-    amount = zoom_amount(duration)
+    amount = zoom_amount(duration, motion)
+    if effect == "deriva_suave":
+        e = _ease(n)
+        z = f"(1+{round(0.04 * motion, 4)}+{round(amount * 1.3, 4)}*{e})"
+        frac = f"1/{z}"
+        left = f"(1-1/{z})*(0.15+0.7*{e})"
+        top = f"(1-1/{z})*(0.35+0.3*{e})"
+        return [cover(q), _window(left, top, frac, interp)]
+    if effect == "zoom_divino":
+        e = _ease(n)
+        z = f"(1+{round(amount * 1.5, 4)}*{e})"
+        frac = f"1/{z}"
+        left = f"(1-1/{z})/2"
+        top = f"(1-1/{z})*0.4"  # un poco hacia arriba: mirada al cielo
+        return [cover(q), _window(left, top, frac, interp), GLOW]
     if effect in ("zoom_lento_in", "zoom_lento_out"):
         z = f"(1+{amount}*in/{n})" if effect == "zoom_lento_in" else f"(1+{amount}-{amount}*in/{n})"
         frac = f"1/{z}"
@@ -173,6 +209,7 @@ def segment_command(
     raise_text: bool = False,
     draft: bool = False,
     soften: float = 0.0,
+    motion: float = 1.0,
 ) -> list[str]:
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
@@ -194,7 +231,7 @@ def segment_command(
     if seg.kind == "color":
         chain.append("setsar=1")
     else:
-        effect = effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft)
+        effect = effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft, motion)
         if soften and seg.kind == "image":
             # Look: las fotos, más nítidas que los videos de stock, se suavizan un poco.
             effect.insert(1, f"gblur=sigma={soften:g}")
@@ -222,6 +259,8 @@ class AudioClip:
     path: Path
     start: float
     duration: float
+    loop: bool = False  # se repite hasta cubrir `duration` (audio de fondo)
+    volume: float | None = None  # None: el de su pista (música 0,35; SFX 0,9)
 
 
 def audio_filter(
@@ -243,9 +282,13 @@ def audio_filter(
             f"atrim=0:{clip.duration:.3f}",
             "asetpts=PTS-STARTPTS",
         ]
-        if fade and clip.duration > 2:
+        if clip.loop and clip.duration > 4:  # fondo en bucle: entra y sale con suavidad
+            chain.append("afade=t=in:st=0:d=1.5")
+            chain.append(f"afade=t=out:st={clip.duration - 2:.3f}:d=2")
+        elif fade and clip.duration > 2:
             chain.append(f"afade=t=out:st={clip.duration - 1:.3f}:d=1")
-        chain += [f"volume={volume}", f"adelay={ms}|{ms}[{label}]"]
+        level = clip.volume if clip.volume is not None else volume
+        chain += [f"volume={round(level, 3)}", f"adelay={ms}|{ms}[{label}]"]
         parts.append(",".join(chain))
         return f"[{label}]"
 

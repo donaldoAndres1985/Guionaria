@@ -13,6 +13,8 @@ Effect = Literal[
     "fundido_negro",
     "glitch",
     "camara_rapida",
+    "deriva_suave",  # acercamiento con desplazamiento diagonal, con aceleración suave
+    "zoom_divino",  # acercamiento con aceleración suave y brillo difuso (videos religiosos)
     "ninguno",
 ]
 SceneStatus = Literal["pending", "candidates", "approved", "manual", "review"]

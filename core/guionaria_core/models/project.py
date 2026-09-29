@@ -29,3 +29,5 @@ class Project(SQLModel, table=True):
     # guionaria: hecho con las etapas de la app; importado: video terminado en otro editor
     # (CapCut…), que solo se gestiona desde Publicación.
     origin: str = "guionaria"
+    # Audio de fondo en bucle (JSON: sound_id y volumen); reemplaza la música por escena.
+    background_json: str | None = None

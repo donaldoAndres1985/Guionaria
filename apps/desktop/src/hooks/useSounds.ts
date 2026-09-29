@@ -57,7 +57,19 @@ export function useUploadSounds() {
 export function useUpdateSound() {
   const invalidate = useInvalidateSounds();
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: number; title?: string; tags?: string[]; mood?: string | null; bpm?: number | null }) =>
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: number;
+      title?: string;
+      tags?: string[];
+      mood?: string | null;
+      bpm?: number | null;
+      author?: string | null;
+      license?: string | null;
+      attribution?: string | null;
+    }) =>
       api.patch<Sound>(`/api/sounds/${id}`, data),
     onSuccess: invalidate,
   });

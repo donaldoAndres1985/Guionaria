@@ -122,6 +122,8 @@ def test_presets_match_the_app():
     for name, values in looks.LOOK_PRESETS.items():
         m = re.search(rf'id: "{name}",.*?look: \{{(.*?)\}}', block, re.S)
         assert m, name
-        found = dict(re.findall(r"(\w+): (-?\d+|true|false)", m.group(1)))
-        expected = {k: str(v).lower() for k, v in values.items()}
+        found = dict(re.findall(r'(\w+): (-?\d+|true|false|"[^"]*")', m.group(1)))
+        expected = {
+            k: f'"{v}"' if isinstance(v, str) else str(v).lower() for k, v in values.items()
+        }
         assert found == expected, name

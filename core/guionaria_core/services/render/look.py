@@ -32,6 +32,11 @@ LOOK_PRESETS: dict[str, dict] = {
         "grain": 50, "soften_photos": 20, "zoom_photos": True,
     },
     "vivo": {"saturation": 125, "contrast": 10, "brightness": 5, "temperature": 10},
+    "celestial": {
+        "saturation": 105, "contrast": 5, "brightness": 8, "temperature": 35, "vignette": 30,
+        "grain": 10, "soften_photos": 25, "zoom_photos": True, "photo_effect": "zoom_divino",
+        "motion": 160,
+    },
 }  # fmt: skip
 
 LUT_EXT = ".cube"

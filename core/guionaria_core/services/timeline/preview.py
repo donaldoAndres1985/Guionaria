@@ -37,6 +37,8 @@ class PreviewSound(BaseModel):
     url: str
     start_s: float
     duration_s: float
+    loop: bool = False  # audio de fondo: se repite
+    volume: float | None = None  # volumen propio (0–1,5); None: el de la pista
 
 
 class PreviewWord(BaseModel):
@@ -115,6 +117,8 @@ def preview_state(session: Session, project: Project) -> PreviewState:
                 url=f"/api/sounds/{c.sound_id}/file" + _version(c.path),
                 start_s=_sec(m, c.start),
                 duration_s=_sec(m, c.duration),
+                loop=c.loop,
+                volume=c.volume,
             )
             for c in clips
             if c.sound_id

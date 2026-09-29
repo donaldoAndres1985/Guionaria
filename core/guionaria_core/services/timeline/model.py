@@ -33,6 +33,8 @@ class Clip:
     media_duration: int | None = None  # None: imagen fija (sin límite)
     scene_position: int | None = None
     sound_id: int | None = None  # pistas de SFX y música
+    loop: bool = False  # audio de fondo: se repite hasta cubrir la duración
+    volume: float | None = None  # volumen propio (audio de fondo)
 
 
 @dataclass
@@ -223,6 +225,10 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
         )
 
     sfx, music = _sound_tracks(session, scenes, spans, total, warnings)
+    from ..background import background_clip
+
+    if bg := background_clip(session, project, total, warnings):
+        music = [bg]  # el audio de fondo reemplaza la música por escena
     width, height = (1920, 1080) if project.format == "video" else (1080, 1920)
     return TimelineModel(
         project.title, FPS, width, height, total, spans, voice, markers, warnings, sfx, music
