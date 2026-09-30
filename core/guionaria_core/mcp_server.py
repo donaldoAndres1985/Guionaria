@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from . import __version__
-from .config import SubtitleStyle, TextStyle, VideoLook, load_settings
+from .config import ElevenLabsPrefs, SubtitleStyle, TextStyle, VideoLook, load_settings
 from .db import get_engine
 from .domain.states import ProjectStatus
 from .models import Channel, Scene
@@ -40,6 +40,7 @@ from .services.oplog import current_actor
 from .services.package import _approved_by_scene, credits_text
 from .services.timeline import service as timeline
 from .services.voice import elevenlabs
+from .services.voice import memory as voice_memory
 from .services.voice import service as voice
 from .services.voice.models import DEFAULT_VOICE
 
@@ -100,7 +101,9 @@ GENERATE_VOICE_DOC = (
     "engine=piper (local y gratis; voice_id: por defecto la del canal o "
     f"{DEFAULT_VOICE}) o engine=elevenlabs (profesional, requiere su clave; voice_id de "
     "list_elevenlabs_voices, model_id, stability, similarity_boost, style; subtítulos exactos "
-    "por palabra). El plan gratuito de ElevenLabs no permite uso comercial. Devuelve el job."
+    "por palabra). Lo que no indiques sale de la memoria: la última voz usada en el canal y los "
+    "ajustes guardados de cada voz; no los pases salvo que quieras cambiarlos. "
+    "El plan gratuito de ElevenLabs no permite uso comercial. Devuelve el job."
 )
 
 # Estilos rápidos de subtítulos (los mismos que en la app).
@@ -1059,30 +1062,39 @@ def build_mcp() -> MCPServer:
         project_id: int,
         engine: Literal["piper", "elevenlabs"] | None = None,
         voice_id: str | None = None,
-        speed: Annotated[float, Field(ge=0.7, le=1.4)] = 1.0,
+        speed: Annotated[float, Field(ge=0.7, le=1.4)] | None = None,
         pause_s: Annotated[float, Field(ge=0, le=2)] = voice.DEFAULT_PAUSE_S,
-        model_id: str = elevenlabs.DEFAULT_MODEL,
-        stability: Annotated[float, Field(ge=0, le=1)] = 0.5,
-        similarity_boost: Annotated[float, Field(ge=0, le=1)] = 0.75,
-        style: Annotated[float, Field(ge=0, le=1)] = 0.0,
+        model_id: str | None = None,
+        stability: Annotated[float, Field(ge=0, le=1)] | None = None,
+        similarity_boost: Annotated[float, Field(ge=0, le=1)] | None = None,
+        style: Annotated[float, Field(ge=0, le=1)] | None = None,
     ) -> dict[str, Any]:
         with _session() as s:
-            voice._require_ready(s, projects.get_project(s, project_id))
-        engine = engine or voice.default_engine()
+            project = projects.get_project(s, project_id)
+            voice._require_ready(s, project)
+            channel_id = project.channel_id
+        engine = engine or voice.default_engine(channel_id)
         eleven = None
         if engine == "elevenlabs":
-            prefs = load_settings().elevenlabs
-            chosen = voice_id or prefs.voice_id
-            if not chosen:
+            # Lo que no se indique sale de la memoria: la voz del canal y los ajustes guardados
+            # de esa voz (los mismos que se ven en la app).
+            prefs = voice_memory.elevenlabs_for_channel(channel_id)
+            if voice_id and voice_id != prefs.voice_id:
+                prefs = voice_memory.with_preset(ElevenLabsPrefs(voice_id=voice_id))
+            if not prefs.voice_id:
                 raise DomainError("Indica voice_id (usa list_elevenlabs_voices)")
             eleven = elevenlabs.ElevenSettings(
-                voice_id=chosen,
-                model_id=model_id,
-                stability=stability,
-                similarity_boost=similarity_boost,
-                style=style,
-                speed=min(max(speed, 0.7), 1.2),
+                voice_id=prefs.voice_id,
+                voice_name=prefs.voice_name,
+                model_id=model_id or prefs.model_id,
+                stability=prefs.stability if stability is None else stability,
+                similarity_boost=(
+                    prefs.similarity_boost if similarity_boost is None else similarity_boost
+                ),
+                style=prefs.style if style is None else style,
+                speed=min(max(prefs.speed if speed is None else speed, 0.7), 1.2),
             )
+        speed = 1.0 if speed is None else speed
 
         async def work(ctx: JobContext) -> dict:
             return await voice.generate_voice(

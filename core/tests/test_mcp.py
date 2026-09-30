@@ -79,7 +79,8 @@ def test_initialize_and_list_tools(mcp):
     assert expected <= set(tools)  # sección 12, más approve_all_media e import_voice
     assert "zoom_lento_in" in tools["save_scenes"]["description"]
     speed = tools["generate_voice"]["inputSchema"]["properties"]["speed"]
-    assert (speed["minimum"], speed["maximum"]) == (0.7, 1.4)
+    [number] = [t for t in speed["anyOf"] if t["type"] == "number"]  # opcional: la memoria
+    assert (number["minimum"], number["maximum"]) == (0.7, 1.4)
     templates = mcp.rpc("resources/templates/list").json()["result"]["resourceTemplates"]
     assert {t["uriTemplate"] for t in templates} == {
         "guionaria://project/{project_id}/script",

@@ -53,7 +53,9 @@ def publish_badges(session: Session, ids: list[int]) -> dict[int, list[PublishBa
         rows, key=lambda r: PLATFORM_ORDER.index(r.platform) if r.platform in PLATFORM_ORDER else 9
     ):
         out.setdefault(r.project_id, []).append(
-            PublishBadge(platform=r.platform, status=r.status or "draft", url=r.external_url)
+            PublishBadge(
+                id=r.id, platform=r.platform, status=r.status or "draft", url=r.external_url
+            )
         )
     return out
 

@@ -36,6 +36,7 @@ class ProjectUpdate(BaseModel):
 class PublishBadge(BaseModel):
     """Una plataforma activa del proyecto: estado y enlace (para listas y paneles)."""
 
+    id: int | None = None  # la publicación (para pegar o quitar el enlace desde la lista)
     platform: str
     status: str  # draft | scheduled | uploading | published | failed
     url: str | None = None

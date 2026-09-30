@@ -203,6 +203,9 @@ export function ElevenLabsPanel({
               />
             </label>
           ))}
+          <p className="text-[11px] text-subtle">
+            Los ajustes se guardan para esta voz y el canal recuerda la última voz que usaste.
+          </p>
         </div>
       </div>
 

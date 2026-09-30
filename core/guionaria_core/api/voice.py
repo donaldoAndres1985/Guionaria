@@ -9,13 +9,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
+from ..config import ElevenLabsPrefs
 from ..db import get_engine, get_session
 from ..services import system
 from ..services.errors import DomainError
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.projects import get_project
 from ..services.voice import elevenlabs as eleven_api
-from ..services.voice import models
+from ..services.voice import memory, models
 from ..services.voice import service as voice
 
 router = APIRouter(tags=["voice"])
@@ -50,6 +51,21 @@ async def elevenlabs_account() -> eleven_api.ElevenAccount:
     return await eleven_api.account()
 
 
+class ElevenPreset(BaseModel):
+    voice_name: str = ""
+    model_id: str = eleven_api.DEFAULT_MODEL
+    stability: float = Field(0.5, ge=0, le=1)
+    similarity_boost: float = Field(0.75, ge=0, le=1)
+    style: float = Field(0.0, ge=0, le=1)
+    speed: float = Field(1.0, ge=0.7, le=1.2)
+
+
+@router.put("/api/voice/elevenlabs/presets/{voice_id}", response_model=dict[str, ElevenLabsPrefs])
+def save_preset(voice_id: str, data: ElevenPreset) -> dict[str, ElevenLabsPrefs]:
+    """Guarda los ajustes de una voz: la próxima vez que se elija, vuelven a aparecer."""
+    return memory.remember_preset(ElevenLabsPrefs(voice_id=voice_id, **data.model_dump()))
+
+
 @router.get("/api/voice/voices", response_model=list[models.VoiceInfo])
 async def list_voices() -> list[models.VoiceInfo]:
     return await models.voice_catalog()
@@ -66,7 +82,9 @@ def get_voice(project_id: int, session: SessionDep) -> voice.VoiceState:
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def generate(project_id: int, data: GenerateRequest, session: SessionDep) -> JobRead:
-    voice._require_ready(session, get_project(session, project_id))
+    project = get_project(session, project_id)
+    voice._require_ready(session, project)
+    engine = data.engine or voice.default_engine(project.channel_id)
 
     async def work(ctx: JobContext) -> dict:
         return await voice.generate_voice(
@@ -76,7 +94,7 @@ async def generate(project_id: int, data: GenerateRequest, session: SessionDep) 
             data.speed,
             data.pause_s,
             ctx,
-            engine=data.engine or voice.default_engine(),
+            engine=engine,
             eleven=data.elevenlabs,
         )
 

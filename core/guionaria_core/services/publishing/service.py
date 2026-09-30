@@ -194,6 +194,19 @@ def caption(pub: Publication, credits: str, fmt: str) -> str:
     return _clip(joined, PLATFORMS[pub.platform]["limits"]["description"])
 
 
+def copy_cover_to_video(project: Project) -> Path | None:
+    """Deja la miniatura elegida junto al video renderizado, con el mismo nombre
+    («mi-video.mp4» → «mi-video.jpg»), para subirlos juntos a mano. None si aún no hay video."""
+    import shutil
+
+    video, cover = final_video(project), project_dir(project) / FOLDER / COVER
+    if not video.exists() or not cover.exists():
+        return None
+    target = video.with_suffix(".jpg")
+    shutil.copyfile(cover, target)
+    return target
+
+
 def files_for(project: Project) -> dict[str, Path | None]:
     """Archivos que se suben a mano: el video, la miniatura y los subtítulos."""
     srt = subtitles_file(project)
@@ -752,6 +765,7 @@ def make_cover(
             else:
                 cover = ImageOps.fit(img.convert("RGB"), size, Image.Resampling.LANCZOS)
             cover.save(folder / COVER, "JPEG", quality=88)
+    copy_cover_to_video(project)
     for pub in ensure_publications(session, project):
         meta = _meta(pub)
         meta.thumbnail_time_s, meta.thumbnail_text = time_s, text
@@ -1027,6 +1041,7 @@ def choose_cover(session: Session, project_id: int, index: int) -> PublishingSta
     source = cover_option_path(session, project_id, index)
     target = project_dir(project) / FOLDER / COVER
     shutil.copyfile(source, target)
+    copy_cover_to_video(project)
     design = _designs(project)[index - 1]
     for pub in ensure_publications(session, project):
         meta = _meta(pub)
@@ -1063,6 +1078,7 @@ def upload_cover(session: Session, project_id: int, source: Path) -> PublishingS
     target = project_dir(project) / FOLDER / COVER
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(buffer.getvalue())
+    copy_cover_to_video(project)
     for pub in ensure_publications(session, project):
         meta = _meta(pub)
         meta.thumbnail_text = None

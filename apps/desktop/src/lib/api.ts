@@ -214,7 +214,7 @@ export interface Project extends ProjectInput {
   /** Ficha de «Investigar con fuentes». */
   research?: Research | null;
   /** Plataformas activas de la publicación: estado y enlace publicado. */
-  publications?: { platform: string; status: string; url: string | null }[];
+  publications?: { id?: number | null; platform: string; status: string; url: string | null }[];
   /** guionaria: hecho con las etapas de la app; importado: video terminado en otro editor. */
   origin?: "guionaria" | "importado";
   /** Portada (miniatura de publicación o del render) y medios aprobados, para las miniaturas. */
@@ -552,7 +552,9 @@ export interface VoiceState {
   whisper_model: string;
   elevenlabs: ElevenLabsPrefs;
   elevenlabs_configured: boolean;
-  /** Motor propuesto: el de Ajustes (el último usado), si está disponible. */
+  /** Ajustes guardados de cada voz de ElevenLabs (se aplican al elegirla). */
+  elevenlabs_presets?: Record<string, ElevenLabsPrefs>;
+  /** Motor propuesto: el último usado en el canal (o en general), si está disponible. */
   default_engine?: "piper" | "elevenlabs";
 }
 
