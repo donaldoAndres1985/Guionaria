@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovedMedia, FramingState } from "@/lib/api";
 import { FramingDialog } from "./FramingDialog";
-import { framingLabel, moveCrop, scaledCrop, trimError } from "./framingMeta";
+import { framingLabel, moveCrop, resizeCorner, scaledCrop, trimError } from "./framingMeta";
 
 const MAX = { x: 0.341797, y: 0, w: 0.316406, h: 1 }; // 16:9 dentro de un reel 9:16
 
@@ -29,6 +29,29 @@ describe("utilidades de encuadre", () => {
     expect(trimError(2, 2.2, 10)).toBe("El tramo debe durar al menos 0,5 s");
     expect(trimError(9.8, null, 10)).toBe("El tramo debe durar al menos 0,5 s");
     expect(trimError(Number.NaN, null, 10)).toMatch(/minutos:segundos/);
+  });
+
+  it("redimensiona arrastrando una esquina, ancla la contraria y mantiene la proporción", () => {
+    const half = scaledCrop(MAX, 0.5, 0.5, 0.5); // { x: 0.4209, y: 0.25, w: 0.158203, h: 0.5 }
+
+    const grown = resizeCorner(half, MAX, "br", 0.1, 0.1);
+    expect(grown.x).toBeCloseTo(half.x, 6);
+    expect(grown.y).toBeCloseTo(half.y, 6);
+    expect(grown.w).toBeGreaterThan(half.w);
+    expect(grown.w / grown.h).toBeCloseTo(MAX.w / MAX.h, 5);
+
+    const grownFromTl = resizeCorner(half, MAX, "tl", -0.1, -0.1);
+    expect(grownFromTl.x + grownFromTl.w).toBeCloseTo(half.x + half.w, 5);
+    expect(grownFromTl.y + grownFromTl.h).toBeCloseTo(half.y + half.h, 5);
+    expect(grownFromTl.w / grownFromTl.h).toBeCloseTo(MAX.w / MAX.h, 5);
+
+    // No se sale del medio por ningún lado ni baja de un tamaño mínimo.
+    const shrunk = resizeCorner(half, MAX, "br", -0.5, -0.5);
+    expect(shrunk.w).toBeGreaterThan(0);
+    expect(shrunk.w / shrunk.h).toBeCloseTo(MAX.w / MAX.h, 5);
+    const overgrown = resizeCorner(half, MAX, "br", 5, 5);
+    expect(overgrown.x + overgrown.w).toBeLessThanOrEqual(1.0001);
+    expect(overgrown.y + overgrown.h).toBeLessThanOrEqual(1.0001);
   });
 
   it("etiqueta del aprobado", () => {
@@ -68,6 +91,10 @@ describe("diálogo de encuadre", () => {
     suggested_crop: MAX,
     rendered: false,
     approved_url: "/api/scenes/3/assets/9/approved-file",
+    can_extend_next: false,
+    next_scene_position: null,
+    next_scene_has_media: false,
+    extend_available_s: null,
     ...over,
   });
 
@@ -89,6 +116,7 @@ describe("diálogo de encuadre", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -118,6 +146,28 @@ describe("diálogo de encuadre", () => {
     expect(crop.x).toBeCloseTo(0.4209, 4);
     expect([crop.y, crop.w, crop.h]).toEqual([0.25, 0.158203, 0.5]);
     await waitFor(() => expect(close).toHaveBeenCalled());
+  });
+
+  it("arrastrar una esquina redimensiona el recorte anclando la opuesta", async () => {
+    server = state();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width: 640, height: 360, right: 640, bottom: 360, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect);
+    renderDialog();
+    fireEvent.click(await screen.findByRole("radio", { name: /Recortar/ }));
+    fireEvent.change(screen.getByLabelText("Tamaño del recorte"), { target: { value: "50" } });
+    const rect = screen.getByTestId("crop-rect");
+    const before = { left: parseFloat(rect.style.left), top: parseFloat(rect.style.top), w: parseFloat(rect.style.width) };
+
+    fireEvent.pointerDown(screen.getByTestId("crop-handle-br"), { clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(rect, { clientX: 64, clientY: 0, pointerId: 1 }); // +64 px / 640 px = +0.1
+    fireEvent.pointerUp(rect, { pointerId: 1 });
+
+    const after = { left: parseFloat(rect.style.left), top: parseFloat(rect.style.top), w: parseFloat(rect.style.width), h: parseFloat(rect.style.height) };
+    expect(after.left).toBeCloseTo(before.left, 3); // la esquina arriba-izquierda no se mueve
+    expect(after.top).toBeCloseTo(before.top, 3);
+    expect(after.w).toBeGreaterThan(before.w); // creció al arrastrar hacia afuera
+    expect(after.w / after.h).toBeCloseTo(MAX.w / MAX.h, 3); // mantiene la proporción del formato
   });
 
   it("fondo desenfocado muestra la vista previa en el formato de destino", async () => {

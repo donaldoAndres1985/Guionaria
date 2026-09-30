@@ -1,4 +1,4 @@
-import { LoaderCircle, Maximize2, Pause, Play, Scissors, TriangleAlert } from "lucide-react";
+import { ArrowRight, LoaderCircle, Maximize2, Pause, Play, Scissors, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatSceneTime } from "@/features/scenes/sceneMeta";
-import { useFraming, useSaveFraming } from "@/hooks/useFraming";
+import { useExtendToNextScene, useFraming, useSaveFraming } from "@/hooks/useFraming";
 import { coreUrl, type FramingState } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   centerRangeAt,
   fitToScene,
   initialRange,
+  MIN_TRIM_S,
   moveRange,
+  remainingAfterScene,
   resizeEnd,
   resizeStart,
   toPct,
@@ -96,16 +98,20 @@ function TrimEditor({
   const [playing, setPlaying] = useState(false);
   const [stripReady, setStripReady] = useState(false);
   const [now, setNow] = useState(range.start);
+  const [confirmExtend, setConfirmExtend] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
   const track = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const save = useSaveFraming(projectId);
+  const extend = useExtendToNextScene(projectId);
   const rangeRef = useRef(range);
   rangeRef.current = range;
 
   const length = range.end - range.start;
   const mismatch = sceneDuration != null && Math.abs(length - sceneDuration) > 0.25;
   const vertical = state.target_height > state.target_width;
+  const remaining = sceneDuration != null ? remainingAfterScene(duration, sceneDuration, range.start) : 0;
+  const canExtend = state.can_extend_next && remaining >= MIN_TRIM_S;
 
   // Bucle dentro del tramo.
   useEffect(() => {
@@ -198,6 +204,23 @@ function TrimEditor({
         onSuccess: (r) => {
           toast.success(
             r.job ? "Tramo guardado: preparando el video en segundo plano…" : `Tramo ${formatSceneTime(range.start)}–${formatSceneTime(range.end)} guardado`,
+          );
+          onClose();
+        },
+      },
+    );
+
+  const runExtend = () =>
+    extend.mutate(
+      {
+        sceneId: state.scene_id,
+        assetId: state.asset_id,
+        input: { mode: state.mode, crop: state.crop, ...trimToSave(range, duration) },
+      },
+      {
+        onSuccess: (r) => {
+          toast.success(
+            `Escena ${r.next_scene_position}: sigue con ${remaining.toFixed(1)} s del mismo video`,
           );
           onClose();
         },
@@ -328,6 +351,42 @@ function TrimEditor({
           <span className="ml-auto text-subtle">← → mueve 0,1 s · Mayús + ← → 1 s · Espacio reproduce</span>
         </div>
       </div>
+
+      {canExtend && (
+        <div
+          data-testid="extend-next"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-brand/40 bg-brand/5 px-3 py-2 text-[12px]"
+        >
+          <span className="flex items-center gap-1.5">
+            <ArrowRight className="size-3.5 shrink-0 text-brand" />
+            Sobran {remaining.toFixed(1)} s de metraje: pueden seguir en la escena{" "}
+            {state.next_scene_position}
+            {state.next_scene_has_media && " (reemplazando su medio actual)"}.
+          </span>
+          {confirmExtend ? (
+            <div className="flex shrink-0 gap-2">
+              <Button size="xs" variant="ghost" onClick={() => setConfirmExtend(false)}>
+                Cancelar
+              </Button>
+              <Button size="xs" onClick={runExtend} disabled={extend.isPending}>
+                {extend.isPending && <LoaderCircle className="animate-spin" />}
+                Sí, reemplazar y continuar
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="xs"
+              variant="outline"
+              className="shrink-0"
+              onClick={() => (state.next_scene_has_media ? setConfirmExtend(true) : runExtend())}
+              disabled={extend.isPending}
+            >
+              {extend.isPending && <LoaderCircle className="animate-spin" />}
+              Continuar en la escena {state.next_scene_position}
+            </Button>
+          )}
+        </div>
+      )}
 
       <DialogFooter className="items-center sm:justify-between">
         <div className="flex gap-1">

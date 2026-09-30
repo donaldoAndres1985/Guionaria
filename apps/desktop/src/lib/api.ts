@@ -445,6 +445,23 @@ export interface FramingState extends FramingInput {
   suggested_crop: Crop | null;
   rendered: boolean;
   approved_url: string;
+  /** Extender a la escena siguiente (sección 5.6): el video sigue de largo sin tocar la voz. */
+  can_extend_next: boolean;
+  next_scene_position: number | null;
+  /** La siguiente escena ya tiene un medio aprobado: extender lo reemplazaría. */
+  next_scene_has_media: boolean;
+  extend_available_s: number | null;
+}
+
+export interface ExtendedFraming {
+  current: FramingState;
+  current_job: Job | null;
+  next_scene_id: number;
+  next_asset_id: number;
+  next_scene_position: number;
+  start_s: number;
+  next: FramingState;
+  next_job: Job | null;
 }
 
 export interface SceneMedia {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FramingState } from "@/lib/api";
 import { TrimDialog } from "./TrimDialog";
@@ -43,16 +43,20 @@ describe("cálculos del tramo", () => {
 
 describe("editor «Ajustar tramo»", () => {
   let puts: { path: string; body: unknown }[];
+  let posts: { path: string; body: unknown }[];
   const framing = (over: Partial<FramingState> = {}): FramingState => ({
     scene_id: 3, asset_id: 9, kind: "video", mode: "none", crop: null, trim_in_s: null, trim_out_s: null,
     source_width: 1080, source_height: 1920, source_duration_s: 15, scene_duration_s: 4,
     target_width: 1080, target_height: 1920, orientation_mismatch: false, suggested_crop: null,
-    rendered: false, approved_url: "/x", ...over,
+    rendered: false, approved_url: "/x",
+    can_extend_next: false, next_scene_position: null, next_scene_has_media: false, extend_available_s: null,
+    ...over,
   });
   let state: FramingState;
 
   beforeEach(() => {
     puts = [];
+    posts = [];
     state = framing();
     vi.stubGlobal(
       "fetch",
@@ -62,6 +66,23 @@ describe("editor «Ajustar tramo»", () => {
           const body = JSON.parse(String(init.body));
           puts.push({ path, body });
           return new Response(JSON.stringify({ framing: { ...state, ...body }, job: null }));
+        }
+        if (init?.method === "POST") {
+          const body = JSON.parse(String(init.body));
+          posts.push({ path, body });
+          const startS = (body.trim_in_s ?? 0) + (state.scene_duration_s ?? 0);
+          return new Response(
+            JSON.stringify({
+              current: { ...state, ...body },
+              current_job: null,
+              next_scene_id: 4,
+              next_asset_id: 40,
+              next_scene_position: state.next_scene_position,
+              start_s: startS,
+              next: { ...state, scene_id: 4, asset_id: 40, trim_in_s: startS, trim_out_s: null },
+              next_job: null,
+            }),
+          );
         }
         return new Response(JSON.stringify(state));
       }),
@@ -168,5 +189,40 @@ describe("editor «Ajustar tramo»", () => {
     fireEvent.click(screen.getByText("Saltar"));
     expect(onClose).toHaveBeenCalled();
     expect(puts).toHaveLength(0);
+  });
+
+  it("sin metraje sobrante para la siguiente escena, no ofrece continuar", async () => {
+    state = framing({ can_extend_next: false });
+    renderDialog();
+    await screen.findByTestId("trim-window");
+    expect(screen.queryByTestId("extend-next")).toBeNull();
+  });
+
+  it("con metraje de sobra, «Continuar en la escena…» lo asigna sin pedir confirmación", async () => {
+    state = framing({ can_extend_next: true, next_scene_position: 17, next_scene_has_media: false });
+    const onClose = renderDialog();
+    await screen.findByTestId("trim-window");
+    expect(screen.getByTestId("extend-next").textContent).toContain("Sobran 11.0 s");
+    fireEvent.click(screen.getByText("Continuar en la escena 17"));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual({
+      path: "/api/scenes/3/assets/9:extend-next",
+      body: { mode: "none", crop: null, trim_in_s: null, trim_out_s: 4 },
+    });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("si la escena siguiente ya tiene medio, pide confirmar antes de reemplazarlo", async () => {
+    state = framing({ can_extend_next: true, next_scene_position: 17, next_scene_has_media: true });
+    renderDialog();
+    await screen.findByTestId("trim-window");
+    expect(screen.getByTestId("extend-next").textContent).toContain("reemplazando su medio actual");
+    fireEvent.click(screen.getByText("Continuar en la escena 17"));
+    expect(posts).toHaveLength(0);
+    fireEvent.click(within(screen.getByTestId("extend-next")).getByText("Cancelar"));
+    expect(screen.getByText("Continuar en la escena 17")).toBeTruthy();
+    fireEvent.click(screen.getByText("Continuar en la escena 17"));
+    fireEvent.click(screen.getByText("Sí, reemplazar y continuar"));
+    await waitFor(() => expect(posts).toHaveLength(1));
   });
 });
