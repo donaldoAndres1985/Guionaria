@@ -169,6 +169,71 @@ async def save_framing(
     return FramingSaved(framing=state, job=job)
 
 
+class ExtendedFramingSaved(BaseModel):
+    current: framing.FramingRead
+    current_job: JobRead | None
+    next_scene_id: int
+    next_asset_id: int
+    next_scene_position: int
+    start_s: float
+    next: framing.FramingRead
+    next_job: JobRead | None
+
+
+@router.post(
+    "/api/scenes/{scene_id}/assets/{asset_id}:extend-next", response_model=ExtendedFramingSaved
+)
+async def extend_to_next_scene(
+    scene_id: int, asset_id: int, data: framing.FramingIn, session: SessionDep
+) -> ExtendedFramingSaved:
+    """El video real dura más que la escena: usa lo que sobra para cubrir la siguiente, sin
+    tocar narración ni voz (sección 5.6)."""
+    result = framing.extend_to_next_scene(session, scene_id, asset_id, data)
+    project_id = svc.get_scene(session, scene_id).project_id
+
+    current_job = None
+    if result.current_pending:
+
+        async def work_current(ctx: JobContext) -> dict:
+            return await framing.render_framed_video(_session_factory, scene_id, asset_id, ctx)
+
+        current_job = jobs.submit(
+            "frame_media",
+            work_current,
+            project_id=project_id,
+            payload={"scene_id": scene_id, "asset_id": asset_id},
+            exclusive=False,
+        )
+
+    next_job = None
+    if result.next_pending:
+        next_scene_id, next_asset_id = result.next_scene_id, result.next_asset_id
+
+        async def work_next(ctx: JobContext) -> dict:
+            return await framing.render_framed_video(
+                _session_factory, next_scene_id, next_asset_id, ctx
+            )
+
+        next_job = jobs.submit(
+            "frame_media",
+            work_next,
+            project_id=project_id,
+            payload={"scene_id": next_scene_id, "asset_id": next_asset_id},
+            exclusive=False,
+        )
+
+    return ExtendedFramingSaved(
+        current=result.current,
+        current_job=current_job,
+        next_scene_id=result.next_scene_id,
+        next_asset_id=result.next_asset_id,
+        next_scene_position=result.next_scene_position,
+        start_s=result.start_s,
+        next=result.next,
+        next_job=next_job,
+    )
+
+
 @router.get("/api/scenes/{scene_id}/assets/{asset_id}/approved-file")
 def approved_file(scene_id: int, asset_id: int, session: SessionDep) -> FileResponse:
     """La copia aprobada (encuadrada, si tiene encuadre), no el original."""

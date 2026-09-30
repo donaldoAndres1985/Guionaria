@@ -61,3 +61,12 @@ export function trimToSave(range: TrimRange, duration: number): { trim_in_s: num
 }
 
 export const toPct = (t: number, duration: number) => (duration > 0 ? (t / duration) * 100 : 0);
+
+/**
+ * Metraje que sobra después del tramo que usa esta escena (desde `start` y durante
+ * `sceneDuration`, sin importar dónde el usuario haya puesto el fin del tramo): lo que podría
+ * pasar a la escena siguiente con «Continuar en la escena siguiente».
+ */
+export function remainingAfterScene(duration: number, sceneDuration: number, start: number): number {
+  return round(Math.max(duration - (start + sceneDuration), 0));
+}

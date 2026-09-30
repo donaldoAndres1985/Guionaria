@@ -16,7 +16,7 @@ import { useFraming, useSaveFraming } from "@/hooks/useFraming";
 import { coreUrl, type Crop, type FramingMode, type FramingState } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { parseClock } from "./dropUtils";
-import { cropCenter, cropScale, moveCrop, scaledCrop, trimError } from "./framingMeta";
+import { type Corner, cropCenter, cropScale, moveCrop, resizeCorner, scaledCrop, trimError } from "./framingMeta";
 
 const MODES: { id: FramingMode; label: string; hint: string }[] = [
   { id: "none", label: "Tal cual", hint: "El editor decide cómo encajarlo" },
@@ -142,6 +142,7 @@ function FramingForm({
             aspect={(state.source_width ?? 16) / (state.source_height ?? 9)}
             crop={mode === "crop" ? crop : null}
             onMove={(dx, dy) => setCrop((c) => moveCrop(c, dx, dy))}
+            onResize={(corner, dx, dy) => setCrop((c) => resizeCorner(c, max, corner, dx, dy))}
           />
         )}
       </div>
@@ -207,6 +208,13 @@ function FramingForm({
   );
 }
 
+const CORNERS: { id: Corner; className: string }[] = [
+  { id: "tl", className: "-top-1.5 -left-1.5 cursor-nwse-resize" },
+  { id: "tr", className: "-top-1.5 -right-1.5 cursor-nesw-resize" },
+  { id: "bl", className: "-bottom-1.5 -left-1.5 cursor-nesw-resize" },
+  { id: "br", className: "-bottom-1.5 -right-1.5 cursor-nwse-resize" },
+];
+
 function CropArea({
   src,
   isVideo,
@@ -214,6 +222,7 @@ function CropArea({
   aspect,
   crop,
   onMove,
+  onResize,
 }: {
   src: string | undefined;
   isVideo: boolean;
@@ -221,15 +230,25 @@ function CropArea({
   aspect: number;
   crop: Crop | null;
   onMove: (dx: number, dy: number) => void;
+  onResize: (corner: Corner, dx: number, dy: number) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const last = useRef<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ corner: Corner | "move"; x: number; y: number } | null>(null);
+
+  const startDrag = (corner: Corner | "move") => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    drag.current = { corner, x: e.clientX, y: e.clientY };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!last.current || !box.current) return;
+    if (!drag.current || !box.current) return;
     const rect = box.current.getBoundingClientRect();
-    onMove((e.clientX - last.current.x) / rect.width, (e.clientY - last.current.y) / rect.height);
-    last.current = { x: e.clientX, y: e.clientY };
+    const dx = (e.clientX - drag.current.x) / rect.width;
+    const dy = (e.clientY - drag.current.y) / rect.height;
+    if (drag.current.corner === "move") onMove(dx, dy);
+    else onResize(drag.current.corner, dx, dy);
+    drag.current = { ...drag.current, x: e.clientX, y: e.clientY };
   };
 
   return (
@@ -247,20 +266,32 @@ function CropArea({
       {crop && (
         <div
           data-testid="crop-rect"
-          className="absolute cursor-move border-2 border-brand shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+          className="absolute cursor-move border-2 border-brand shadow-[0_0_0_9999px_rgba(0,0,0,0.7)]"
           style={{
             left: `${crop.x * 100}%`,
             top: `${crop.y * 100}%`,
             width: `${crop.w * 100}%`,
             height: `${crop.h * 100}%`,
           }}
-          onPointerDown={(e) => {
-            last.current = { x: e.clientX, y: e.clientY };
-            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-          }}
+          onPointerDown={startDrag("move")}
           onPointerMove={onPointerMove}
-          onPointerUp={() => (last.current = null)}
-        />
+          onPointerUp={() => (drag.current = null)}
+        >
+          {CORNERS.map((c) => (
+            <div
+              key={c.id}
+              data-testid={`crop-handle-${c.id}`}
+              aria-label={`Cambiar el tamaño (esquina ${c.id})`}
+              className={cn(
+                "absolute size-3.5 rounded-full border-2 border-brand bg-white shadow",
+                c.className,
+              )}
+              // El pointerdown se detiene aquí (no llega al «mover» del contenedor); el move y el
+              // up sí suben por burbujeo hasta los del contenedor, que ya los maneja.
+              onPointerDown={startDrag(c.id)}
+            />
+          ))}
+        </div>
       )}
       {crop && isVideo && (
         <button

@@ -211,3 +211,108 @@ def test_set_framing_by_mcp(client, media_project, web, home):
     assert out["framing"]["mode"] == "crop" and "job" not in out
     with Image.open(approved_file(home)) as img:
         assert img.size == (1080, 1920)
+
+
+def eurl(scene, asset):
+    return f"/api/scenes/{scene}/assets/{asset}:extend-next"
+
+
+def test_extend_to_next_scene_reuses_leftover_footage(client, media_project, web):
+    video, image, *_ = media_project["scenes"]
+    asset = approve(client, video, providers=["pexels"])
+    set_asset(asset["id"], duration_s=10.0, width=1080, height=1920)
+
+    before = client.get(furl(video, asset["id"])).json()
+    wanted = before["scene_duration_s"]
+    assert before["can_extend_next"] is True
+    assert before["next_scene_position"] == 2
+    assert before["next_scene_has_media"] is False
+    assert before["extend_available_s"] == pytest.approx(10.0 - wanted, abs=0.01)
+
+    resp = client.post(eurl(video, asset["id"]), json={})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["next_scene_id"] == image
+    assert body["next_scene_position"] == 2
+    assert body["start_s"] == pytest.approx(wanted, abs=0.01)
+    assert body["current_job"] is None and body["next_job"] is None
+    next_asset_id = body["next_asset_id"]
+    assert next_asset_id != asset["id"]  # copia enlazada, no el mismo medio
+
+    media = client.get(f"/api/scenes/{image}/media").json()
+    [main] = [a for a in media["approved"] if a["role"] == "main"]
+    assert main["asset"]["id"] == next_asset_id
+    assert main["trim_in_s"] == pytest.approx(wanted, abs=0.01)
+
+    # No duplica el archivo en disco: es un enlace duro del mismo contenido.
+    reused = client.get(f"/api/library?project={media_project['id']}").json()
+    item = next(i for i in reused["items"] if i["asset"]["id"] == next_asset_id)
+    assert item["reused_from_id"] == asset["id"]
+
+
+def test_extend_fails_when_next_scene_needs_no_media(client, media_project, web):
+    _video, _image, real, _text = media_project["scenes"]
+    video_asset = approve(client, media_project["scenes"][0], providers=["pexels"])
+    set_asset(video_asset["id"], duration_s=10.0, width=1080, height=1920)
+    # Se reutiliza un video en la escena «real» (búsqueda directa) para poder probar el límite.
+    reuse = client.post(f"/api/library/{video_asset['id']}:reuse", json={"scene_id": real})
+    assert reuse.status_code == 200
+    media = client.get(f"/api/scenes/{real}/media").json()
+    candidate = next(c for c in media["candidates"] if c["asset"]["id"] != video_asset["id"])
+    real_asset_id = candidate["asset"]["id"]
+    client.post(f"/api/scenes/{real}/assets/{real_asset_id}:approve", json={"role": "main"})
+
+    resp = client.post(eurl(real, real_asset_id), json={})
+    assert resp.status_code == 400
+    assert "texto o negro" in resp.json()["detail"]
+
+
+def test_extend_fails_without_enough_footage(client, media_project, web):
+    video, *_ = media_project["scenes"]
+    asset = approve(client, video, providers=["pexels"])
+    scene_duration_s = client.get(furl(video, asset["id"])).json()["scene_duration_s"]
+    set_asset(asset["id"], duration_s=scene_duration_s + 0.2, width=1080, height=1920)
+
+    info = client.get(furl(video, asset["id"])).json()
+    assert info["can_extend_next"] is False
+
+    resp = client.post(eurl(video, asset["id"]), json={})
+    assert resp.status_code == 400
+    assert "suficiente metraje" in resp.json()["detail"]
+
+
+def test_extend_copies_crop_and_replaces_existing_next_media(
+    client, media_project, web, home, monkeypatch
+):
+    video, image, *_ = media_project["scenes"]
+    asset = approve(client, video, providers=["pexels"])
+    set_asset(asset["id"], duration_s=10.0, width=1920, height=1080)
+    other = approve(client, image, providers=["pexels"])  # la escena 2 ya tiene medio
+
+    calls = []
+    monkeypatch.setattr(
+        framing,
+        "render_video",
+        lambda src, dst, mode, crop, trim_in, trim_out, tw, th: (
+            calls.append((mode, trim_in, trim_out)),
+            Path(dst).write_bytes(b"encuadrado"),
+        ),
+    )
+    monkeypatch.setattr(
+        framing.process, "video_info", lambda p: MediaInfo(1080, 1920, 8.0, None)
+    )
+    crop = center_crop(1920, 1080, 1080, 1920).model_dump()
+    resp = client.post(eurl(video, asset["id"]), json={"mode": "crop", "crop": crop})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["current_job"] is not None
+    assert body["next_job"] is not None
+    wait_job(client, body["current_job"]["id"])
+    wait_job(client, body["next_job"]["id"])
+    assert len(calls) == 2  # una codificación para cada escena
+
+    media = client.get(f"/api/scenes/{image}/media").json()
+    [main] = [a for a in media["approved"] if a["role"] == "main"]
+    assert main["asset"]["id"] == body["next_asset_id"]
+    assert main["asset"]["id"] != other["id"]  # reemplazó el medio anterior de la escena
+    assert main["framing_mode"] == "crop"

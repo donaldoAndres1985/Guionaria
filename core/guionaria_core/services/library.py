@@ -238,9 +238,11 @@ def library_stats(session: Session) -> LibraryStats:
 # --- reutilizar ---
 
 
-def reuse_asset(session: Session, asset_id: int, scene_id: int) -> SceneMediaRead:
+def add_reused_candidate(session: Session, asset_id: int, scene_id: int) -> int:
     """Agrega un medio de la biblioteca como candidato descargado de otra escena.
-    Queda en la carpeta del proyecto destino como enlace duro: no ocupa espacio de nuevo."""
+    Queda en la carpeta del proyecto destino como enlace duro: no ocupa espacio de nuevo.
+    Devuelve el id del medio ya usable en esa escena (el mismo si el contenido ya estaba,
+    o uno nuevo)."""
     home = get_paths().home
     source_asset = session.get(Asset, asset_id)
     if not source_asset:
@@ -257,7 +259,7 @@ def reuse_asset(session: Session, asset_id: int, scene_id: int) -> SceneMediaRea
     for c in session.exec(select(SceneCandidate).where(SceneCandidate.scene_id == scene_id)):
         existing = session.get(Asset, c.asset_id) if c.asset_id else None
         if existing and (existing.id == asset_id or existing.sha256 == source_asset.sha256):
-            return media.scene_media(session, scene_id)
+            return existing.id
 
     folder = media.project_dir(project) / "media" / "candidates"
     provider_id = source_asset.provider_id or str(source_asset.id)
@@ -305,4 +307,11 @@ def reuse_asset(session: Session, asset_id: int, scene_id: int) -> SceneMediaRea
     media._enter_media_stage(project)
     log_operation(session, "reuse", "asset", new.id, {"from": asset_id, "scene": scene_id})
     session.commit()
+    return new.id
+
+
+def reuse_asset(session: Session, asset_id: int, scene_id: int) -> SceneMediaRead:
+    """Agrega un medio de la biblioteca como candidato descargado de otra escena y devuelve el
+    estado de la escena destino."""
+    add_reused_candidate(session, asset_id, scene_id)
     return media.scene_media(session, scene_id)

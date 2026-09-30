@@ -28,6 +28,46 @@ export function moveCrop(crop: Crop, dx: number, dy: number): Crop {
 export const cropScale = (crop: Crop, max: Crop) => crop.w / max.w;
 export const cropCenter = (crop: Crop) => ({ cx: crop.x + crop.w / 2, cy: crop.y + crop.h / 2 });
 
+export type Corner = "tl" | "tr" | "bl" | "br";
+const MIN_CROP_W = 0.08;
+
+/**
+ * Redimensiona arrastrando una esquina: la esquina opuesta queda fija y el recorte mantiene
+ * la proporción de `max` (la del formato de destino), como exige el encuadre "Recortar".
+ */
+export function resizeCorner(crop: Crop, max: Crop, corner: Corner, dx: number, dy: number): Crop {
+  const aspect = max.w / max.h;
+  const left = corner.includes("l");
+  const top = corner.includes("t");
+  const anchor = { x: left ? crop.x + crop.w : crop.x, y: top ? crop.y + crop.h : crop.y };
+  const moving = {
+    x: clamp((left ? crop.x : crop.x + crop.w) + dx, 0, 1),
+    y: clamp((top ? crop.y : crop.y + crop.h) + dy, 0, 1),
+  };
+
+  let w = Math.abs(moving.x - anchor.x);
+  let h = w / aspect;
+  const maxH = top ? anchor.y : 1 - anchor.y;
+  if (h > maxH) {
+    h = maxH;
+    w = h * aspect;
+  }
+  const maxW = left ? anchor.x : 1 - anchor.x;
+  if (w > maxW) {
+    w = maxW;
+    h = w / aspect;
+  }
+  w = Math.max(w, MIN_CROP_W);
+  h = Math.max(h, MIN_CROP_W / aspect);
+
+  return {
+    x: round(clamp(left ? anchor.x - w : anchor.x, 0, 1 - w)),
+    y: round(clamp(top ? anchor.y - h : anchor.y, 0, 1 - h)),
+    w: round(w),
+    h: round(h),
+  };
+}
+
 /** Etiqueta corta del encuadre de un aprobado. */
 export function framingLabel(a: ApprovedMedia): string | null {
   if (a.framing_pending) return "Generando el video encuadrado…";

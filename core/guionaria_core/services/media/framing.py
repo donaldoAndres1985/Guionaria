@@ -19,7 +19,7 @@ from typing import Literal
 
 from PIL import Image, ImageFilter, ImageOps
 from pydantic import BaseModel, Field, model_validator
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ...config import get_paths
 from ...domain.states import ORDER, ProjectStatus
@@ -78,6 +78,11 @@ class FramingRead(BaseModel):
     suggested_crop: Crop | None  # recorte centrado con la proporción del formato
     rendered: bool  # el archivo aprobado ya está encuadrado
     approved_url: str
+    # Extender a la escena siguiente (sección 5.6): el video sigue de largo sin tocar la voz.
+    can_extend_next: bool
+    next_scene_position: int | None
+    next_scene_has_media: bool  # ya tiene un medio aprobado: extender lo reemplazaría
+    extend_available_s: float | None  # metraje que quedaría para la siguiente escena
 
 
 def target_size(project: Project) -> tuple[int, int]:
@@ -104,6 +109,36 @@ def scene_duration(scene: Scene | None) -> float | None:
     if not scene or scene.start_s is None or scene.end_s is None:
         return None
     return round(max(scene.end_s - scene.start_s, 0), 2) or None
+
+
+def _next_scene(session: Session, scene: Scene) -> Scene | None:
+    return session.exec(
+        select(Scene).where(
+            Scene.project_id == scene.project_id, Scene.position == scene.position + 1
+        )
+    ).first()
+
+
+def _extend_info(
+    session: Session, scene: Scene, asset: Asset, trim_in_s: float | None
+) -> tuple[bool, int | None, bool, float | None]:
+    """(se puede extender, posición de la siguiente escena, ya tiene medio, s de metraje que
+    sobrarían). Sección 5.6: un video real más largo que la escena puede seguir en la siguiente
+    sin tocar narración ni voz."""
+    if asset.kind != "video" or not asset.duration_s:
+        return False, None, False, None
+    nxt = _next_scene(session, scene)
+    if not nxt:
+        return False, None, False, None
+    from .service import needs_media
+
+    if not needs_media(nxt):
+        return False, nxt.position, False, None
+    wanted = scene_duration(scene)
+    if not wanted:
+        return False, nxt.position, bool(nxt.approved_asset_id), None
+    remaining = round(asset.duration_s - ((trim_in_s or 0) + wanted), 2)
+    return remaining >= MIN_CLIP_S, nxt.position, bool(nxt.approved_asset_id), max(remaining, 0)
 
 
 def needs_trim(session: Session, scene: Scene) -> bool:
@@ -146,6 +181,10 @@ def framing_read(session: Session, project: Project, row: SceneAsset, asset: Ass
     tw, th = target_size(project)
     data = load(row)
     sw, sh = asset.width, asset.height
+    scene = session.get(Scene, row.scene_id)
+    can_extend, next_pos, next_has_media, extend_s = _extend_info(
+        session, scene, asset, row.trim_in_s
+    )
     return FramingRead(
         scene_id=row.scene_id,
         asset_id=row.asset_id,
@@ -157,13 +196,17 @@ def framing_read(session: Session, project: Project, row: SceneAsset, asset: Ass
         source_width=sw,
         source_height=sh,
         source_duration_s=asset.duration_s,
-        scene_duration_s=scene_duration(session.get(Scene, row.scene_id)),
+        scene_duration_s=scene_duration(scene),
         target_width=tw,
         target_height=th,
         orientation_mismatch=_mismatch(sw, sh, tw, th),
         suggested_crop=center_crop(sw, sh, tw, th) if sw and sh else None,
         rendered=bool(data.get("rendered")),
         approved_url=f"/api/scenes/{row.scene_id}/assets/{row.asset_id}/approved-file",
+        can_extend_next=can_extend,
+        next_scene_position=next_pos,
+        next_scene_has_media=next_has_media,
+        extend_available_s=extend_s,
     )
 
 
@@ -350,6 +393,67 @@ def save_framing(
     )
     session.commit()
     return framing_read(session, project, row, asset), pending_job
+
+
+class ExtendedFraming(BaseModel):
+    """Resultado de extender un video a la escena siguiente (sección 5.6)."""
+
+    current: FramingRead
+    current_pending: bool
+    next_scene_id: int
+    next_asset_id: int
+    next_scene_position: int
+    start_s: float  # dónde retoma el video en la escena siguiente
+    next: FramingRead
+    next_pending: bool
+
+
+def extend_to_next_scene(
+    session: Session, scene_id: int, asset_id: int, data: FramingIn
+) -> ExtendedFraming:
+    """El video real dura más que la escena: el resto del metraje pasa a cubrir la escena
+    siguiente (mismo archivo, enlazado sin duplicar espacio), retomando justo donde esta se
+    queda y con el mismo encuadre. No toca narración ni voz: solo ahorra tener que buscar y
+    generar medio nuevo para la siguiente escena."""
+    scene, row, asset = _row(session, scene_id, asset_id)
+    if asset.kind != "video":
+        raise DomainError("Solo los videos se pueden extender a la escena siguiente")
+    nxt = _next_scene(session, scene)
+    if not nxt:
+        raise DomainError("No hay una escena siguiente")
+    from .service import needs_media
+
+    if not needs_media(nxt):
+        raise DomainError(f"La escena {nxt.position} es de texto o negro: no lleva medio")
+    wanted = scene_duration(scene)
+    if not wanted:
+        raise DomainError("La escena no tiene duración todavía: exporta la voz primero")
+    start_point = round((data.trim_in_s or 0) + wanted, 3)
+    if not asset.duration_s or asset.duration_s - start_point < MIN_CLIP_S:
+        raise DomainError(
+            "El video no tiene suficiente metraje para continuar en la escena siguiente"
+        )
+
+    current_state, current_pending = save_framing(session, scene_id, asset_id, data)
+
+    from ..library import add_reused_candidate
+    from .service import approve_asset
+
+    next_asset_id = add_reused_candidate(session, asset_id, nxt.id)
+    approve_asset(session, nxt.id, next_asset_id, "main")
+    next_data = FramingIn(mode=data.mode, crop=data.crop, trim_in_s=start_point, trim_out_s=None)
+    next_state, next_pending = save_framing(session, nxt.id, next_asset_id, next_data)
+
+    return ExtendedFraming(
+        current=current_state,
+        current_pending=current_pending,
+        next_scene_id=nxt.id,
+        next_asset_id=next_asset_id,
+        next_scene_position=nxt.position,
+        start_s=start_point,
+        next=next_state,
+        next_pending=next_pending,
+    )
 
 
 async def render_framed_video(
