@@ -149,6 +149,23 @@ describe("editor «Ajustar tramo»", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
+  it("mover el tramo permite restablecerlo al tamaño real de la escena", async () => {
+    renderDialog();
+    const win = await screen.findByTestId("trim-window");
+    const track = screen.getByTestId("trim-track");
+    expect(screen.queryByText("Restablecer tramo")).toBeNull(); // recién abierto: nada que restablecer
+
+    fireEvent.pointerDown(win, { clientX: 20, pointerId: 1 });
+    fireEvent.pointerMove(track, { clientX: 200, pointerId: 1 }); // +180 px = +9 s (mismo largo)
+    fireEvent.pointerUp(track, { pointerId: 1 });
+    expect(screen.getByTestId("trim-times").textContent).toBe("0:09.0 – 0:13.0");
+    expect(screen.queryByText(/El tramo dura/)).toBeNull(); // el largo sigue siendo el de la escena
+
+    fireEvent.click(screen.getByText("Restablecer tramo"));
+    expect(screen.getByTestId("trim-times").textContent).toBe("0:00.0 – 0:04.0");
+    expect(screen.queryByText("Restablecer tramo")).toBeNull();
+  });
+
   it("estirar el final avisa si no coincide con la escena y se puede reajustar", async () => {
     renderDialog();
     await screen.findByTestId("trim-window");

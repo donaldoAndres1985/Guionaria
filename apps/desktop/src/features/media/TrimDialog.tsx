@@ -1,4 +1,4 @@
-import { ArrowRight, LoaderCircle, Maximize2, Pause, Play, Scissors, TriangleAlert } from "lucide-react";
+import { ArrowRight, LoaderCircle, Maximize2, Pause, Play, RotateCcw, Scissors, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,12 @@ function TrimEditor({
   const vertical = state.target_height > state.target_width;
   const remaining = sceneDuration != null ? remainingAfterScene(duration, sceneDuration, range.start) : 0;
   const canExtend = state.can_extend_next && remaining >= MIN_TRIM_S;
+  // El tamaño y la posición «de fábrica»: desde el inicio y con el largo real de la escena. Tras
+  // mover o estirar el tramo, cuesta volver a encontrarlo a mano.
+  const resetRange = sceneDuration != null ? initialRange(duration, sceneDuration, null, null) : null;
+  const canReset =
+    resetRange != null &&
+    (Math.abs(range.start - resetRange.start) > 0.05 || Math.abs(range.end - resetRange.end) > 0.05);
 
   // Bucle dentro del tramo.
   useEffect(() => {
@@ -390,6 +396,11 @@ function TrimEditor({
 
       <DialogFooter className="items-center sm:justify-between">
         <div className="flex gap-1">
+          {canReset && (
+            <Button variant="ghost" size="sm" onClick={() => setRange(resetRange!)}>
+              <RotateCcw /> Restablecer tramo
+            </Button>
+          )}
           {sceneDuration != null && mismatch && (
             <Button variant="ghost" size="sm" onClick={() => setRange(fitToScene(range, sceneDuration, duration))}>
               Ajustar al largo de la escena
