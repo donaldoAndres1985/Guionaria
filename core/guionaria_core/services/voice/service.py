@@ -29,7 +29,7 @@ from ..media.http import http_client
 from ..oplog import log_operation
 from ..projects import get_project, project_dir
 from ..script import current_version, read_script, text_hash
-from . import elevenlabs, engines, models
+from . import elevenlabs, engines, memory, models
 from .align import SegmentTiming, Word, align_segments
 from .subtitles import cues_from_segments, cues_from_words, estimate_words, to_srt, to_vtt
 from .wordtiming import piper_words
@@ -62,10 +62,12 @@ class VoiceState(BaseModel):
     subtitles: list[str]
     default_voice: str
     whisper_model: str
-    # Ajustes de ElevenLabs de la voz actual (o los últimos usados) y si hay clave.
+    # Ajustes de ElevenLabs de la voz actual (o la última del canal) y si hay clave.
     elevenlabs: ElevenLabsPrefs
     elevenlabs_configured: bool
-    # Motor que la pantalla propone: el de Ajustes (el último usado), si está disponible.
+    # Ajustes guardados de cada voz de ElevenLabs (se aplican al elegirla).
+    elevenlabs_presets: dict[str, ElevenLabsPrefs] = {}
+    # Motor que la pantalla propone: el último usado en el canal (o en general).
     default_engine: Literal["piper", "elevenlabs"]
 
 
@@ -126,6 +128,10 @@ def _require_ready(session: Session, project: Project) -> None:
 
 
 def _default_voice(session: Session, project: Project) -> str:
+    """Voz de Piper: la última usada en el canal, la del canal, la de Ajustes o la de fábrica."""
+    remembered = memory.channel_voice(project.channel_id)
+    if remembered and remembered.piper_voice:
+        return remembered.piper_voice
     channel = get_channel(session, project.channel_id)
     return channel.default_voice or load_settings().tts_voice or models.DEFAULT_VOICE
 
@@ -170,17 +176,22 @@ def voice_state(session: Session, project_id: int) -> VoiceState:
         subtitles=[p.name for p in (subs_dir / "voz.srt", subs_dir / "voz.vtt") if p.exists()],
         default_voice=_default_voice(session, project),
         whisper_model=load_settings().whisper_model,
+        # La voz ya generada muestra los ajustes con que se hizo; si no, la del canal.
         elevenlabs=ElevenLabsPrefs(**data["elevenlabs"])
         if data.get("elevenlabs")
-        else load_settings().elevenlabs,
+        else memory.elevenlabs_for_channel(project.channel_id),
         elevenlabs_configured=bool(load_settings().api_keys.elevenlabs),
-        default_engine=default_engine(),
+        elevenlabs_presets=memory.load().voices,
+        default_engine=default_engine(project.channel_id),
     )
 
 
-def default_engine() -> Literal["piper", "elevenlabs"]:
+def default_engine(channel_id: int | None = None) -> Literal["piper", "elevenlabs"]:
+    """El último motor usado en el canal o, si nunca se generó voz en él, el de Ajustes."""
     settings = load_settings()
-    if settings.tts_engine == "elevenlabs" and settings.api_keys.elevenlabs:
+    remembered = memory.channel_voice(channel_id) if channel_id is not None else None
+    wanted = remembered.engine if remembered else settings.tts_engine
+    if wanted == "elevenlabs" and settings.api_keys.elevenlabs:
         return "elevenlabs"
     return "piper"
 
@@ -319,9 +330,9 @@ async def generate_voice(
             if engine == "elevenlabs":
                 eleven = elevenlabs.ElevenSettings(**previous["elevenlabs"])
         if engine == "elevenlabs":
-            prefs = load_settings().elevenlabs
+            prefs = memory.elevenlabs_for_channel(project.channel_id)
             if eleven is None and prefs.voice_id:
-                # Sin ajustes explícitos: los últimos usados (Ajustes › ElevenLabs).
+                # Sin ajustes explícitos: la última voz del canal con sus ajustes guardados.
                 fields = set(elevenlabs.ElevenSettings.model_fields)
                 eleven = elevenlabs.ElevenSettings(**prefs.model_dump(include=fields))
             if eleven is None:
@@ -329,6 +340,7 @@ async def generate_voice(
             voice_id, speed = eleven.voice_id, eleven.speed
         voice_id = voice_id or _default_voice(session, project)
         audio_dir = project_dir(project) / "audio"
+        channel_id = project.channel_id
 
     seg_dir = audio_dir / "segments"
     old_files = previous.get("segment_files", {}) if only_segment else {}
@@ -420,13 +432,21 @@ async def generate_voice(
             for w in seg_words.get(k, [])
         ]
         settings = load_settings()
-        settings.elevenlabs = ElevenLabsPrefs(
-            **{
-                **settings.elevenlabs.model_dump(),
-                **eleven.model_dump(exclude={"use_speaker_boost"}),
-            }
-        )
+        used = eleven.model_dump(exclude={"use_speaker_boost"})
+        if not used["voice_name"] and settings.elevenlabs.voice_id == eleven.voice_id:
+            used["voice_name"] = settings.elevenlabs.voice_name
+        settings.elevenlabs = ElevenLabsPrefs(**used)
         save_settings(settings)
+    if not only_segment:
+        # La voz y sus ajustes quedan como los del canal (y los de esa voz).
+        memory.remember_generation(
+            channel_id,
+            engine,
+            voice_id,
+            ElevenLabsPrefs(**eleven.model_dump(exclude={"use_speaker_boost"}))
+            if engine == "elevenlabs" and eleven
+            else None,
+        )
     with session_factory() as session:
         project = get_project(session, project_id)
         track = _save_track(session, project, engine, out, data)

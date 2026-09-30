@@ -67,6 +67,7 @@ class ElevenVoice(BaseModel):
 
 class ElevenSettings(BaseModel):
     voice_id: str
+    voice_name: str = ""  # solo para recordarla (no se envía a ElevenLabs)
     model_id: str = DEFAULT_MODEL
     stability: float = Field(0.5, ge=0, le=1)
     similarity_boost: float = Field(0.75, ge=0, le=1)

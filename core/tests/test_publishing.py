@@ -155,8 +155,13 @@ def test_schedule_publish_and_project_status(client, pub_project):
     assert status_of(client, pid) == "PUBLICADO"
     badges = client.get(f"/api/projects/{pid}").json()["publications"]
     assert badges == [
-        {"platform": "youtube", "status": "scheduled", "url": None},
-        {"platform": "tiktok", "status": "published", "url": "https://tiktok.com/@x/1"},
+        {"id": yt["id"], "platform": "youtube", "status": "scheduled", "url": None},
+        {
+            "id": tt["id"],
+            "platform": "tiktok",
+            "status": "published",
+            "url": "https://tiktok.com/@x/1",
+        },
     ]
     listed = next(p for p in client.get("/api/projects").json() if p["id"] == pid)
     assert [b["status"] for b in listed["publications"]] == ["scheduled", "published"]
@@ -546,7 +551,20 @@ def test_claude_designs_thumbnails_from_real_frames(client, media_project, web, 
         f"/api/projects/{pid}/publishing/cover:redraw", json={"index": 2, "design": design}
     ).json()
     assert state["cover_options"][1]["design"]["texto"] == "Silencio total"
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Project
+    from guionaria_core.services.publishing.service import final_video
+
+    with Session(get_engine()) as s:
+        video = final_video(s.get(Project, pid))
+    video.parent.mkdir(parents=True, exist_ok=True)
+    video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
     state = client.post(f"/api/projects/{pid}/publishing/cover:choose", json={"index": 2}).json()
+    # «Usar esta»: la miniatura queda también junto al video, con su mismo nombre.
+    beside = video.with_suffix(".jpg")
+    assert beside.exists()
+    chosen_file = video.parent.parent / "publicacion" / "miniatura.jpg"
+    assert beside.read_bytes() == chosen_file.read_bytes()
     yt = state["publications"][0]
     assert yt["thumbnail_url"] and yt["meta"]["thumbnail_text"] == "Silencio total"
     chosen = Image.open(BytesIO(client.get(yt["thumbnail_url"]).content))
@@ -598,6 +616,13 @@ def test_upload_own_thumbnail(client, pub_project):
     got = client.get(url)
     assert got.headers["content-type"] == "image/jpeg" and len(got.content) <= 2 * 1024 * 1024
     assert Image.open(BytesIO(got.content)).size == (1080, 1920)  # encuadrada al reel
+    from guionaria_core.db import get_engine
+    from guionaria_core.models import Project
+    from guionaria_core.services.publishing.service import final_video
+
+    with Session(get_engine()) as s:
+        video = final_video(s.get(Project, pid))
+    assert video.with_suffix(".jpg").read_bytes() == got.content  # junto al video renderizado
     bad = client.post(
         f"/api/projects/{pid}/publishing/thumbnail:upload",
         files={"file": ("x.png", b"no es imagen", "image/png")},

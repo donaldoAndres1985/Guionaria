@@ -1,4 +1,4 @@
-import { Clapperboard, FileVideo, LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
+import { Clapperboard, FileVideo, LayoutGrid, List, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { EmptyState } from "@/components/EmptyState";
@@ -10,8 +10,10 @@ import { PublishBadges } from "@/features/publishing/PublishBadges";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { ImportVideoDialog } from "@/components/projects/ImportVideoDialog";
 import { DeleteProjectDialog } from "@/components/projects/DeleteProjectDialog";
+import { ProjectMenu } from "@/components/projects/ProjectMenu";
 import { MediaStrip, ProjectCover } from "@/components/projects/ProjectThumbs";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useChannels } from "@/hooks/useChannels";
 import { useProjects } from "@/hooks/useProjects";
 import type { Project } from "@/lib/api";
@@ -50,14 +52,19 @@ export function ProjectsPage() {
   const [importing, setImporting] = useState(false);
   const view = useUiStore((s) => s.projectsView);
   const setView = useUiStore((s) => s.setProjectsView);
+  const showPublished = useUiStore((s) => s.showPublished);
+  const setShowPublished = useUiStore((s) => s.setShowPublished);
   const selectedChannelId = useUiStore((s) => s.selectedChannelId);
   const { data: channels = [] } = useChannels();
   const channel = channels.find((c) => c.id === selectedChannelId) ?? null;
   const { data: projects = [], isPending } = useProjects({ channel: channel?.id, q: query });
 
-  const counts = new Map<TabId, number>([["all", projects.length]]);
+  // Sin «Mostrar publicados», «Todos» deja fuera los publicados (la pestaña Publicados sí los muestra).
+  const pending = showPublished ? projects : projects.filter((p) => tabOf(p) !== "published");
+  const counts = new Map<TabId, number>([["all", pending.length]]);
   for (const p of projects) counts.set(tabOf(p), (counts.get(tabOf(p)) ?? 0) + 1);
-  const visible = tab === "all" ? projects : projects.filter((p) => tabOf(p) === tab);
+  const visible = tab === "all" ? pending : projects.filter((p) => tabOf(p) === tab);
+  const allPublished = tab === "all" && !showPublished && projects.length > 0 && pending.length === 0;
   const thisMonth = projects.filter((p) => isThisMonth(p.target_publish_at) && p.status !== "PUBLICADO");
 
   const newButton = (
@@ -102,7 +109,14 @@ export function ProjectsPage() {
             <span className="text-[11px] opacity-80">{counts.get(t.id) ?? 0}</span>
           </button>
         ))}
-        <div role="radiogroup" aria-label="Vista" className="ml-auto flex rounded-md border p-0.5">
+        <label
+          className="ml-auto flex h-8 cursor-pointer items-center gap-2 rounded-md px-2.5 text-[13px] text-muted-foreground select-none hover:text-foreground"
+          title="Sin marcar, «Todos» muestra solo los proyectos sin publicar"
+        >
+          <Checkbox checked={showPublished} onCheckedChange={(v) => setShowPublished(v === true)} aria-label="Mostrar publicados" />
+          Mostrar publicados
+        </label>
+        <div role="radiogroup" aria-label="Vista" className="flex rounded-md border p-0.5">
           {(
             [
               ["list", List, "Lista"],
@@ -137,11 +151,13 @@ export function ProjectsPage() {
       {!isPending && visible.length === 0 ? (
         <EmptyState
           icon={Clapperboard}
-          title={query ? "Sin resultados" : "Sin proyectos todavía"}
+          title={query ? "Sin resultados" : allPublished ? "Todo está publicado" : "Sin proyectos todavía"}
           description={
             query
               ? `Ningún proyecto coincide con "${query}".`
-              : "Crea un video (16:9) o un reel (9:16) y avanza por guion, escenas, medios, voz y timeline."
+              : allPublished
+                ? "Marca «Mostrar publicados» para verlos, o crea un proyecto nuevo."
+                : "Crea un video (16:9) o un reel (9:16) y avanza por guion, escenas, medios, voz y timeline."
           }
           action={!query && tab === "all" ? newButton : undefined}
         />
@@ -173,7 +189,7 @@ export function ProjectsPage() {
                   </span>
                   <MediaStrip project={p} />
                 </div>
-                <DeleteButton onClick={() => setToDelete(p)} className="absolute top-3.5 right-3.5 bg-background/80" />
+                <ProjectMenu project={p} onDelete={() => setToDelete(p)} className="absolute top-3.5 right-3.5 bg-background/80" />
               </div>
             ))}
           </div>
@@ -234,7 +250,7 @@ export function ProjectsPage() {
                     {formatDate(p.updated_at)}
                   </td>
                   <td className="pr-3">
-                    <DeleteButton onClick={() => setToDelete(p)} />
+                    <ProjectMenu project={p} onDelete={() => setToDelete(p)} />
                   </td>
                 </tr>
               ))}
@@ -249,27 +265,6 @@ export function ProjectsPage() {
         <DeleteProjectDialog project={toDelete} open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)} />
       )}
     </PageLayout>
-  );
-}
-
-/** Papelera de la fila o tarjeta (aparece al pasar el ratón; no abre el proyecto). */
-function DeleteButton({ onClick, className }: { onClick: () => void; className?: string }) {
-  return (
-    <button
-      type="button"
-      aria-label="Eliminar proyecto"
-      title="Eliminar proyecto"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={cn(
-        "rounded p-1.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-danger/15 hover:text-danger focus-visible:opacity-100",
-        className,
-      )}
-    >
-      <Trash2 className="size-4" />
-    </button>
   );
 }
 

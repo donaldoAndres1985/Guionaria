@@ -36,7 +36,7 @@ export interface GenerateVoiceInput {
   speed: number;
   pause_s: number;
   engine?: "piper" | "elevenlabs";
-  elevenlabs?: Omit<ElevenLabsPrefs, "voice_name"> | null;
+  elevenlabs?: (Omit<ElevenLabsPrefs, "voice_name"> & { voice_name?: string }) | null;
 }
 
 /** Voces de la cuenta de ElevenLabs (propias, clonadas y de la biblioteca). */
@@ -66,6 +66,17 @@ export function useElevenAccount(enabled: boolean) {
     queryFn: () => api.get<ElevenAccount>("/api/voice/elevenlabs/account"),
     enabled,
     retry: false,
+  });
+}
+
+/** Guarda los ajustes de una voz de ElevenLabs: vuelven cada vez que se elija esa voz. */
+export function useSaveElevenPreset(projectId: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ voice_id, ...prefs }: ElevenLabsPrefs) =>
+      api.put<Record<string, ElevenLabsPrefs>>(`/api/voice/elevenlabs/presets/${encodeURIComponent(voice_id)}`, prefs),
+    onSuccess: (presets) =>
+      client.setQueryData<VoiceState>(voiceKeys.state(projectId), (s) => (s ? { ...s, elevenlabs_presets: presets } : s)),
   });
 }
 

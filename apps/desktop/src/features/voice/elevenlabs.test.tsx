@@ -60,6 +60,10 @@ describe("voz con ElevenLabs", () => {
         if (url.pathname === "/api/voice/voices") return ok([]);
         if (url.pathname === "/api/jobs") return ok([]);
         if (url.pathname.includes(":reveal")) return new Response(null, { status: 204 });
+        if (method === "PUT" && url.pathname.startsWith("/api/voice/elevenlabs/presets/")) {
+          const id = decodeURIComponent(url.pathname.split("/").pop()!);
+          return ok({ ...server.elevenlabs_presets, [id]: { voice_id: id, ...JSON.parse(String(init!.body)) } });
+        }
         if (method === "POST") {
           return ok({ id: 1, type: "voice", project_id: 7, status: "queued", progress: 0, created_at: "" }, 202);
         }
@@ -137,10 +141,36 @@ describe("voz con ElevenLabs", () => {
       pause_s: 0.3,
       engine: "elevenlabs",
       elevenlabs: {
-        voice_id: "v2", model_id: "eleven_multilingual_v2", stability: 0.3,
+        voice_id: "v2", voice_name: "Adam", model_id: "eleven_multilingual_v2", stability: 0.3,
         similarity_boost: 0.75, style: 0, speed: 1,
       },
     });
+    // El ajuste movido queda guardado para esa voz.
+    await waitFor(() => expect(requests.some((r) => r.method === "PUT")).toBe(true), { timeout: 2000 });
+    expect(requests.find((r) => r.method === "PUT")).toMatchObject({
+      path: "/api/voice/elevenlabs/presets/v2",
+      body: { voice_name: "Adam", stability: 0.3, similarity_boost: 0.75 },
+    });
+  });
+
+  it("al elegir una voz vuelven sus ajustes guardados", async () => {
+    server = state({
+      elevenlabs_presets: {
+        v1: { ...prefs, voice_id: "v1", voice_name: "Mateo", stability: 0.35, style: 0.2, speed: 0.9, model_id: "eleven_turbo_v2_5" },
+      },
+    });
+    renderStage();
+    await chooseEleven();
+    const list = await screen.findByRole("listbox", { name: "Voces de ElevenLabs" });
+    fireEvent.click(await within(list).findByText("Mateo"));
+    expect((screen.getByLabelText("Estabilidad") as HTMLInputElement).value).toBe("0.35");
+    expect((screen.getByLabelText("Estilo") as HTMLInputElement).value).toBe("0.2");
+    expect((screen.getByLabelText("Velocidad") as HTMLInputElement).value).toBe("0.9");
+    // Elegir la voz no guarda nada: solo mover un ajuste.
+    expect(requests.some((r) => r.method === "PUT")).toBe(false);
+    // Otra voz sin ajustes guardados conserva los actuales.
+    fireEvent.click(within(list).getByText("Adam"));
+    expect((screen.getByLabelText("Estabilidad") as HTMLInputElement).value).toBe("0.35");
   });
 
   it("muestra créditos, avisa si no alcanzan y del plan gratuito", async () => {

@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProjectJob } from "@/hooks/useProjectJob";
-import { type VoiceAction, useUploadVoice, useVoiceJob, useVoiceState } from "@/hooks/useVoice";
+import { type VoiceAction, useSaveElevenPreset, useUploadVoice, useVoiceJob, useVoiceState } from "@/hooks/useVoice";
 import type { ElevenLabsPrefs, Project } from "@/lib/api";
 import { formatDuration } from "@/lib/project";
 
@@ -31,6 +31,11 @@ export function useVoiceController(project: Project) {
   const [pause, setPause] = useState(0.3);
   const [engineChoice, setEngine] = useState<"piper" | "elevenlabs" | null>(null);
   const [elevenPatch, setElevenPatch] = useState<Partial<ElevenLabsPrefs>>({});
+  const savePreset = useSaveElevenPreset(project.id);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+  }, []);
 
   const run = (a: VoiceAction) => {
     action.current = a;
@@ -62,7 +67,21 @@ export function useVoiceController(project: Project) {
     engine,
     setEngine,
     eleven,
-    setEleven: (patch: Partial<ElevenLabsPrefs>) => setElevenPatch((p) => ({ ...p, ...patch })),
+    setEleven: (patch: Partial<ElevenLabsPrefs>) => {
+      if (!eleven) return;
+      if (patch.voice_id && patch.voice_id !== eleven.voice_id) {
+        // Otra voz: vuelven sus ajustes guardados (modelo, estabilidad, similitud, estilo, velocidad).
+        const preset = state?.elevenlabs_presets?.[patch.voice_id];
+        setElevenPatch((p) => ({ ...p, ...(preset ?? {}), ...patch }));
+        return;
+      }
+      const next = { ...eleven, ...patch };
+      setElevenPatch((p) => ({ ...p, ...patch }));
+      if (!next.voice_id) return;
+      // Cambió un ajuste: se guarda para esa voz (con una pausa para no guardar cada paso del control).
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => savePreset.mutate(next), 600);
+    },
     characters,
     canGenerate,
     generate: () =>
@@ -77,6 +96,7 @@ export function useVoiceController(project: Project) {
                 engine,
                 elevenlabs: {
                   voice_id: eleven.voice_id,
+                  voice_name: eleven.voice_name,
                   model_id: eleven.model_id,
                   stability: eleven.stability,
                   similarity_boost: eleven.similarity_boost,

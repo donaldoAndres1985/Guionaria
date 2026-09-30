@@ -25,6 +25,9 @@ interface UiState {
   /** Proyectos: lista o miniaturas. */
   projectsView: "list" | "grid";
   setProjectsView: (view: "list" | "grid") => void;
+  /** Proyectos: mostrar también los publicados (por defecto solo los pendientes). */
+  showPublished: boolean;
+  setShowPublished: (show: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -42,6 +45,8 @@ export const useUiStore = create<UiState>()(
       setMediaHelpHidden: (hidden) => set({ mediaHelpHidden: hidden }),
       projectsView: "list",
       setProjectsView: (view) => set({ projectsView: view }),
+      showPublished: false,
+      setShowPublished: (show) => set({ showPublished: show }),
       stagePanelWidth: STAGE_PANEL_WIDTH.default,
       setStagePanelWidth: (width) =>
         set({
