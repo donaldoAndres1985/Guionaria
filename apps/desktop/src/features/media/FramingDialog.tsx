@@ -1,5 +1,5 @@
 import { LoaderCircle } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,11 +141,19 @@ function FramingForm({
             videoRef={video}
             aspect={(state.source_width ?? 16) / (state.source_height ?? 9)}
             crop={mode === "crop" ? crop : null}
+            trimStart={isVideo ? (start ?? 0) : null}
+            trimEnd={isVideo ? end : null}
             onMove={(dx, dy) => setCrop((c) => moveCrop(c, dx, dy))}
             onResize={(corner, dx, dy) => setCrop((c) => resizeCorner(c, max, corner, dx, dy))}
           />
         )}
       </div>
+      {isVideo && mode !== "blur" && ((start != null && start > 0) || end != null) && (
+        <p className="-mt-1 text-center text-[11px] text-muted-foreground">
+          La vista previa repite el tramo elegido ({formatSceneTime(start ?? 0)}–
+          {end != null ? formatSceneTime(end) : "fin"}): así se encuadra lo que de verdad sale en el video.
+        </p>
+      )}
 
       {mode === "crop" && (
         <label className="flex items-center gap-3 text-[12px] text-muted-foreground">
@@ -221,6 +229,8 @@ function CropArea({
   videoRef,
   aspect,
   crop,
+  trimStart,
+  trimEnd,
   onMove,
   onResize,
 }: {
@@ -229,11 +239,29 @@ function CropArea({
   videoRef: React.RefObject<HTMLVideoElement | null>;
   aspect: number;
   crop: Crop | null;
+  /** Tramo elegido en «Ajustar tramo» / los campos de abajo: la vista previa se limita a él. */
+  trimStart: number | null;
+  trimEnd: number | null;
   onMove: (dx: number, dy: number) => void;
   onResize: (corner: Corner, dx: number, dy: number) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ corner: Corner | "move"; x: number; y: number } | null>(null);
+
+  // El encuadre se elige mirando lo que de verdad se usa: la vista repite ese tramo, no el clip
+  // entero (que puede mostrar algo totalmente distinto en el segundo 0).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !isVideo) return;
+    const s = trimStart ?? 0;
+    const e = trimEnd ?? Infinity;
+    if (v.currentTime < s || v.currentTime >= e) v.currentTime = s;
+    const onTime = () => {
+      if (v.currentTime >= e || v.currentTime < s - 0.05) v.currentTime = s;
+    };
+    v.addEventListener("timeupdate", onTime);
+    return () => v.removeEventListener("timeupdate", onTime);
+  }, [videoRef, isVideo, trimStart, trimEnd]);
 
   const startDrag = (corner: Corner | "move") => (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -259,7 +287,13 @@ function CropArea({
       data-testid="crop-area"
     >
       {isVideo ? (
-        <video ref={videoRef} src={src} controls={!crop} className="size-full object-contain" />
+        <video
+          ref={videoRef}
+          src={src}
+          controls={!crop}
+          className="size-full object-contain"
+          onLoadedMetadata={(e) => (e.currentTarget.currentTime = trimStart ?? 0)}
+        />
       ) : (
         <img src={src} alt="" className="size-full object-contain" />
       )}

@@ -170,6 +170,38 @@ describe("diálogo de encuadre", () => {
     expect(after.w / after.h).toBeCloseTo(MAX.w / MAX.h, 3); // mantiene la proporción del formato
   });
 
+  it("la vista previa del encuadre respeta y repite el tramo elegido", async () => {
+    server = state({ kind: "video", source_duration_s: 10, mode: "none", trim_in_s: 2.5, trim_out_s: 5 });
+    renderDialog();
+    await screen.findByText(/Tramo del video/);
+    expect(document.body.textContent).toContain("repite el tramo elegido");
+    expect(document.body.textContent).toContain("0:02.5");
+    expect(document.body.textContent).toContain("0:05.0");
+
+    const video = document.querySelector("video") as HTMLVideoElement;
+    fireEvent.loadedMetadata(video); // al cargar, salta directo al inicio del tramo
+    expect(video.currentTime).toBe(2.5);
+
+    video.currentTime = 6; // se pasó del tramo: vuelve al inicio
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBe(2.5);
+
+    video.currentTime = 1; // antes del tramo: también vuelve
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBe(2.5);
+
+    video.currentTime = 3; // dentro del tramo: no se toca
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBe(3);
+  });
+
+  it("sin tramo elegido, la vista previa no muestra el aviso", async () => {
+    server = state({ kind: "video", source_duration_s: 10, mode: "none" });
+    renderDialog();
+    await screen.findByText(/Tramo del video/);
+    expect(document.body.textContent).not.toContain("repite el tramo elegido");
+  });
+
   it("fondo desenfocado muestra la vista previa en el formato de destino", async () => {
     server = state();
     renderDialog();
