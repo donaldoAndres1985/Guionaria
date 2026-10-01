@@ -289,6 +289,20 @@ describe("controlador de medios", () => {
     });
   });
 
+  it("cambiar el principal de una escena que ya tenía uno no salta a otra escena", async () => {
+    scenes[1] = sceneMedia(1, {
+      status: "approved",
+      approved: [{ asset: asset(9), role: "main", file_name: "x.jpg", framing_mode: "none", framing_pending: false, trim_in_s: null, trim_out_s: null, approved_url: null }],
+    });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.scene?.scene_id).toBe(1));
+    act(() => result.current.approve(12, "main")); // otro medio distinto al ya aprobado
+    await waitFor(() =>
+      expect(requests.find((r) => r.path === "/api/scenes/1/assets/12:approve")).toBeTruthy(),
+    );
+    expect(result.current.sceneId).toBe(1); // se queda en la misma escena
+  });
+
   it("anterior/siguiente recorre solo las escenas que necesitan medio", async () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.sceneId).toBe(1));
