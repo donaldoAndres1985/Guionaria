@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { OverlayTexts } from "./OverlayText";
 import {
   captionAt,
   captionGroups,
@@ -179,6 +180,9 @@ export function PreviewCanvas({
         )}
 
         {look && look.fade > 0 && <div className="absolute inset-0 z-[3] bg-black" style={{ opacity: look.fade }} />}
+        {look && (look.flash ?? 0) > 0 && (
+          <div data-testid="effect-flash" className="absolute inset-0 z-[3] bg-white" style={{ opacity: look.flash }} />
+        )}
         {css.tint && (
           <div className="absolute inset-0 z-[3] mix-blend-soft-light" style={{ background: css.tint.color, opacity: css.tint.opacity }} />
         )}
@@ -206,6 +210,11 @@ export function PreviewCanvas({
           duration={scene.duration_s}
           style={textStyle ?? preview.text_style ?? DEFAULT_TEXT}
         />
+      )}
+
+      {/* Textos de las pistas propias (las de más arriba, encima) */}
+      {preview.overlays && preview.overlays.length > 0 && (
+        <OverlayTexts overlays={preview.overlays} time={time} width={preview.width} height={preview.height} scale={scale} />
       )}
 
       {/* Subtítulos */}
@@ -258,8 +267,8 @@ export function PreviewCanvas({
       {preview.voice_url && (
         <AudioTrack src={coreUrl(preview.voice_url) ?? ""} start={0} duration={preview.duration_s} time={time} playing={playing} volume={1} />
       )}
-      {preview.sfx.map((s) => (
-        <SoundTrack key={`sfx-${s.start_s}`} sound={s} time={time} playing={playing} volume={preview.sfx_volume} />
+      {preview.sfx.map((s, i) => (
+        <SoundTrack key={`sfx-${s.start_s}-${i}`} sound={s} time={time} playing={playing} volume={s.volume ?? preview.sfx_volume} />
       ))}
       {preview.music.map((s) => (
         <SoundTrack
@@ -324,6 +333,19 @@ function SceneLayer({
         />
       ) : (
         <div className="absolute inset-0 bg-black" />
+      )}
+      {(look.vignette ?? 0) > 0 && (
+        <div
+          data-testid="effect-vignette"
+          className="absolute inset-0"
+          style={{ background: `radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,${look.vignette}) 100%)` }}
+        />
+      )}
+      {(look.bars ?? 0) > 0 && (
+        <>
+          <div data-testid="effect-bars" className="absolute inset-x-0 top-0 bg-black" style={{ height: `${(look.bars ?? 0) * 100}%` }} />
+          <div className="absolute inset-x-0 bottom-0 bg-black" style={{ height: `${(look.bars ?? 0) * 100}%` }} />
+        </>
       )}
     </div>
   );
@@ -439,10 +461,18 @@ function SoundTrack({ sound, time, playing, volume }: { sound: PreviewSound; tim
       duration={sound.duration_s}
       time={time}
       playing={playing}
-      volume={volume}
+      volume={volume * fadeGain(time - sound.start_s, sound.duration_s, sound.fade_in_s ?? 0, sound.fade_out_s ?? 0)}
       loop={sound.loop}
     />
   );
+}
+
+/** Ganancia de los fundidos de entrada y salida (0–1), como los afade del render. */
+export function fadeGain(local: number, duration: number, fadeIn: number, fadeOut: number): number {
+  let gain = 1;
+  if (fadeIn > 0 && local < fadeIn) gain = Math.min(gain, Math.max(local / fadeIn, 0));
+  if (fadeOut > 0 && local > duration - fadeOut) gain = Math.min(gain, Math.max((duration - local) / fadeOut, 0));
+  return gain;
 }
 
 /** Un audio sincronizado con el reloj: suena solo dentro de su tramo. */

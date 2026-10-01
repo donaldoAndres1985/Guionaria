@@ -180,10 +180,28 @@ export function textLook(animation: TextStyle["animation"], local: number, durat
 export interface EffectLook {
   transform: string;
   filter?: string;
-  /** Opacidad del velo negro (fundido al final). */
+  /** Opacidad del velo negro (fundido al final o al empezar). */
   fade: number;
   playbackRate: number;
+  /** Destello blanco al empezar (0–1). */
+  flash?: number;
+  /** Viñeta (0–1) y franjas negras «cinematográficas» (fracción del alto de cada una). */
+  vignette?: number;
+  bars?: number;
 }
+
+const ZOOM_PUNCH = 0.16; // «zoom rápido» (como plan.ZOOM_PUNCH)
+const ZOOM_PUNCH_S = 0.4;
+const SHAKE_ZOOM = 1.06; // «cámara en mano» (como plan.SHAKE_ZOOM)
+const CINEMA_BAR = 0.11;
+
+/** Filtros CSS de los efectos de color (aproximan plan.COLOR_EFFECTS). */
+const COLOR_FILTERS: Record<string, string> = {
+  blanco_negro: "grayscale(1)",
+  sepia: "sepia(0.85) saturate(1.1)",
+  contraste_alto: "contrast(1.3) saturate(1.2) brightness(0.98)",
+  vhs: "saturate(0.7) contrast(1.1) blur(0.4px)",
+};
 
 /** Cuánto se acerca el zoom lento (como plan.zoom_amount): 3 %/s, entre 4 % y el máximo,
  * por la intensidad del movimiento del Look (1 = 100 %). */
@@ -214,17 +232,38 @@ export function effectLook(effect: string | null, progress: number, zoom: number
     if (effect === "zoom_divino") look.filter = "brightness(1.06) saturate(1.08)";
     return look;
   }
+  const local = p * sceneDuration;
+  const pan = ((1 - 1 / KEN_BURNS) / 2) * 100; // % que se desplaza hacia cada lado
   if (effect === "zoom_lento_in") look.transform = `scale(${r(1 + amount * p)})`;
   else if (effect === "zoom_lento_out") look.transform = `scale(${r(1 + amount - amount * p)})`;
-  else if (effect === "ken_burns") {
-    const pan = ((1 - 1 / KEN_BURNS) / 2) * 100; // % que se desplaza hacia cada lado
-    look.transform = `scale(${KEN_BURNS}) translateX(${r(pan - 2 * pan * p)}%)`;
+  else if (effect === "ken_burns") look.transform = `scale(${KEN_BURNS}) translateX(${r(pan - 2 * pan * p)}%)`;
+  else if (effect === "paneo_izquierda") look.transform = `scale(${KEN_BURNS}) translateX(${r(-pan + 2 * pan * p)}%)`;
+  else if (effect === "paneo_vertical") look.transform = `scale(${KEN_BURNS}) translateY(${r(-pan + 2 * pan * p)}%)`;
+  else if (effect === "zoom_rapido") {
+    look.transform = `scale(${r(1 + ZOOM_PUNCH * motion * smooth(Math.min(local / ZOOM_PUNCH_S, 1)))})`;
+  } else if (effect === "temblor") {
+    // Mismo vaivén que plan.effect_filter (por cuadro, a 30 fps).
+    const amp = Math.min(motion, 2);
+    const f = local * 30;
+    const dx = 0.007 * amp * Math.sin(f * 0.7) + 0.005 * amp * Math.sin(f * 2.1);
+    const dy = 0.006 * amp * Math.sin(f * 1.1 + 1) + 0.004 * amp * Math.sin(f * 2.7);
+    look.transform = `scale(${SHAKE_ZOOM}) translate(${r(-dx * 100)}%, ${r(-dy * 100)}%)`;
   } else if (effect === "estatica") look.filter = "saturate(0.6) contrast(1.1)";
   else if (effect === "glitch") look.filter = "hue-rotate(8deg) saturate(1.3)";
+  else if (effect && COLOR_FILTERS[effect]) look.filter = COLOR_FILTERS[effect];
+  else if (effect === "vineta") look.vignette = 0.6;
+  else if (effect === "cinematico") look.bars = CINEMA_BAR;
   else if (effect === "fundido_negro") {
     const left = (1 - p) * sceneDuration;
     look.fade = left < 0.6 ? 1 - left / 0.6 : 0;
+  } else if (effect === "fundido_entrada") {
+    const span = Math.min(0.6, sceneDuration);
+    look.fade = local < span ? 1 - local / span : 0;
+  } else if (effect === "destello") {
+    const span = Math.min(0.5, sceneDuration);
+    look.flash = local < span ? 1 - local / span : 0;
   } else if (effect === "camara_rapida") look.playbackRate = 2;
+  else if (effect === "camara_lenta") look.playbackRate = 0.5;
   return look;
 }
 

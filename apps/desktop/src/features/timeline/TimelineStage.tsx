@@ -7,7 +7,9 @@ import {
   Music,
   Pause,
   Play,
+  Plus,
   Scissors,
+  Sparkles,
   SkipBack,
   SkipForward,
   Type,
@@ -17,11 +19,25 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TrimDialog, type TrimTarget } from "@/features/media/TrimDialog";
 import { formatSceneTime, KINDS } from "@/features/scenes/sceneMeta";
 import { useRevealProject } from "@/hooks/useManualMedia";
 import { usePreview, useTimeline } from "@/hooks/useTimeline";
-import { coreUrl, type Project, type TimelineScene, type TimelineSound } from "@/lib/api";
+import { coreUrl, type OverlayItem, type OverlayTrack, type Project, type TextOverlayStyle, type TimelineScene, type TimelineSound } from "@/lib/api";
+import { useOverlayEditing } from "@/hooks/useOverlays";
+import { EffectsDialog, type EffectsTab, type EffectsTarget } from "./EffectsDialog";
+import { effectLabel } from "./effectsCatalog";
+import { OverlayTrackHeader, OverlayTrackLane } from "./OverlayTracks";
+import { SfxOverlayDialog, type SfxTarget } from "./SfxOverlayDialog";
+import { TextOverlayDialog, type TextTarget } from "./TextOverlayDialog";
 import { formatDuration, STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { PreviewCanvas, usePreviewClock } from "./PreviewPlayer";
@@ -54,6 +70,12 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
   const reveal = useRevealProject();
   const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [tab, setTab] = useState<"preview" | "render">("preview");
+  const editing = useOverlayEditing(project.id);
+  const [effectsTarget, setEffectsTarget] = useState<EffectsTarget | null>(null);
+  const [textTarget, setTextTarget] = useState<TextTarget | null>(null);
+  const [sfxTarget, setSfxTarget] = useState<SfxTarget | null>(null);
+  const [selectedItem, setSelectedItem] = useState<number | null>(null);
+  const [lastTextStyle, setLastTextStyle] = useState<TextOverlayStyle | null>(null);
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
     look: false,
     background: false,
@@ -69,16 +91,30 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
   const portrait = (preview?.height ?? state?.height ?? 0) > (preview?.width ?? state?.width ?? 1);
 
   // Atajos: Espacio reproduce/pausa, ← → escena anterior/siguiente, Inicio vuelve al principio.
-  const keys = useRef({ clock, preview, tab, trim });
-  keys.current = { clock, preview, tab, trim };
+  const dialogOpen = !!(trim || effectsTarget || textTarget || sfxTarget);
+  const editableNow = state?.editable !== false;
+  const keys = useRef({ clock, preview, tab, trim: dialogOpen, selectedItem, editing, editable: editableNow });
+  keys.current = { clock, preview, tab, trim: dialogOpen, selectedItem, editing, editable: editableNow };
   useEffect(() => {
     const typing = (e: KeyboardEvent) =>
       e.target instanceof Element &&
       !!e.target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']");
     const onKey = (e: KeyboardEvent) => {
       if (typing(e)) return;
-      const { clock: c, preview: p, tab: t, trim: tr } = keys.current;
-      if (t !== "preview" || tr || !p) return;
+      const { clock: c, preview: p, tab: t, trim: tr, selectedItem: sel, editing: ed, editable: canEdit } = keys.current;
+      if (tr) return;
+      // Supr borra el elemento elegido de una pista propia; Esc lo deselecciona.
+      if ((e.key === "Delete" || e.key === "Backspace") && sel != null) {
+        if (canEdit) ed.deleteItem.mutate(sel);
+        setSelectedItem(null);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Escape" && sel != null) {
+        setSelectedItem(null);
+        return;
+      }
+      if (t !== "preview" || !p) return;
       const i = sceneIndexAt(p.scenes, c.time);
       if (e.key === " ") c.toggle();
       else if (e.key === "ArrowRight") c.seek(p.scenes[Math.min(i + 1, p.scenes.length - 1)]?.start_s ?? 0);
@@ -116,6 +152,59 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
 
   const d = state.duration_s;
   const canTrim = STATUS_ORDER.indexOf(project.status) < STATUS_ORDER.indexOf("PROGRAMADO");
+  const editable = state.editable !== false && canTrim;
+  const manual = state.overlay_tracks ?? [];
+  const textTracks = manual.filter((t) => t.kind === "text");
+  const sfxTracks = manual.filter((t) => t.kind === "sfx");
+  const allItems = manual.flatMap((t) => t.items);
+  // Puntos donde se pegan los elementos al arrastrarlos: cortes, cabezal y otros elementos.
+  const snapPoints = [
+    0,
+    d,
+    clock.time,
+    ...state.scenes.map((s) => s.start_s),
+    ...allItems.flatMap((i) => [i.start_s, i.start_s + i.duration_s]),
+  ];
+  const openEffects = (scene: TimelineScene, effectsTab: EffectsTab) => {
+    if (scene.scene_id != null) setEffectsTarget({ scene, tab: effectsTab });
+  };
+  const addToTrack = (track: OverlayTrack) => {
+    const start = Math.round(Math.min(Math.max(clock.time, 0), Math.max(d - 0.5, 0)) * 10) / 10;
+    if (track.kind === "text") setTextTarget({ mode: "create", trackId: track.id, start_s: start });
+    else setSfxTarget({ mode: "create", trackId: track.id, start_s: start });
+  };
+  const openItem = (track: OverlayTrack, item: OverlayItem) => {
+    setSelectedItem(item.id);
+    if (track.kind === "text") setTextTarget({ mode: "edit", item });
+    else setSfxTarget({ mode: "edit", item });
+  };
+  const overlayRow = (track: OverlayTrack): TrackRow => ({
+    id: `overlay-${track.id}`,
+    icon: track.kind === "text" ? Type : Volume2,
+    label: track.name,
+    height: track.kind === "text" ? "h-8" : "h-7",
+    header: (
+      <OverlayTrackHeader
+        track={track}
+        editable={editable}
+        onAdd={() => addToTrack(track)}
+        onRename={(name) => editing.renameTrack.mutate({ id: track.id, name })}
+        onDelete={() => editing.deleteTrack.mutate(track.id)}
+      />
+    ),
+    content: (
+      <OverlayTrackLane
+        track={track}
+        duration={d}
+        snapPoints={snapPoints}
+        editable={editable}
+        selectedId={selectedItem}
+        onSelect={setSelectedItem}
+        onOpen={(item) => openItem(track, item)}
+        onChange={(item, patch) => editing.updateItem.mutate({ id: item.id, input: patch })}
+      />
+    ),
+  });
   const openTrim = (s: TimelineScene) =>
     s.scene_id != null &&
     s.asset_id != null &&
@@ -328,8 +417,20 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
       <Tracks
         duration={d}
         time={clock.time}
-        onSeek={seekTo}
+        onSeek={(t) => {
+          setSelectedItem(null);
+          seekTo(t);
+        }}
+        addMenu={
+          editable ? (
+            <AddTrackMenu
+              busy={editing.addTrack.isPending}
+              onAdd={(kind) => editing.addTrack.mutate(kind, { onSuccess: (track) => addToTrack(track) })}
+            />
+          ) : null
+        }
         rows={[
+          ...textTracks.map(overlayRow),
           {
             id: "video",
             icon: Film,
@@ -344,9 +445,18 @@ export function TimelineStage({ project, onGoToMedia }: { project: Project; onGo
                     duration={d}
                     onSeek={() => seekTo(s.start_s)}
                     onTrim={canTrim && s.is_video ? () => openTrim(s) : undefined}
+                    onEffects={editable && s.scene_id != null ? () => openEffects(s, "effect") : undefined}
                   />
                 ))}
-                <CutMarkers projectId={project.id} duration={d} disabled={render.job.running} />
+                <CutMarkers
+                  projectId={project.id}
+                  duration={d}
+                  disabled={render.job.running || !editable}
+                  onOpen={(sceneId) => {
+                    const from = state.scenes.find((x) => x.scene_id === sceneId);
+                    if (from) openEffects(from, "transition");
+                  }}
+                />
               </>
             ),
           },
@@ -422,9 +532,42 @@ Clic: ir aquí y editar el estilo`}
               </span>
             ),
           },
+          ...sfxTracks.map(overlayRow),
         ]}
       />
       <TrimDialog projectId={project.id} target={trim} onClose={() => setTrim(null)} />
+      <EffectsDialog
+        target={effectsTarget}
+        scenes={state.scenes}
+        transitions={transitions}
+        editing={editing}
+        portrait={portrait}
+        editable={editable}
+        onTab={(t) => setEffectsTarget((cur) => (cur ? { ...cur, tab: t } : cur))}
+        onClose={() => setEffectsTarget(null)}
+      />
+      <TextOverlayDialog
+        target={textTarget}
+        width={state.width}
+        height={state.height}
+        scenes={state.scenes}
+        totalS={d}
+        editing={editing}
+        editable={editable}
+        lastStyle={lastTextStyle}
+        onClose={(saved) => {
+          if (saved) setLastTextStyle(saved);
+          setTextTarget(null);
+        }}
+      />
+      <SfxOverlayDialog
+        target={sfxTarget}
+        totalS={d}
+        channelId={project.channel_id}
+        editing={editing}
+        editable={editable}
+        onClose={() => setSfxTarget(null)}
+      />
     </div>
   );
 }
@@ -435,6 +578,8 @@ interface TrackRow {
   label: string;
   height: string;
   content: React.ReactNode;
+  /** Encabezado propio (pistas agregadas a mano: nombre, agregar y borrar). */
+  header?: React.ReactNode;
 }
 
 function Tracks({
@@ -442,11 +587,13 @@ function Tracks({
   time,
   onSeek,
   rows,
+  addMenu,
 }: {
   duration: number;
   time: number;
   onSeek: (t: number) => void;
   rows: TrackRow[];
+  addMenu?: React.ReactNode;
 }) {
   const area = useRef<HTMLDivElement>(null);
   const scrubbing = useRef(false);
@@ -458,10 +605,14 @@ function Tracks({
     <div className="shrink-0 border-t bg-panel">
       <div className="grid grid-cols-[96px_minmax(0,1fr)]">
         <div className="grid">
-          <div className="h-6 border-b" />
+          <div className="flex h-6 items-center border-r border-b px-1">{addMenu}</div>
           {rows.map((r) => (
             <div key={r.id} className={cn("flex items-center gap-1.5 border-r border-b px-2 text-[11px] text-muted-foreground", r.height)}>
-              <r.icon className="size-3.5" /> {r.label}
+              {r.header ?? (
+                <>
+                  <r.icon className="size-3.5" /> {r.label}
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -513,11 +664,14 @@ function SceneBlock({
   duration,
   onSeek,
   onTrim,
+  onEffects,
 }: {
   scene: TimelineScene;
   duration: number;
   onSeek: () => void;
   onTrim?: () => void;
+  /** Abre la ventana de efectos y transiciones de la escena. */
+  onEffects?: () => void;
 }) {
   const clipPart = scene.clip_duration_s != null ? scene.clip_duration_s / scene.duration_s : 0;
   const thumb = coreUrl(scene.thumb_url);
@@ -532,6 +686,7 @@ function SceneBlock({
       style={{ left: `${pct(scene.start_s, duration)}%`, width: `${pct(scene.duration_s, duration)}%` }}
       title={label}
       onClick={onSeek}
+      onDoubleClick={onEffects}
       onKeyDown={(e) => e.key === "Enter" && onSeek()}
     >
       <div
@@ -566,8 +721,57 @@ function SceneBlock({
         {!scene.file_name && scene.text && (
           <span className="relative block truncate px-1 text-[11px] italic text-[#e8c374]">«{scene.text}»</span>
         )}
+        {(onEffects || scene.effect) && (
+          <button
+            type="button"
+            disabled={!onEffects}
+            aria-label={`Efecto de la escena ${scene.position}: ${effectLabel(scene.effect)}`}
+            title={`${effectLabel(scene.effect)} · clic para elegir efecto o transición`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEffects?.();
+            }}
+            className={cn(
+              "absolute bottom-0.5 left-0.5 flex max-w-[calc(100%-4px)] items-center gap-0.5 truncate rounded px-1 text-[9px] leading-4",
+              scene.effect
+                ? "bg-brand text-primary-foreground"
+                : "bg-black/55 text-white/80 opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            )}
+          >
+            <Sparkles className="size-2.5 shrink-0" />
+            <span className="truncate">{scene.effect ? effectLabel(scene.effect) : "Efecto"}</span>
+          </button>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Botón «Pista +»: agrega una pista de textos o de efectos de sonido (se puede borrar). */
+function AddTrackMenu({ busy, onAdd }: { busy: boolean; onAdd: (kind: "text" | "sfx") => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={busy}>
+        <button
+          type="button"
+          aria-label="Agregar pista"
+          title="Agregar una pista de texto o de efectos de sonido"
+          className="flex h-5 w-full items-center justify-center gap-0.5 rounded border border-dashed text-[10px] text-muted-foreground hover:border-brand hover:text-foreground"
+        >
+          <Plus className="size-3" /> Pista
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuLabel className="text-[12px]">Nueva pista</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => onAdd("text")}>
+          <Type /> Pista de texto
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onAdd("sfx")}>
+          <Volume2 /> Pista de efectos de sonido
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
