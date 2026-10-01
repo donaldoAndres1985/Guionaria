@@ -116,9 +116,19 @@ def test_merge_rejects_image_kind(client, media_project, web):
 def make_clip(path, seconds, color):
     subprocess.run(
         [
-            "ffmpeg", "-y", "-v", "error",
-            "-f", "lavfi", "-i", f"color=c={color}:size=320x180:rate=10",
-            "-t", str(seconds), "-pix_fmt", "yuv420p", str(path),
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:size=320x180:rate=10",
+            "-t",
+            str(seconds),
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
         ],  # fmt: skip
         check=True,
     )
@@ -135,3 +145,58 @@ def test_concat_videos_with_real_ffmpeg(tmp_path):
     info = process.video_info(dest)
     assert (info.width, info.height) == (108, 192)
     assert info.duration_s == pytest.approx(2.5, abs=0.2)
+
+
+def test_merge_downloads_search_results_first(client, media_project, web, monkeypatch):
+    """Dos resultados de búsqueda sin descargar: la fusión los baja y luego los une."""
+    from tests.media_support import search
+
+    scene = media_project["scenes"][0]
+    found = search(client, scene, providers=["pexels", "pixabay"]).json()["scene"]["candidates"]
+    c1, c2 = found[:2]
+    assert c1["asset"] is None and c2["asset"] is None
+    calls = fake_processing(monkeypatch, 20.0)
+
+    resp = client.post(
+        f"/api/scenes/{scene}/assets:merge", json={"candidate_ids": [c1["id"], c2["id"]]}
+    )
+    assert resp.status_code == 202, resp.text
+    job = wait_job(client, resp.json()["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["approved"] is True
+    assert len(calls) == 1 and len(calls[0][0]) == 2
+
+    media = client.get(f"/api/scenes/{scene}/media").json()
+    by_id = {c["id"]: c for c in media["candidates"]}
+    assert by_id[c1["id"]]["download_status"] == "done"
+    assert by_id[c2["id"]]["download_status"] == "done"
+    assert not by_id[c1["id"]]["selected"]  # bajarlo para fusionar no lo elige
+
+
+def test_merge_by_candidate_reports_failed_download(client, media_project, web, monkeypatch):
+    from tests.media_support import search
+
+    scene = media_project["scenes"][0]
+    found = search(client, scene, providers=["pexels", "pixabay"]).json()["scene"]["candidates"]
+    c1, c2 = found[:2]
+    web.respond("https://videos.pexels.com/", 404, 404, 404, 404)
+    web.respond("https://cdn.pixabay.com/", 404, 404, 404, 404)
+    fake_processing(monkeypatch, 20.0)
+
+    resp = client.post(
+        f"/api/scenes/{scene}/assets:merge", json={"candidate_ids": [c1["id"], c2["id"]]}
+    )
+    job = wait_job(client, resp.json()["id"])
+    assert job["status"] == "failed"
+    assert "No se pudo descargar" in job["error"]
+
+
+def test_merge_request_needs_exactly_one_kind_of_id(client, media_project, web):
+    scene = media_project["scenes"][0]
+    url = f"/api/scenes/{scene}/assets:merge"
+    assert client.post(url, json={}).status_code == 422
+    both = {"asset_ids": [1, 2], "candidate_ids": [3, 4]}
+    assert client.post(url, json=both).status_code == 422
+    foreign = client.post(url, json={"candidate_ids": [999998, 999999]})
+    assert foreign.status_code == 400
+    assert "no es un candidato de esta escena" in foreign.json()["detail"]

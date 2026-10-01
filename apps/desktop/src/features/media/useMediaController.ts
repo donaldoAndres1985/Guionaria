@@ -101,7 +101,7 @@ export function useMediaController(project: Project) {
   const unapproveMutation = useUnapproveAsset(project.id);
   const kindMutation = useSetMediaKind(project.id);
   const mergeMutation = useMergeAssets(project.id);
-  const mergeArgs = useRef<{ sceneId: number; assetIds: [number, number] } | null>(null);
+  const mergeArgs = useRef<{ sceneId: number; candidateIds: [number, number] } | null>(null);
   const merge = useProjectJob(
     project.id,
     "merge_media",
@@ -306,9 +306,9 @@ export function useMediaController(project: Project) {
     if (sceneId != null) kindMutation.mutate({ sceneId, kind });
   }
 
-  function mergeTwo(assetIds: [number, number]) {
+  function mergeTwo(candidateIds: [number, number]) {
     if (sceneId == null) return;
-    mergeArgs.current = { sceneId, assetIds };
+    mergeArgs.current = { sceneId, candidateIds };
     void merge.start();
   }
 

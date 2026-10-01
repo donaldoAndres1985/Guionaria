@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlmodel import Session
 
 from ...config import get_paths
-from ...models import Asset, Project, Scene
+from ...models import Asset, Project, Scene, SceneCandidate
 from ...util.paths import check_path_length
 from ..errors import DomainError
 from ..jobs import JobContext
@@ -58,36 +58,78 @@ def concat_videos(sources: list[Path], dest: Path, tw: int, th: int) -> None:
 
 
 def validate_merge(
-    session: Session, scene_id: int, asset_ids: list[int]
-) -> tuple[Scene, list[Asset]]:
-    from .service import _open_project, _scene_assets_for, get_scene
+    session: Session,
+    scene_id: int,
+    asset_ids: list[int] | None = None,
+    candidate_ids: list[int] | None = None,
+) -> tuple[Scene, list[SceneCandidate]]:
+    """Comprueba que sean dos videos distintos de la escena. Se aceptan candidatos aún sin
+    descargar (se bajan al fusionar); devuelve los candidatos en el orden pedido."""
+    from .service import _candidates, _open_project, get_scene
 
-    if len(set(asset_ids)) != 2:
+    ids = asset_ids if asset_ids is not None else candidate_ids
+    if not ids or len(set(ids)) != 2:
         raise DomainError("Elige dos videos distintos para fusionar")
     scene = get_scene(session, scene_id)
     _open_project(session, scene.project_id)
-    downloaded = _scene_assets_for(session, scene)
-    assets = []
-    for asset_id in asset_ids:
-        if asset_id not in downloaded:
-            raise DomainError("Ese medio no es un candidato descargado de esta escena")
-        asset = session.get(Asset, asset_id)
-        if not asset or asset.kind != "video":
+    rows = _candidates(session, scene.id)
+    picked: list[SceneCandidate] = []
+    for item_id in ids:
+        if asset_ids is not None:
+            c = next((r for r in rows if r.asset_id == item_id), None)
+            if c is None:
+                raise DomainError("Ese medio no es un candidato descargado de esta escena")
+        else:
+            c = next((r for r in rows if r.id == item_id), None)
+            if c is None:
+                raise DomainError("Ese video no es un candidato de esta escena")
+        asset = session.get(Asset, c.asset_id) if c.asset_id else None
+        if (asset.kind if asset else c.kind) != "video":
             raise DomainError("Solo se pueden fusionar videos")
-        if not asset.duration_s:
+        if asset is None:
+            if c.download_status == "failed" or not c.full_url:
+                raise DomainError(
+                    "Uno de los videos no se pudo descargar: bájalo a mano y arrástralo a la escena"
+                )
+        elif not asset.duration_s:
             raise DomainError("No se conoce la duración de uno de los videos")
-        assets.append(asset)
-    return scene, assets
+        picked.append(c)
+    return scene, picked
+
+
+async def _download_missing(session_factory, candidate_ids: list[int], ctx: JobContext) -> None:
+    """Baja los candidatos que aún no tienen archivo (no los marca como elegidos)."""
+    from .http import http_client
+    from .service import _download_one, _update_candidate
+
+    with session_factory() as session:
+        pending = [cid for cid in candidate_ids if not session.get(SceneCandidate, cid).asset_id]
+    if not pending:
+        return
+    ctx.progress(0.02, f"Descargando {len(pending)} video(s) para fusionar…")
+    for cid in pending:
+        _update_candidate(session_factory, cid, download_status="queued", error=None)
+    async with http_client() as client:
+        results = await asyncio.gather(
+            *(_download_one(session_factory, cid, client) for cid in pending)
+        )
+    if not all(results):
+        raise DomainError(
+            "No se pudo descargar uno de los videos: bájalo a mano y arrástralo a la escena"
+        )
 
 
 async def merge_assets(
-    session_factory, scene_id: int, asset_ids: list[int], ctx: JobContext
+    session_factory, scene_id: int, candidate_ids: list[int], ctx: JobContext
 ) -> dict:
     from .service import _approved, approve_asset, create_asset, get_scene, process_file
 
+    await _download_missing(session_factory, candidate_ids, ctx)
     home = get_paths().home
     with session_factory() as session:
-        scene, assets = validate_merge(session, scene_id, asset_ids)
+        asset_ids = [session.get(SceneCandidate, cid).asset_id for cid in candidate_ids]
+        scene, picked = validate_merge(session, scene_id, asset_ids=asset_ids)
+        assets = [session.get(Asset, c.asset_id) for c in picked]
         project = session.get(Project, scene.project_id)
         tw, th = target_size(project)
         sources = [home / a.file_path for a in assets]
@@ -107,8 +149,6 @@ async def merge_assets(
     processed = await process_file(dest, "video")
 
     with session_factory() as session:
-        from ...models import SceneCandidate
-
         scene = get_scene(session, scene_id)
         asset = create_asset(
             session,

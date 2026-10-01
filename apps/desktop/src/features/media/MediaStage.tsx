@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
 import { KIND_LABEL, formatSceneTime } from "@/features/scenes/sceneMeta";
-import { coreUrl, type Project } from "@/lib/api";
+import { coreUrl, type Candidate, type Project } from "@/lib/api";
 import { STATUS_ORDER } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
@@ -26,6 +26,12 @@ import { useMediaDrop } from "./useMediaDrop";
 import { STATUS_TEXT } from "./mediaMeta";
 import { type MediaController, PROVIDER_LABEL } from "./useMediaController";
 
+/** Se puede fusionar cualquier video de la escena que no haya fallado al descargarse. */
+function canMerge(c: Candidate): boolean {
+  if (c.download_status === "failed") return false;
+  return (c.asset?.kind ?? c.kind) === "video";
+}
+
 export function MediaStage({
   project,
   ctl,
@@ -40,7 +46,7 @@ export function MediaStage({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmUnlock, setConfirmUnlock] = useState(false);
   const unlock = useUnlockMedia(project.id);
-  const [mergePicks, setMergePicks] = useState<number[]>([]); // asset_id de hasta 2 videos
+  const [mergePicks, setMergePicks] = useState<number[]>([]); // id de candidato de hasta 2 videos
   const helpHidden = useUiStore((s) => s.mediaHelpHidden);
   const setHelpHidden = useUiStore((s) => s.setMediaHelpHidden);
   const { data: sceneRows } = useScenes(project.id);
@@ -104,18 +110,19 @@ export function MediaStage({
   const scenes = ctl.overview.scenes;
   const scene = ctl.scene;
 
-  function toggleMergePick(assetId: number) {
+  function toggleMergePick(candidateId: number) {
     setMergePicks((picks) => {
-      if (picks.includes(assetId)) return picks.filter((id) => id !== assetId);
-      if (picks.length >= 2) return [picks[1], assetId]; // reemplaza el más antiguo
-      return [...picks, assetId];
+      if (picks.includes(candidateId)) return picks.filter((id) => id !== candidateId);
+      if (picks.length >= 2) return [picks[1], candidateId]; // reemplaza el más antiguo
+      return [...picks, candidateId];
     });
   }
 
   const mergeCandidates = mergePicks
-    .map((id) => scene?.candidates.find((c) => c.asset?.id === id))
+    .map((id) => scene?.candidates.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => !!c);
-  const mergeDuration = mergeCandidates.reduce((sum, c) => sum + (c.asset?.duration_s ?? 0), 0);
+  const mergeDuration = mergeCandidates.reduce((sum, c) => sum + (c.asset?.duration_s ?? c.duration_s ?? 0), 0);
+  const mergeToDownload = mergeCandidates.filter((c) => !c.asset).length;
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -517,23 +524,23 @@ export function MediaStage({
                         onOpen={() => ctl.openViewer(c.id)}
                         onHover={(h) => ctl.setHovered(h ? c.id : null)}
                         dragging={dragging}
-                        mergeOrder={
-                          c.asset && mergePicks.includes(c.asset.id)
-                            ? ((mergePicks.indexOf(c.asset.id) + 1) as 1 | 2)
-                            : null
-                        }
-                        onToggleMerge={
-                          ctl.editable && c.asset?.kind === "video" && c.asset.duration_s
-                            ? () => toggleMergePick(c.asset!.id)
-                            : undefined
-                        }
+                        mergeOrder={mergePicks.includes(c.id) ? ((mergePicks.indexOf(c.id) + 1) as 1 | 2) : null}
+                        onToggleMerge={ctl.editable && canMerge(c) ? () => toggleMergePick(c.id) : undefined}
                       />
                     ))}
                   </div>
-                  {mergeCandidates.length === 2 && (
+                  {mergeCandidates.length > 0 && (
                     <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 rounded-md border border-brand/40 bg-panel px-3 py-2 text-[12px] shadow-lg">
                       <span>
-                        2 videos elegidos para fusionar · suman {mergeDuration.toFixed(1)} s
+                        {mergeCandidates.length === 1
+                          ? "1 video elegido para fusionar · marca «Fusionar con otro» en un segundo video"
+                          : `2 videos elegidos para fusionar · suman ${mergeDuration.toFixed(1)} s`}
+                        {mergeCandidates.length === 2 && mergeToDownload > 0 && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · {mergeToDownload === 1 ? "se descarga 1 antes" : "se descargan los 2 antes"}
+                          </span>
+                        )}
                       </span>
                       <div className="flex gap-2">
                         <Button size="sm" variant="ghost" onClick={() => setMergePicks([])}>
@@ -541,7 +548,7 @@ export function MediaStage({
                         </Button>
                         <Button
                           size="sm"
-                          disabled={ctl.merging}
+                          disabled={ctl.merging || mergeCandidates.length < 2}
                           onClick={() => {
                             ctl.mergeTwo([mergePicks[0], mergePicks[1]]);
                             setMergePicks([]);
