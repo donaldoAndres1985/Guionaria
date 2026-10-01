@@ -222,10 +222,10 @@ Ajustes: verificación de dependencias con el comando para instalar lo que falte
 
 - El núcleo expone un **servidor MCP** en `http://127.0.0.1:8765/mcp` mientras la app está abierta, y `guionaria-core mcp` por stdio para Claude Desktop.
 - **Ajustes → Conexión MCP** registra Guionaria en Claude Code con un clic (`claude mcp add --scope user …`) y muestra el bloque para `claude_desktop_config.json`.
-- Herramientas para todo el flujo (32):
+- Herramientas para todo el flujo (50):
   - canales, proyectos e ideas (`list_ideas`, `add_ideas`, `convert_idea`);
   - guion (`save_script`, `update_segment`, `approve_script`) y escenas (`save_scenes`, `update_scene`, `approve_scenes`);
-  - medios (`search_media`, `search_library`, `reuse_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`);
+  - medios (`search_media`, `search_library`, `reuse_media`, `select_candidates`, `approve_media`, `set_framing`, `list_pending`, `add_media_from_url`, `add_local_media`);
   - voz y sonido (`generate_voice`, `import_voice`, `transcribe_voice`, `search_sounds`, `assign_sound`);
   - salida (`export_timeline`, `render_video`, `get_credits`) y `job_status`.
 - Recursos de solo lectura: el guion y las escenas de un proyecto, y el estilo de un canal.
