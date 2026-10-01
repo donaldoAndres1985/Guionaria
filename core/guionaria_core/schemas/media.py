@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 DownloadStatus = Literal["none", "queued", "downloading", "done", "failed", "manual"]
 
@@ -149,7 +149,17 @@ class MediaKindRequest(BaseModel):
 
 
 class MergeRequest(BaseModel):
-    asset_ids: list[int] = Field(min_length=2, max_length=2)
+    """Dos videos de la escena, por medio descargado (`asset_ids`) o por candidato
+    (`candidate_ids`; los que aún no se descargaron se bajan antes de fusionar)."""
+
+    asset_ids: list[int] | None = Field(default=None, min_length=2, max_length=2)
+    candidate_ids: list[int] | None = Field(default=None, min_length=2, max_length=2)
+
+    @model_validator(mode="after")
+    def _one_of(self) -> "MergeRequest":
+        if (self.asset_ids is None) == (self.candidate_ids is None):
+            raise ValueError("Indica asset_ids o candidate_ids")
+        return self
 
 
 class SuggestResult(BaseModel):

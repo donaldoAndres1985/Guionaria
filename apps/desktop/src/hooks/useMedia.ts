@@ -59,8 +59,9 @@ export function useSuggestQueries() {
 export function useMergeAssets(projectId: number) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ sceneId, assetIds }: { sceneId: number; assetIds: [number, number] }) =>
-      api.post<Job>(`/api/scenes/${sceneId}/assets:merge`, { asset_ids: assetIds }),
+    // Por candidato: los que aún no se descargaron los baja el núcleo antes de fusionar.
+    mutationFn: ({ sceneId, candidateIds }: { sceneId: number; candidateIds: [number, number] }) =>
+      api.post<Job>(`/api/scenes/${sceneId}/assets:merge`, { candidate_ids: candidateIds }),
     onSuccess: (job, { sceneId }) => {
       client.setQueryData(["job", job.id], job);
       void client.invalidateQueries({ queryKey: mediaKeys.scene(sceneId) });

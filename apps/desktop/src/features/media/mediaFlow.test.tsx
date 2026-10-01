@@ -195,12 +195,30 @@ describe("flujo de medios en pantalla", () => {
     expect(screen.queryByText(/videos elegidos para fusionar/)).toBeNull();
 
     fireEvent.click(checkboxes[0]);
-    expect(screen.queryByText(/videos elegidos para fusionar/)).toBeNull(); // falta el segundo
+    expect(screen.getByText(/1 video elegido para fusionar/)).toBeTruthy(); // indica que falta el segundo
+    expect((screen.getByText("Fusionar en un video").closest("button") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(checkboxes[1]);
     expect(await screen.findByText(/suman 12.5 s/)).toBeTruthy();
 
     fireEvent.click(screen.getByText("Fusionar en un video"));
-    await waitFor(() => expect(mergeBody).toEqual({ asset_ids: [9001, 9002] }));
-    expect(screen.queryByText(/videos elegidos para fusionar/)).toBeNull(); // la barra se cierra
+    await waitFor(() => expect(mergeBody).toEqual({ candidate_ids: [101, 102] }));
+    expect(screen.queryByText(/videos? elegidos? para fusionar/)).toBeNull(); // la barra se cierra
+  });
+
+  it("también se fusionan resultados de búsqueda sin descargar (se bajan antes)", async () => {
+    const pending = (id: number, duration: number): Candidate => ({
+      ...videoCandidate(id, 0, duration), download_status: "none", asset: null,
+    });
+    const failed: Candidate = { ...videoCandidate(203, 0, 9), download_status: "failed", asset: null };
+    scene1Candidates = [videoCandidate(201, 9001, 6), pending(202, 12), failed];
+    renderStage();
+    const checkboxes = await screen.findAllByRole("checkbox", { name: /Fusionar/ });
+    expect(checkboxes).toHaveLength(2); // el que falló no se puede fusionar
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+    expect(await screen.findByText(/suman 18.0 s/)).toBeTruthy();
+    expect(screen.getByText(/se descarga 1 antes/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Fusionar en un video"));
+    await waitFor(() => expect(mergeBody).toEqual({ candidate_ids: [201, 202] }));
   });
 });

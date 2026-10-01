@@ -132,18 +132,21 @@ def set_media_kind(scene_id: int, data: MediaKindRequest, session: SessionDep) -
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def merge_assets(scene_id: int, data: MergeRequest, session: SessionDep) -> JobRead:
-    """Une dos videos descargados de la escena en uno solo (la duración es la suma de ambos);
-    se codifica en segundo plano (devuelve el job)."""
-    scene, _assets = merge.validate_merge(session, scene_id, data.asset_ids)
+    """Une dos videos de la escena en uno solo (la duración es la suma de ambos). Los candidatos
+    sin descargar se bajan primero; todo corre en segundo plano (devuelve el job)."""
+    scene, picked = merge.validate_merge(
+        session, scene_id, asset_ids=data.asset_ids, candidate_ids=data.candidate_ids
+    )
+    candidate_ids = [c.id for c in picked]
 
     async def work(ctx: JobContext) -> dict:
-        return await merge.merge_assets(_session_factory, scene_id, data.asset_ids, ctx)
+        return await merge.merge_assets(_session_factory, scene_id, candidate_ids, ctx)
 
     return jobs.submit(
         "merge_media",
         work,
         project_id=scene.project_id,
-        payload={"scene_id": scene_id, "asset_ids": data.asset_ids},
+        payload={"scene_id": scene_id, "candidate_ids": candidate_ids},
         exclusive=False,
     )
 
