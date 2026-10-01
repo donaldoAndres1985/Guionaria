@@ -187,6 +187,9 @@ export function CandidateCard({
         {c.download_status === "manual" && !approvedRole && (
           <div className="text-[11px] text-muted-foreground">Agregado a mano</div>
         )}
+        {selected && c.download_status === "none" && (
+          <div className="text-[11px] text-muted-foreground">Elegido: bájalo con «Descargar y aprobar»</div>
+        )}
         {(done || (c.download_status === "manual" && c.asset)) && editable && approvedRole !== "main" && (
           <div className="flex gap-1 pt-0.5">
             <button

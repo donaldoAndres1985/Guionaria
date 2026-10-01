@@ -100,6 +100,12 @@ describe("tarjeta de candidato", () => {
     expect(screen.getByText("1080×1920")).toBeTruthy();
   });
 
+  it("elegido pero sin descargar: avisa que falta bajarlo, sin botón Aprobar todavía", () => {
+    render(<CandidateCard {...base} selected candidate={candidate(1)} />);
+    expect(screen.getByText(/bájalo con «Descargar y aprobar»/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Aprobar" })).toBeNull();
+  });
+
   it("descargado: botones Aprobar y Alterno", () => {
     const onApprove = vi.fn();
     render(

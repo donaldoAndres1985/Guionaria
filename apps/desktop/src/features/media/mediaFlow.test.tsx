@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaOverview, Project, SceneMedia } from "@/lib/api";
@@ -63,6 +63,7 @@ describe("flujo de medios en pantalla", () => {
         if (init?.method === "POST") posts.push(path);
         const ok = (d: unknown) => new Response(JSON.stringify(d));
         if (path === "/api/projects/1/media") return ok(overview);
+        if (path === "/api/projects/1/media:unlock") return ok({ ...overview, approved: false, editable: true });
         if (path === "/api/projects/1/scenes") return ok({ scenes: [], review_count: 0 });
         if (path.match(/\/api\/scenes\/\d+\/media$/)) return ok(sceneMedia(Number(path.split("/")[3])));
         if (path === "/api/projects/1/media:download-selected") {
@@ -133,5 +134,14 @@ describe("flujo de medios en pantalla", () => {
     overview = { ...overview, with_media: 3, selected_pending: 0 };
     renderStage();
     await waitFor(() => expect(screen.getByText("Aprobar medios").closest("button")!.disabled).toBe(false));
+  });
+
+  it("con medios ya aprobados, ofrece desbloquearlos para cambiar el principal de la escena", async () => {
+    overview = { ...overview, approved: true, editable: false };
+    renderStage();
+    expect(await screen.findByText(/desbloquéalos para quitar el principal/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Desbloquear medios")); // banner de la escena, no el de la barra inferior
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("Desbloquear"));
+    await waitFor(() => expect(posts).toContain("/api/projects/1/media:unlock"));
   });
 });

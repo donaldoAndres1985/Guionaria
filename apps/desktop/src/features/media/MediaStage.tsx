@@ -1,7 +1,8 @@
-import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, X } from "lucide-react";
+import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, Unlock, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { FramingDialog, type FramingTarget } from "./FramingDialog";
 import { TrimDialog, type TrimTarget } from "./TrimDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
-import { mediaKeys } from "@/hooks/useMedia";
+import { mediaKeys, useUnlockMedia } from "@/hooks/useMedia";
 import { useScenes } from "@/hooks/useScenes";
 import { useOpenUrl } from "@/hooks/useManualMedia";
 import { framingLabel } from "./framingMeta";
@@ -37,6 +38,8 @@ export function MediaStage({
   const [framing, setFraming] = useState<FramingTarget | null>(null);
   const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
+  const unlock = useUnlockMedia(project.id);
   const helpHidden = useUiStore((s) => s.mediaHelpHidden);
   const setHelpHidden = useUiStore((s) => s.setMediaHelpHidden);
   const { data: sceneRows } = useScenes(project.id);
@@ -230,6 +233,19 @@ export function MediaStage({
                 <span className="text-foreground/80">{scene.visual_description}</span>
                 {scene.narration && <> · “{scene.narration}”</>}
               </p>
+
+              {ctl.overview?.approved && !ctl.editable && (
+                <NoticeBanner
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => setConfirmUnlock(true)}>
+                      <Unlock /> Desbloquear medios
+                    </Button>
+                  }
+                >
+                  Los medios ya están aprobados: desbloquéalos para quitar el principal o elegir otro
+                  video.
+                </NoticeBanner>
+              )}
 
               {ctl.available.length === 0 ? (
                 <NoticeBanner
@@ -489,6 +505,18 @@ export function MediaStage({
       </div>
       <MediaViewer ctl={ctl} />
       <VideoUrlDialog ctl={ctl} />
+      <ConfirmDialog
+        open={confirmUnlock}
+        onOpenChange={setConfirmUnlock}
+        title="¿Desbloquear los medios?"
+        description="Podrás cambiar medios otra vez. Tendrás que aprobarlos de nuevo antes de la voz."
+        confirmLabel="Desbloquear"
+        pending={unlock.isPending}
+        onConfirm={() => {
+          setConfirmUnlock(false);
+          unlock.mutate();
+        }}
+      />
       <FramingDialog projectId={project.id} target={framing} onClose={() => setFraming(null)} />
       <TrimDialog projectId={project.id} target={trim} onClose={() => setTrim(null)} />
       {!trim && ctl.trimQueue.length > 0 && (
