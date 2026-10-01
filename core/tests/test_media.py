@@ -319,9 +319,13 @@ def test_set_media_kind_toggles_video_and_image(client, media_project, web):
     back = client.put(f"/api/scenes/{video}/media-kind", json={"kind": "video"}).json()
     assert (back["media_kind"], back["search_kind"]) == ("video", "video")
 
-    for scene in (real, text):
-        resp = client.put(f"/api/scenes/{scene}/media-kind", json={"kind": "image"})
-        assert resp.status_code == 400
+    resp = client.put(f"/api/scenes/{text}/media-kind", json={"kind": "image"})
+    assert resp.status_code == 400
+
+    # Material real → video: se buscan videos con su búsqueda real si no tenía otra.
+    real_media = client.put(f"/api/scenes/{real}/media-kind", json={"kind": "video"}).json()
+    assert (real_media["media_kind"], real_media["search_kind"]) == ("video", "video")
+    assert real_media["default_query"] == "priscila loera foto"
 
 
 def test_set_media_kind_requires_open_media_stage(client, media_project, web):
