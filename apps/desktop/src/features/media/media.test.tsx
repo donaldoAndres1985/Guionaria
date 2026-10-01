@@ -106,6 +106,36 @@ describe("tarjeta de candidato", () => {
     expect(screen.queryByRole("button", { name: "Aprobar" })).toBeNull();
   });
 
+  it("muestra la casilla de fusionar solo cuando se pasa onToggleMerge, con su orden", () => {
+    const onToggleMerge = vi.fn();
+    const { rerender } = render(
+      <CandidateCard
+        {...base}
+        candidate={candidate(1, { kind: "video", download_status: "done", asset: asset(9, { kind: "video", duration_s: 5 }) })}
+        onToggleMerge={onToggleMerge}
+      />,
+    );
+    const checkbox = screen.getByRole("checkbox", { name: "Fusionar con otro" });
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(checkbox);
+    expect(onToggleMerge).toHaveBeenCalled();
+
+    rerender(
+      <CandidateCard
+        {...base}
+        candidate={candidate(1, { kind: "video", download_status: "done", asset: asset(9, { kind: "video", duration_s: 5 }) })}
+        onToggleMerge={onToggleMerge}
+        mergeOrder={2}
+      />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Fusionar (2º)" })).toBeTruthy();
+  });
+
+  it("sin onToggleMerge no aparece la casilla de fusionar", () => {
+    render(<CandidateCard {...base} candidate={candidate(1, { download_status: "done", asset: asset(9) })} />);
+    expect(screen.queryByRole("checkbox", { name: /Fusionar/ })).toBeNull();
+  });
+
   it("descargado: botones Aprobar y Alterno", () => {
     const onApprove = vi.fn();
     render(

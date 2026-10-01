@@ -148,5 +148,9 @@ class MediaKindRequest(BaseModel):
     kind: Literal["video", "image"]
 
 
+class MergeRequest(BaseModel):
+    asset_ids: list[int] = Field(min_length=2, max_length=2)
+
+
 class SuggestResult(BaseModel):
     queries: list[str]

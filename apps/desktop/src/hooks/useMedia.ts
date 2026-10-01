@@ -54,6 +54,21 @@ export function useSuggestQueries() {
   });
 }
 
+/** Une dos videos descargados en uno solo (la duración es la suma de ambos); se codifica en
+ * segundo plano (devuelve el job). */
+export function useMergeAssets(projectId: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sceneId, assetIds }: { sceneId: number; assetIds: [number, number] }) =>
+      api.post<Job>(`/api/scenes/${sceneId}/assets:merge`, { asset_ids: assetIds }),
+    onSuccess: (job, { sceneId }) => {
+      client.setQueryData(["job", job.id], job);
+      void client.invalidateQueries({ queryKey: mediaKeys.scene(sceneId) });
+      void client.invalidateQueries({ queryKey: mediaKeys.overview(projectId) });
+    },
+  });
+}
+
 export function useDownloadCandidates(projectId: number) {
   const client = useQueryClient();
   return useMutation({
