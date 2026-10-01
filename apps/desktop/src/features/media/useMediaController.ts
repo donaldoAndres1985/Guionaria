@@ -7,6 +7,7 @@ import {
   useDownloadCandidates,
   useDownloadSelected,
   useMediaOverview,
+  useMergeAssets,
   useSceneMedia,
   useSearchMedia,
   useSelectCandidate,
@@ -99,6 +100,27 @@ export function useMediaController(project: Project) {
   const approveMutation = useApproveAsset(project.id);
   const unapproveMutation = useUnapproveAsset(project.id);
   const kindMutation = useSetMediaKind(project.id);
+  const mergeMutation = useMergeAssets(project.id);
+  const mergeArgs = useRef<{ sceneId: number; assetIds: [number, number] } | null>(null);
+  const merge = useProjectJob(
+    project.id,
+    "merge_media",
+    () => {
+      if (!mergeArgs.current) return Promise.reject(new Error("Nada que fusionar"));
+      return mergeMutation.mutateAsync(mergeArgs.current);
+    },
+    (job) => {
+      const sid = mergeArgs.current?.sceneId;
+      if (sid != null) void queryClient.invalidateQueries({ queryKey: mediaKeys.scene(sid) });
+      void queryClient.invalidateQueries({ queryKey: mediaKeys.overview(project.id) });
+      const r = (job.result ?? {}) as { duration_s?: number; approved?: boolean };
+      toast.success(
+        r.approved
+          ? `Videos fusionados y aprobados (${r.duration_s?.toFixed(1)} s)`
+          : `Videos fusionados (${r.duration_s?.toFixed(1)} s): elígelo como principal`,
+      );
+    },
+  );
   const importMutation = useImportMedia(project.id);
   const videoMutation = useVideoFromUrl();
   const [videoDialogUrl, setVideoDialogUrl] = useState<string | null>(null);
@@ -284,6 +306,12 @@ export function useMediaController(project: Project) {
     if (sceneId != null) kindMutation.mutate({ sceneId, kind });
   }
 
+  function mergeTwo(assetIds: [number, number]) {
+    if (sceneId == null) return;
+    mergeArgs.current = { sceneId, assetIds };
+    void merge.start();
+  }
+
   function move(delta: 1 | -1) {
     if (!needing.length) return;
     const index = Math.max(0, needing.findIndex((s) => s.scene_id === sceneId));
@@ -353,6 +381,8 @@ export function useMediaController(project: Project) {
     approving: approveMutation.isPending,
     setMediaKind,
     changingKind: kindMutation.isPending,
+    mergeTwo,
+    merging: merge.running,
     next: () => move(1),
     prev: () => move(-1),
   };

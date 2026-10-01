@@ -18,6 +18,9 @@ interface CandidateCardProps {
   onOpen: () => void;
   onHover: (hovered: boolean) => void;
   dragging?: boolean;
+  /** Para «Fusionar dos videos en uno»: marcado 1º/2º, o null si no se puede elegir. */
+  mergeOrder?: 1 | 2 | null;
+  onToggleMerge?: () => void;
 }
 
 /** Tarjeta de un candidato (referencia 03): miniatura, datos y estado de descarga. */
@@ -34,6 +37,8 @@ export function CandidateCard({
   onOpen,
   onHover,
   dragging,
+  mergeOrder,
+  onToggleMerge,
 }: CandidateCardProps) {
   const video = useRef<HTMLVideoElement>(null);
   const thumb = coreUrl(c.asset?.thumb_url) ?? c.preview_url ?? undefined;
@@ -155,6 +160,17 @@ export function CandidateCard({
           )}
         </div>
         {c.author && <div className="truncate text-[11px] text-subtle">{c.author}</div>}
+        {onToggleMerge && (
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={!!mergeOrder}
+              onChange={onToggleMerge}
+              className="accent-[var(--accent)]"
+            />
+            {mergeOrder ? `Fusionar (${mergeOrder}º)` : "Fusionar con otro"}
+          </label>
+        )}
         {(c.asset?.license ?? c.license)?.startsWith("Derechos") && (
           <div
             className="inline-block rounded bg-warning/15 px-1 text-[10px] font-medium text-warning"

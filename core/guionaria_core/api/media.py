@@ -11,6 +11,7 @@ from ..schemas.media import (
     DownloadRequest,
     MediaKindRequest,
     MediaOverview,
+    MergeRequest,
     SceneMediaRead,
     SearchRequest,
     SearchResult,
@@ -20,7 +21,7 @@ from ..schemas.media import (
 from ..services.errors import DomainError
 from ..services.jobs import JobContext, JobRead, jobs
 from ..services.llm.claude_cli import get_runner
-from ..services.media import framing
+from ..services.media import framing, merge
 from ..services.media import service as svc
 
 router = APIRouter(tags=["media"])
@@ -123,6 +124,28 @@ def unapprove_asset(scene_id: int, asset_id: int, session: SessionDep) -> SceneM
 def set_media_kind(scene_id: int, data: MediaKindRequest, session: SessionDep) -> SceneMediaRead:
     """Cambia el tipo de la escena entre video e imagen sin desbloquear las escenas."""
     return svc.set_media_kind(session, scene_id, data.kind)
+
+
+@router.post(
+    "/api/scenes/{scene_id}/assets:merge",
+    response_model=JobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def merge_assets(scene_id: int, data: MergeRequest, session: SessionDep) -> JobRead:
+    """Une dos videos descargados de la escena en uno solo (la duración es la suma de ambos);
+    se codifica en segundo plano (devuelve el job)."""
+    scene, _assets = merge.validate_merge(session, scene_id, data.asset_ids)
+
+    async def work(ctx: JobContext) -> dict:
+        return await merge.merge_assets(_session_factory, scene_id, data.asset_ids, ctx)
+
+    return jobs.submit(
+        "merge_media",
+        work,
+        project_id=scene.project_id,
+        payload={"scene_id": scene_id, "asset_ids": data.asset_ids},
+        exclusive=False,
+    )
 
 
 @router.get("/api/assets/{asset_id}/file")

@@ -40,6 +40,7 @@ export function MediaStage({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmUnlock, setConfirmUnlock] = useState(false);
   const unlock = useUnlockMedia(project.id);
+  const [mergePicks, setMergePicks] = useState<number[]>([]); // asset_id de hasta 2 videos
   const helpHidden = useUiStore((s) => s.mediaHelpHidden);
   const setHelpHidden = useUiStore((s) => s.setMediaHelpHidden);
   const { data: sceneRows } = useScenes(project.id);
@@ -49,6 +50,10 @@ export function MediaStage({
   useEffect(() => {
     void queryClient.invalidateQueries({ queryKey: mediaKeys.overview(project.id) });
   }, [queryClient, project.id, project.status]);
+  // Al cambiar de escena se olvida lo elegido para fusionar.
+  useEffect(() => {
+    setMergePicks([]);
+  }, [ctl.scene?.scene_id]);
   const scenesApproved =
     STATUS_ORDER.indexOf(project.status) >= STATUS_ORDER.indexOf("ESCENAS_APROBADAS");
   const { dragging, dropProps } = useMediaDrop(
@@ -98,6 +103,19 @@ export function MediaStage({
 
   const scenes = ctl.overview.scenes;
   const scene = ctl.scene;
+
+  function toggleMergePick(assetId: number) {
+    setMergePicks((picks) => {
+      if (picks.includes(assetId)) return picks.filter((id) => id !== assetId);
+      if (picks.length >= 2) return [picks[1], assetId]; // reemplaza el más antiguo
+      return [...picks, assetId];
+    });
+  }
+
+  const mergeCandidates = mergePicks
+    .map((id) => scene?.candidates.find((c) => c.asset?.id === id))
+    .filter((c): c is NonNullable<typeof c> => !!c);
+  const mergeDuration = mergeCandidates.reduce((sum, c) => sum + (c.asset?.duration_s ?? 0), 0);
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -499,9 +517,42 @@ export function MediaStage({
                         onOpen={() => ctl.openViewer(c.id)}
                         onHover={(h) => ctl.setHovered(h ? c.id : null)}
                         dragging={dragging}
+                        mergeOrder={
+                          c.asset && mergePicks.includes(c.asset.id)
+                            ? ((mergePicks.indexOf(c.asset.id) + 1) as 1 | 2)
+                            : null
+                        }
+                        onToggleMerge={
+                          ctl.editable && c.asset?.kind === "video" && c.asset.duration_s
+                            ? () => toggleMergePick(c.asset!.id)
+                            : undefined
+                        }
                       />
                     ))}
                   </div>
+                  {mergeCandidates.length === 2 && (
+                    <div className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 rounded-md border border-brand/40 bg-panel px-3 py-2 text-[12px] shadow-lg">
+                      <span>
+                        2 videos elegidos para fusionar · suman {mergeDuration.toFixed(1)} s
+                      </span>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => setMergePicks([])}>
+                          Cancelar
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={ctl.merging}
+                          onClick={() => {
+                            ctl.mergeTwo([mergePicks[0], mergePicks[1]]);
+                            setMergePicks([]);
+                          }}
+                        >
+                          {ctl.merging && <LoaderCircle className="animate-spin" />}
+                          Fusionar en un video
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   {ctl.hasMore && ctl.editable && (
                     <div className="mt-4 text-center">
                       <Button variant="outline" disabled={ctl.searching} onClick={() => void ctl.loadMore()}>
