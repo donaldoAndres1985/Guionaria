@@ -9,6 +9,7 @@ from .channel import Channel
 from .idea import Idea
 from .job import Job
 from .log import OperationLog
+from .overlay import TimelineItem, TimelineTrack
 from .project import Project
 from .publication import Publication
 from .scene import Scene, SceneAsset, SceneCandidate
@@ -31,5 +32,7 @@ __all__ = [
     "SearchCache",
     "Segment",
     "Sound",
+    "TimelineItem",
+    "TimelineTrack",
     "VoiceTrack",
 ]

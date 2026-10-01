@@ -15,6 +15,19 @@ Effect = Literal[
     "camara_rapida",
     "deriva_suave",  # acercamiento con desplazamiento diagonal, con aceleración suave
     "zoom_divino",  # acercamiento con aceleración suave y brillo difuso (videos religiosos)
+    "paneo_izquierda",  # paneo lateral hacia la izquierda (el contrario de ken_burns)
+    "paneo_vertical",  # paneo de abajo hacia arriba
+    "zoom_rapido",  # acercamiento corto y marcado al empezar (golpe de cámara)
+    "temblor",  # cámara en mano / temblor suave
+    "blanco_negro",
+    "sepia",
+    "contraste_alto",  # dramático: más contraste y color
+    "vhs",  # cinta antigua: color corrido, ruido y menos color
+    "vineta",  # bordes oscuros
+    "cinematico",  # franjas negras arriba y abajo
+    "fundido_entrada",  # aparece desde negro
+    "destello",  # entra con un destello blanco
+    "camara_lenta",  # videos: a la mitad de velocidad
     "ninguno",
 ]
 SceneStatus = Literal["pending", "candidates", "approved", "manual", "review"]

@@ -25,6 +25,7 @@ class CutState(BaseModel):
     chosen: str | None  # None: usa la de por defecto
     transition: str | None  # la que se aplica (None: corte directo)
     duration_s: float
+    chosen_s: float | None = None  # duración propia del corte (None: la de por defecto)
 
 
 class TransitionsState(BaseModel):
@@ -42,6 +43,8 @@ class TransitionsUpdate(BaseModel):
 
 class CutUpdate(BaseModel):
     transition: str | None = None  # None: la de por defecto; «none»: corte directo
+    # Duración propia del corte (None: la de por defecto). Si no se envía, no cambia.
+    duration_s: float | None = Field(default=None, ge=0.2, le=2.0)
 
 
 def _check(kind: str | None) -> None:
@@ -68,6 +71,7 @@ def transitions_state(session: Session, project: Project) -> TransitionsState:
                 chosen=a.transition,
                 transition=cut.transition,
                 duration_s=cut.duration,
+                chosen_s=a.transition_s,
             )
         )
     return TransitionsState(
@@ -94,6 +98,7 @@ def update_transitions(
     if data.reset_cuts:
         for scene in session.exec(select(Scene).where(col(Scene.project_id) == project.id)):
             scene.transition = None
+            scene.transition_s = None
         session.commit()
     return transitions_state(session, project)
 
@@ -103,6 +108,9 @@ def set_cut(session: Session, scene_id: int, data: CutUpdate) -> TransitionsStat
     scene = session.get(Scene, scene_id)
     if scene is None:
         raise NotFound("No existe la escena")
-    scene.transition = data.transition
+    if "transition" in data.model_fields_set:
+        scene.transition = data.transition
+    if "duration_s" in data.model_fields_set:
+        scene.transition_s = data.duration_s
     session.commit()
     return transitions_state(session, session.get(Project, scene.project_id))

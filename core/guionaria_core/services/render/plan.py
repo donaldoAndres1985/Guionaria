@@ -17,6 +17,27 @@ ZOOM = 0.12  # el máximo
 ZOOM_PER_S = 0.03
 ZOOM_MIN = 0.04
 KEN_BURNS = 1.08  # acercamiento fijo del paneo lateral
+ZOOM_PUNCH = 0.16  # «zoom rápido»: cuánto se acerca
+ZOOM_PUNCH_S = 0.4  # y en cuánto tiempo
+SHAKE_ZOOM = 1.06  # «temblor»: acercamiento que deja margen para el vaivén
+CINEMA_BAR = 0.11  # «cinematográfico»: alto de cada franja negra (fracción del alto)
+# Efectos de color y textura: un filtro fijo detrás del encuadre.
+COLOR_EFFECTS: dict[str, str] = {
+    "blanco_negro": "hue=s=0",
+    "sepia": "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
+    "contraste_alto": "eq=contrast=1.3:saturation=1.2:brightness=-0.02",
+    "vhs": (
+        "rgbashift=rh=-4:bh=4,eq=saturation=0.7:contrast=1.1,"
+        "noise=alls=10:allf=t,gblur=sigma=0.7"
+    ),
+    "vineta": "vignette=angle=PI/4",
+    "cinematico": (
+        f"drawbox=x=0:y=0:w=iw:h=ih*{CINEMA_BAR}:color=black:t=fill,"
+        f"drawbox=x=0:y=ih*{1 - CINEMA_BAR:.2f}:w=iw:h=ih*{CINEMA_BAR}:color=black:t=fill"
+    ),
+}
+# Efectos que cambian la velocidad de un video (cuánto metraje se lee por segundo de escena).
+SPEED = {"camara_rapida": 2.0, "camara_lenta": 0.5}
 MUSIC_VOLUME = 0.35
 SFX_VOLUME = 0.9
 
@@ -155,10 +176,31 @@ def effect_filter(
         frac = f"1/{z}"
         margin = f"(1-1/{z})/2"
         return [cover(q), _window(margin, margin, frac, interp)]
-    if effect == "ken_burns":
+    if effect in ("ken_burns", "paneo_izquierda", "paneo_vertical"):
         frac = f"{1 / KEN_BURNS:.5f}"
         travel = f"{1 - 1 / KEN_BURNS:.5f}"
-        return [cover(q), _window(f"{travel}*in/{n}", f"{travel}/2", frac, interp)]
+        if effect == "ken_burns":
+            left, top = f"{travel}*in/{n}", f"{travel}/2"
+        elif effect == "paneo_izquierda":
+            left, top = f"{travel}*(1-in/{n})", f"{travel}/2"
+        else:  # de abajo hacia arriba
+            left, top = f"{travel}/2", f"{travel}*(1-in/{n})"
+        return [cover(q), _window(left, top, frac, interp)]
+    if effect == "zoom_rapido":
+        # Golpe de cámara: se acerca en los primeros 0,4 s y se queda ahí.
+        k = max(round(ZOOM_PUNCH_S * FPS), 1)
+        p = f"min(in/{k},1)"
+        z = f"(1+{round(ZOOM_PUNCH * motion, 4)}*({p}*{p}*(3-2*{p})))"
+        margin = f"(1-1/{z})/2"
+        return [cover(q), _window(margin, margin, f"1/{z}", interp)]
+    if effect == "temblor":
+        # Cámara en mano: un leve acercamiento deja margen para un vaivén irregular.
+        amp = min(motion, 2.0)
+        z = SHAKE_ZOOM
+        margin = (1 - 1 / z) / 2
+        left = f"{margin:.5f}+{0.007 * amp:.5f}*sin(in*0.7)+{0.005 * amp:.5f}*sin(in*2.1)"
+        top = f"{margin:.5f}+{0.006 * amp:.5f}*sin(in*1.1+1)+{0.004 * amp:.5f}*sin(in*2.7)"
+        return [cover(q), _window(left, top, f"{1 / z:.5f}", interp)]
     out = [cover(q)]
     if effect == "estatica":
         # Grano suave: el ruido fuerte cuadro a cuadro se veía como una vibración.
@@ -168,6 +210,12 @@ def effect_filter(
     elif effect == "fundido_negro":
         start = max(duration - 0.6, 0)
         out.append(f"fade=t=out:st={start:.2f}:d={min(0.6, duration):.2f}")
+    elif effect == "fundido_entrada":
+        out.append(f"fade=t=in:st=0:d={min(0.6, duration):.2f}")
+    elif effect == "destello":
+        out.append(f"fade=t=in:st=0:d={min(0.5, duration):.2f}:color=white")
+    elif effect in COLOR_EFFECTS:
+        out.append(COLOR_EFFECTS[effect])
     return out
 
 
@@ -221,24 +269,28 @@ def segment_command(
     frames = max(round(seg.duration * FPS), 1)
     dur = f"{frames / FPS:.3f}"
     args = ["ffmpeg", "-y", "-v", "error", "-nostdin"]
-    fast = seg.effect == "camara_rapida" and seg.kind == "video"
+    speed = SPEED.get(seg.effect or "", 1.0) if seg.kind == "video" else 1.0
     if seg.kind == "image":
         args += ["-i", str(seg.path)]  # un solo cuadro: se repite con el filtro loop
     elif seg.kind == "video":
-        read = frames / FPS * (2 if fast else 1)
+        read = frames / FPS * speed
         args += ["-ss", f"{seg.source_in:.3f}", "-t", f"{read:.3f}", "-i", str(seg.path)]
     else:
         args += ["-f", "lavfi", "-i", f"color=c=black:s={q.size}:r={FPS}:d={dur}"]
 
     chain: list[str] = []
     if seg.kind == "video":
-        chain.append(f"fps={FPS}")
-        if fast:
-            chain.append("setpts=0.5*PTS")
+        if speed > 1:
+            chain += [f"fps={FPS}", f"setpts={1 / speed:g}*PTS"]
+        elif speed < 1:  # a cámara lenta los cuadros se estiran: se igualan después
+            chain += [f"setpts={1 / speed:g}*PTS", f"fps={FPS}"]
+        else:
+            chain.append(f"fps={FPS}")
     if seg.kind == "color":
         chain.append("setsar=1")
     else:
-        effect = effect_filter(None if fast else seg.effect, q, frames, frames / FPS, draft, motion)
+        motion_effect = None if seg.effect in SPEED else seg.effect
+        effect = effect_filter(motion_effect, q, frames, frames / FPS, draft, motion)
         if seg.kind == "image":
             chain += still_chain(effect, frames, soften)
         else:
@@ -305,6 +357,8 @@ class AudioClip:
     duration: float
     loop: bool = False  # se repite hasta cubrir `duration` (audio de fondo)
     volume: float | None = None  # None: el de su pista (música 0,35; SFX 0,9)
+    fade_in: float = 0.0  # entrada y salida suaves (SFX de las pistas manuales)
+    fade_out: float = 0.0
 
 
 def audio_filter(
@@ -331,6 +385,11 @@ def audio_filter(
             chain.append(f"afade=t=out:st={clip.duration - 2:.3f}:d=2")
         elif fade and clip.duration > 2:
             chain.append(f"afade=t=out:st={clip.duration - 1:.3f}:d=1")
+        if clip.fade_in > 0:
+            chain.append(f"afade=t=in:st=0:d={min(clip.fade_in, clip.duration):.3f}")
+        if clip.fade_out > 0:
+            d = min(clip.fade_out, clip.duration)
+            chain.append(f"afade=t=out:st={clip.duration - d:.3f}:d={d:.3f}")
         level = clip.volume if clip.volume is not None else volume
         chain += [f"volume={round(level, 3)}", f"adelay={ms}|{ms}[{label}]"]
         parts.append(",".join(chain))

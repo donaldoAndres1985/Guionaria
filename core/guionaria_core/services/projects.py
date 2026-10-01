@@ -314,9 +314,11 @@ def purge_project_data(session: Session, project: Project) -> None:
     from .media.service import delete_media_data
     from .scenes import delete_scene_data
     from .script import delete_script_data
+    from .timeline.overlays import delete_project_tracks
     from .voice.service import delete_voice_data
 
     release_project(session, project.id)
+    delete_project_tracks(session, project.id)
     delete_media_data(session, project)
     delete_scene_data(session, project.id)
     delete_script_data(session, project.id)

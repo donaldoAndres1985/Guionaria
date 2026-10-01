@@ -25,6 +25,7 @@ class Scene(SQLModel, table=True):
     music_sound_id: int | None = None  # tema que empieza en la escena (hasta el siguiente)
     # Transición hacia la escena siguiente: None = la de por defecto; «none» = corte.
     transition: str | None = None
+    transition_s: float | None = None  # su duración; None = la de por defecto
 
 
 class SceneCandidate(SQLModel, table=True):
