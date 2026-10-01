@@ -34,7 +34,9 @@ class Clip:
     scene_position: int | None = None
     sound_id: int | None = None  # pistas de SFX y música
     loop: bool = False  # audio de fondo: se repite hasta cubrir la duración
-    volume: float | None = None  # volumen propio (audio de fondo)
+    volume: float | None = None  # volumen propio (audio de fondo, SFX de pistas manuales)
+    fade_in: float = 0.0  # segundos (SFX de pistas manuales)
+    fade_out: float = 0.0
 
 
 @dataclass
@@ -57,6 +59,18 @@ class SceneSpan:
     effect: str | None = None
     scene_id: int | None = None
     transition: str | None = None  # hacia la escena siguiente (None: la de por defecto)
+    transition_s: float | None = None  # su duración (None: la de por defecto)
+
+
+@dataclass
+class OverlayText:
+    """Texto de una pista manual, en segundos del video final."""
+
+    start: float
+    end: float
+    text: str
+    style: dict  # TextOverlayStyle
+    layer: int  # las pistas de más arriba se dibujan encima
 
 
 @dataclass
@@ -72,13 +86,18 @@ class TimelineModel:
     warnings: list[str] = field(default_factory=list)
     sfx: list[Clip] = field(default_factory=list)  # efectos al inicio de su escena
     music: list[Clip] = field(default_factory=list)  # cada tema hasta el siguiente cambio
+    overlay_texts: list[OverlayText] = field(default_factory=list)  # pistas de texto manuales
+    overlay_sfx: list[Clip] = field(default_factory=list)  # pistas de SFX manuales
 
     def cuts(self, prefs) -> list:
         """Transición de cada corte (render/transitions.resolve), en segundos."""
         from ..render.transitions import resolve
 
         return resolve(
-            [s.transition for s in self.scenes], [s.duration / self.fps for s in self.scenes], prefs
+            [s.transition for s in self.scenes],
+            [s.duration / self.fps for s in self.scenes],
+            prefs,
+            [s.transition_s for s in self.scenes],
         )
 
     def video_items(self) -> list[tuple[int, int, Clip | None]]:
@@ -221,6 +240,7 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 scene.effect,
                 scene.id,
                 scene.transition,
+                scene.transition_s,
             )
         )
 
@@ -229,10 +249,81 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
 
     if bg := background_clip(session, project, total, warnings):
         music = [bg]  # el audio de fondo reemplaza la música por escena
+    texts, extra_sfx = _overlay_tracks(session, project, total, warnings)
     width, height = (1920, 1080) if project.format == "video" else (1080, 1920)
     return TimelineModel(
-        project.title, FPS, width, height, total, spans, voice, markers, warnings, sfx, music
+        project.title,
+        FPS,
+        width,
+        height,
+        total,
+        spans,
+        voice,
+        markers,
+        warnings,
+        sfx,
+        music,
+        texts,
+        extra_sfx,
     )
+
+
+SFX_LEVEL = 0.9  # el volumen normal de los SFX (render/plan.SFX_VOLUME)
+
+
+def _overlay_tracks(
+    session: Session, project: Project, total: int, warnings: list[str]
+) -> tuple[list[OverlayText], list[Clip]]:
+    """Pistas agregadas a mano: textos (de arriba abajo, los de arriba encima) y SFX. Lo que
+    empieza después del final del video se ignora; lo que se pasa del final se acorta."""
+    from .overlays import item_style, project_tracks, track_items
+
+    home = get_paths().home
+    end_s = total / FPS
+    tracks = project_tracks(session, project.id)
+    texts: list[OverlayText] = []
+    clips: list[Clip] = []
+    text_tracks = [t for t in tracks if t.kind == "text"]
+    for t in tracks:
+        layer = len(text_tracks) - text_tracks.index(t) if t.kind == "text" else 0
+        for item in track_items(session, t.id):
+            start = item.start_s
+            end = min(item.start_s + item.duration_s, end_s)
+            if start >= end_s or end - start < 0.05:
+                continue
+            if t.kind == "text":
+                style = item_style(item)
+                if item.text and style:
+                    texts.append(OverlayText(start, end, item.text, style.model_dump(), layer))
+                continue
+            sound = session.get(Sound, item.sound_id) if item.sound_id else None
+            if not sound:
+                continue
+            path = home / sound.file_path
+            if not path.exists():
+                warnings.append(f"Pista «{t.name}»: falta el archivo del sonido «{sound.title}»")
+                continue
+            media_len = frames(sound.duration_s) if sound.duration_s else None
+            length = max(frames(end - start), 1)
+            if media_len:
+                length = min(length, media_len)
+            clips.append(
+                Clip(
+                    path.name,
+                    path,
+                    "audio",
+                    frames(start),
+                    length,
+                    0,
+                    media_len,
+                    None,
+                    sound.id,
+                    volume=round(SFX_LEVEL * item.volume / 100, 3),
+                    fade_in=item.fade_in_s,
+                    fade_out=item.fade_out_s,
+                )
+            )
+    return texts, clips
 
 
 def _sound_tracks(

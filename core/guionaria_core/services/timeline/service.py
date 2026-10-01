@@ -9,12 +9,14 @@ from sqlmodel import Session
 from ...domain.states import ORDER, ProjectStatus
 from ...models import Project
 from ...models._base import now_iso
+from ...schemas.overlay import TrackRead
 from ...util.paths import check_path_length
 from ..errors import Conflict
 from ..oplog import log_operation
 from ..package import export_package
 from ..projects import get_project, project_dir
 from .model import build_timeline
+from .overlays import list_tracks
 from .writers import to_edl, to_fcpxml, to_otio
 
 Format = Literal["otio", "fcpxml", "edl"]
@@ -36,6 +38,7 @@ class TimelineScene(BaseModel):
     scene_id: int | None = None
     asset_id: int | None = None
     is_video: bool = False
+    effect: str | None = None  # efecto de la escena (editable desde el timeline)
 
 
 class TimelineMarker(BaseModel):
@@ -75,6 +78,8 @@ class TimelineState(BaseModel):
     warnings: list[str]
     folder: str
     exports: list[TimelineFile]
+    overlay_tracks: list[TrackRead] = []  # pistas agregadas a mano (textos y SFX)
+    editable: bool = True  # el timeline se puede editar (no está programado ni publicado)
 
 
 class ExportResult(BaseModel):
@@ -137,6 +142,7 @@ def timeline_state(session: Session, project_id: int) -> TimelineState:
                 scene_id=s.scene_id,
                 asset_id=s.asset_id if s.clip else None,
                 is_video=bool(s.clip and s.clip.kind == "video"),
+                effect=s.effect if s.effect and s.effect != "ninguno" else None,
             )
             for s in m.scenes
         ],
@@ -149,6 +155,8 @@ def timeline_state(session: Session, project_id: int) -> TimelineState:
         warnings=m.warnings,
         folder=str(project_dir(project) / "timeline"),
         exports=_exports(project),
+        overlay_tracks=list_tracks(session, project_id),
+        editable=ORDER.index(project.status) < ORDER.index(ProjectStatus.PROGRAMADO),
     )
 
 

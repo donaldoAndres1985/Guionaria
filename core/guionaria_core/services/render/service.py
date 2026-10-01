@@ -480,7 +480,7 @@ def _render_pass(
         # Si después se escriben subtítulos o texto, o se aplica el look, el paso final vuelve
         # a codificar: las escenas y la unión son archivos intermedios.
         graded_look = bool(look and looks.look_filter(look, look.lut))
-        again = bool(srt) or bool(scene_texts(m)) or graded_look
+        again = bool(srt) or bool(scene_texts(m)) or bool(m.overlay_texts) or graded_look
         files = [tmp / f"seg_{i:03d}.mp4" for i in range(len(segments))]
         # El texto en pantalla no va aquí: se escribe con libass en el paso final.
         commands = [
@@ -519,6 +519,12 @@ def _render_pass(
         sec = lambda f: f / m.fps  # noqa: E731
         voice = plan.AudioClip(m.voice.path, 0, sec(m.voice.duration)) if m.voice else None
         sfx = [plan.AudioClip(c.path, sec(c.start), sec(c.duration)) for c in m.sfx]
+        sfx += [
+            plan.AudioClip(
+                c.path, sec(c.start), sec(c.duration), False, c.volume, c.fade_in, c.fade_out
+            )
+            for c in m.overlay_sfx
+        ]
         music = [
             plan.AudioClip(c.path, sec(c.start), sec(c.duration), c.loop, c.volume) for c in m.music
         ]
@@ -537,8 +543,9 @@ def _render_pass(
         vfilter = None
         texts = scene_texts(m)
         styled = bool(srt and words)
-        if styled or texts:
-            # Subtítulos con estilo (frases cortas, palabra resaltada) y texto de las escenas.
+        if styled or texts or m.overlay_texts:
+            # Subtítulos con estilo (frases cortas, palabra resaltada), texto de las escenas y
+            # los textos de las pistas manuales.
             ass = captions.build_ass(
                 words if styled else [],
                 style or SubtitleStyle(),
@@ -547,6 +554,8 @@ def _render_pass(
                 texts,
                 text_style,
                 raised=bool(srt),
+                overlays=m.overlay_texts,
+                overlay_scale=q.width / m.width,
             )
             (tmp / "subs.ass").write_text(ass, encoding="utf-8")
             # Fuentes incluidas (Montserrat…) en una carpeta local: sin escapar rutas de Windows.

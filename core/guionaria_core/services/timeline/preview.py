@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from ...config import SubtitleStyle, TextStyle, VideoLook, load_settings
 from ...models import Project
+from ...schemas.overlay import TextOverlayStyle
 from ..render.plan import MUSIC_VOLUME, SFX_VOLUME, ZOOM
 from ..voice.service import timed_words
 from .model import TimelineModel, build_timeline
@@ -39,6 +40,18 @@ class PreviewSound(BaseModel):
     duration_s: float
     loop: bool = False  # audio de fondo: se repite
     volume: float | None = None  # volumen propio (0–1,5); None: el de la pista
+    fade_in_s: float = 0.0
+    fade_out_s: float = 0.0
+
+
+class PreviewOverlay(BaseModel):
+    """Texto de una pista manual (su formato en `style`, como el ASS del render)."""
+
+    start_s: float
+    duration_s: float
+    text: str
+    style: TextOverlayStyle
+    layer: int
 
 
 class PreviewWord(BaseModel):
@@ -58,6 +71,7 @@ class PreviewState(BaseModel):
     sfx: list[PreviewSound]
     music: list[PreviewSound]
     words: list[PreviewWord]  # con tiempos exactos (ElevenLabs/Whisper) o estimados (Piper)
+    overlays: list[PreviewOverlay] = []  # textos de las pistas manuales
     subtitle_style: SubtitleStyle
     text_style: TextStyle
     look: VideoLook
@@ -119,6 +133,8 @@ def preview_state(session: Session, project: Project) -> PreviewState:
                 duration_s=_sec(m, c.duration),
                 loop=c.loop,
                 volume=c.volume,
+                fade_in_s=c.fade_in,
+                fade_out_s=c.fade_out,
             )
             for c in clips
             if c.sound_id
@@ -134,11 +150,21 @@ def preview_state(session: Session, project: Project) -> PreviewState:
         voice_url=(
             f"/api/projects/{project.id}/voice/audio" + _version(m.voice.path) if m.voice else None
         ),
-        sfx=sounds(m.sfx),
+        sfx=sounds(m.sfx) + sounds(m.overlay_sfx),
         music=sounds(m.music),
         words=[
             PreviewWord(text=w.text, start=w.start, end=w.end)
             for w in timed_words(session, project.id)
+        ],
+        overlays=[
+            PreviewOverlay(
+                start_s=round(o.start, 3),
+                duration_s=round(o.end - o.start, 3),
+                text=o.text,
+                style=TextOverlayStyle(**o.style),
+                layer=o.layer,
+            )
+            for o in m.overlay_texts
         ],
         subtitle_style=load_settings().subtitle_style,
         text_style=load_settings().text_style,

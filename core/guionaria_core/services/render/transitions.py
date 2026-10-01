@@ -48,14 +48,21 @@ class Cut:
     duration: float  # segundos (0 en un corte directo)
 
 
-def resolve(chosen: list[str | None], durations: list[float], prefs: TransitionPrefs) -> list[Cut]:
-    """Transición de cada corte: la elegida en la escena que sale o la de por defecto.
-    Se acorta si las escenas son muy cortas; si no cabe, queda como corte directo."""
+def resolve(
+    chosen: list[str | None],
+    durations: list[float],
+    prefs: TransitionPrefs,
+    lengths: list[float | None] | None = None,
+) -> list[Cut]:
+    """Transición de cada corte: la elegida en la escena que sale o la de por defecto, con
+    su duración propia (`lengths`) o la de por defecto. Se acorta si las escenas son muy
+    cortas; si no cabe, queda como corte directo."""
     cuts = []
     for i in range(len(durations) - 1):
         kind = chosen[i] or prefs.default
         room = MAX_SHARE * min(durations[i], durations[i + 1])
-        seconds = round(min(prefs.duration, room), 3)
+        wanted = (lengths[i] if lengths and lengths[i] else None) or prefs.duration
+        seconds = round(min(wanted, room), 3)
         if kind == NONE or kind not in TRANSITIONS or seconds < MIN_S:
             cuts.append(Cut(i, None, 0.0))
         else:

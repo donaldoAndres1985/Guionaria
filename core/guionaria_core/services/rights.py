@@ -75,6 +75,17 @@ def rights_report(session: Session, project_id: int) -> RightsReport:
     )
 
 
+def overlay_sound_ids(session: Session, project_id: int) -> list[int]:
+    from .timeline.overlays import project_tracks, track_items
+
+    ids: list[int] = []
+    for track in project_tracks(session, project_id):
+        for item in track_items(session, track.id):
+            if item.sound_id and item.sound_id not in ids:
+                ids.append(item.sound_id)
+    return ids
+
+
 def sound_credits(session: Session, project, scenes) -> list[str]:
     """Atribución de los audios del proyecto (fondo en bucle, música y SFX de las escenas):
     el texto que pide su licencia o, si no hay, título, autor y licencia."""
@@ -89,6 +100,9 @@ def sound_credits(session: Session, project, scenes) -> list[str]:
         for sid in (scene.music_sound_id, scene.sfx_sound_id):
             if sid and sid not in ids:
                 ids.append(sid)
+    for sid in overlay_sound_ids(session, project.id):  # pistas de SFX agregadas a mano
+        if sid not in ids:
+            ids.append(sid)
     lines = []
     for sid in ids:
         sound = session.get(Sound, sid)

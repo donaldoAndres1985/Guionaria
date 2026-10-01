@@ -33,6 +33,15 @@ ASS_FONT_SCALE = {
     "Impact": 1.25,
     "Verdana": 1.25,
     "Segoe UI": 1.38,
+    # Fuentes de los textos de las pistas manuales: (ascendente + descendente) / em de cada
+    # una, con el mismo pequeño margen que las de arriba.
+    "Georgia": 1.17,
+    "Times New Roman": 1.14,
+    "Courier New": 1.17,
+    "Comic Sans MS": 1.44,
+    "Trebuchet MS": 1.2,
+    "Tahoma": 1.24,
+    "Bahnschrift": 1.24,
 }
 
 
@@ -210,6 +219,207 @@ def _text_events(
     return [event(item.start, item.end, tags, text)]
 
 
+#: --- textos de las pistas manuales (como CapCut) ---------------------------------------
+#: Mismos cálculos que overlayMeta.ts en la app: líneas, anclaje y animaciones.
+
+OVERLAY_CHAR = 0.56  # ancho medio de un carácter respecto del tamaño (igual que line_chars)
+OVERLAY_SHIFT = 0.08  # desplazamiento de «deslizar» (fracción del cuadro)
+OVERLAY_BLUR = 20  # desenfoque inicial/final de la animación «desenfoque» (px del proyecto)
+OVERLAY_LAYER = 10  # por encima de subtítulos (0) y texto de las escenas (1)
+ANCHOR = {"left": 4, "center": 5, "right": 6}
+
+
+def overlay_chars(width: int, size: int, max_width: int, spacing: int) -> int:
+    """Caracteres por línea dentro del ancho elegido (px del proyecto)."""
+    return max(4, int(width * max_width / 100 // (OVERLAY_CHAR * size + spacing)))
+
+
+def wrap_overlay(text: str, limit: int) -> list[str]:
+    """Parte el texto en líneas de como mucho `limit` caracteres, por palabras, respetando los
+    saltos de línea escritos. Igual que wrapOverlay en la app."""
+    out: list[str] = []
+    for raw in text.splitlines() or [""]:
+        line = ""
+        for word in raw.split():
+            if not line:
+                line = word
+            elif len(line) + 1 + len(word) <= limit:
+                line += " " + word
+            else:
+                out.append(line)
+                line = word
+        out.append(line)
+    while out and not out[0]:
+        out.pop(0)
+    while out and not out[-1]:
+        out.pop()
+    return out
+
+
+def _rgb(hex_color: str) -> str:
+    """#RRGGBB → &HBBGGRR& (color de un tag de ASS)."""
+    return f"&H{hex_color[5:7]}{hex_color[3:5]}{hex_color[1:3]}&".upper()
+
+
+def _alpha(opacity: float) -> str:
+    return f"&H{255 - round(255 * min(max(opacity, 0.0), 1.0)):02X}&"
+
+
+def overlay_timing(style: dict, duration: float) -> tuple[float, float]:
+    """Duración de la entrada y la salida (como mucho, la mitad del texto cada una)."""
+    half = duration / 2
+    a = 0.0 if style["animation_in"] == "none" else min(style["animation_s"], half)
+    if style["animation_in"] == "typewriter":
+        a = min(max(style["animation_s"], 0.03 * len(style.get("_plain", ""))), duration * 0.7)
+    b = 0.0 if style["animation_out"] == "none" else min(style["animation_s"], half)
+    return a, min(b, max(duration - a, 0.0))
+
+
+def _overlay_events(item, width: int, height: int, scale: float) -> list[str]:
+    s = dict(item.style)
+    raw = item.text.upper() if s["uppercase"] else item.text
+    project_w = round(width / scale)
+    limit = overlay_chars(project_w, s["size"], s["max_width"], s["letter_spacing"])
+    lines = [_clean(line) for line in wrap_overlay(raw, limit)]
+    if not any(lines) or item.end <= item.start:
+        return []
+    plain = "\n".join(lines)
+    s["_plain"] = plain
+    body = r"\N".join(lines)
+    duration = item.end - item.start
+    a, b = overlay_timing(s, duration)
+    x, y = round(s["x"] * width), round(s["y"] * height)
+    size = s["size"] * scale
+    face, fixed_bold = FONT_FACE.get(s["font"], (s["font"], None))
+    bold = 0 if fixed_bold is not None else int(s["bold"])
+    opacity = s["opacity"] / 100
+    common = (
+        rf"\an{ANCHOR[s['align']]}\q2\fn{face}\fs{ass_size(s['font'], size)}\b{bold}"
+        rf"\i{int(s['italic'])}\u{int(s['underline'])}\fsp{round(s['letter_spacing'] * scale, 1):g}"
+        rf"\frz{-s['rotation']}"
+    )
+    layer = OVERLAY_LAYER + item.layer * 3
+    # Capas: la sombra va aparte (con su desenfoque) para no difuminar el borde del texto.
+    layers: list[tuple[int, str, str, float]] = []  # (capa, estilo, tags, desenfoque base)
+    if s["background"]:
+        layers.append(
+            (
+                layer + 1,
+                "OverlayBox",
+                rf"\1c{_rgb(s['color'])}\1a{_alpha(opacity)}\3c{_rgb(s['background_color'])}"
+                rf"\3a{_alpha(opacity * s['background_opacity'] / 100)}"
+                rf"\bord{round(s['background_padding'] * scale, 1):g}\shad0",
+                0.0,
+            )
+        )
+    else:
+        border = round(s["outline_width"] * scale, 1) if s["outline"] else 0
+        if s["shadow"]:
+            blur = round(s["shadow_blur"] * scale / 2, 1)
+            layers.append(
+                (
+                    layer,
+                    "Overlay",
+                    # Casi transparente (no del todo): libass no dibuja la sombra de un
+                    # texto 100 % transparente.
+                    rf"\1a&HFE&\3a&HFE&\4c{_rgb(s['shadow_color'])}"
+                    rf"\4a{_alpha(opacity * s['shadow_opacity'] / 100)}\bord{border:g}"
+                    rf"\shad{round(s['shadow_distance'] * scale, 1):g}",
+                    blur,
+                )
+            )
+        layers.append(
+            (
+                layer + 1,
+                "Overlay",
+                rf"\1c{_rgb(s['color'])}\1a{_alpha(opacity)}\3c{_rgb(s['outline_color'])}"
+                rf"\3a{_alpha(opacity)}\bord{border:g}\shad0",
+                0.0,
+            )
+        )
+
+    pos = rf"\pos({x},{y})"
+    dy, dx = round(height * OVERLAY_SHIFT), round(width * OVERLAY_SHIFT)
+    # Desde dónde entra (y hacia dónde sale) cada «deslizar».
+    shifts = {
+        "slide_up": (0, dy),
+        "slide_down": (0, -dy),
+        "slide_left": (dx, 0),
+        "slide_right": (-dx, 0),
+    }
+    blur_px = round(OVERLAY_BLUR * scale)
+
+    def blur_tag(value: float) -> str:
+        return rf"\blur{value:g}" if value else ""
+
+    def animate(kind: str, ms: int, base_blur: float, entering: bool) -> str:
+        """Tags de la entrada (o la salida, al revés) relativos al inicio de su línea."""
+        fade = rf"\fad({ms},0)" if entering else rf"\fad(0,{ms})"
+        if kind in shifts:
+            ox, oy = shifts[kind]
+            if entering:
+                move = rf"\move({x + ox},{y + oy},{x},{y},0,{ms})\fad({round(ms * 0.7)},0)"
+            else:  # sale hacia el lado contrario por el que habría entrado
+                move = rf"\move({x},{y},{x - ox},{y - oy},0,{ms})\fad(0,{round(ms * 0.7)})"
+            return move + blur_tag(base_blur)
+        if kind == "pop":
+            k = round(ms * 0.55)
+            scale_tags = (
+                rf"\fscx60\fscy60\t(0,{k},\fscx108\fscy108)\t({k},{ms},\fscx100\fscy100)"
+                rf"\fad({min(90, ms)},0)"
+                if entering
+                else rf"\t(0,{ms},\fscx60\fscy60)" + fade
+            )
+            return pos + scale_tags + blur_tag(base_blur)
+        if kind == "zoom":
+            scale_tags = (
+                rf"\fscx20\fscy20\t(0,{ms},0.5,\fscx100\fscy100)\fad({round(ms * 0.6)},0)"
+                if entering
+                else rf"\t(0,{ms},2,\fscx20\fscy20)" + fade
+            )
+            return pos + scale_tags + blur_tag(base_blur)
+        if kind == "blur":
+            sharp, soft = f"{base_blur:g}", f"{base_blur + blur_px:g}"
+            if entering:
+                return pos + rf"\blur{soft}\t(0,{ms},\blur{sharp})\fad({round(ms * 0.5)},0)"
+            return pos + rf"\blur{sharp}\t(0,{ms},\blur{soft})" + fade
+        return pos + fade + blur_tag(base_blur)  # fade
+
+    still = lambda bb: pos + blur_tag(bb)  # noqa: E731
+    events: list[str] = []
+
+    def emit(start: float, end: float, tags_for, text_for) -> None:
+        if end - start < 0.005:
+            return
+        for lyr, style_name, tags, base_blur in layers:
+            events.append(
+                f"Dialogue: {lyr},{_clock(start)},{_clock(end)},{style_name},,0,0,0,,"
+                f"{{{common}{tags}{tags_for(base_blur)}}}{text_for()}"
+            )
+
+    t0, t1 = item.start, item.end
+    if a > 0 and s["animation_in"] == "typewriter":
+        steps = min(TYPEWRITER_STEPS, len(plain))
+        for k in range(1, steps):
+            cut = round(len(plain) * k / steps)
+            shown, rest = (part.replace("\n", r"\N") for part in (plain[:cut], plain[cut:]))
+            emit(
+                t0 + a * (k - 1) / steps,
+                t0 + a * k / steps,
+                still,
+                lambda shown=shown, rest=rest: shown + r"{\alpha&HFF&}" + rest,
+            )
+        emit(t0 + a * max(steps - 1, 0) / steps, t0 + a, still, lambda: body)
+    elif a > 0:
+        ms_in = round(a * 1000)
+        emit(t0, t0 + a, lambda bb: animate(s["animation_in"], ms_in, bb, True), lambda: body)
+    emit(t0 + a, t1 - b, still, lambda: body)
+    if b > 0:
+        ms_out = round(b * 1000)
+        emit(t1 - b, t1, lambda bb: animate(s["animation_out"], ms_out, bb, False), lambda: body)
+    return events
+
+
 def build_ass(
     words: list[Word],
     style: SubtitleStyle,
@@ -218,6 +428,8 @@ def build_ass(
     texts: list[SceneText] | None = None,
     text_style: TextStyle | None = None,
     raised: bool | None = None,
+    overlays: list | None = None,
+    overlay_scale: float = 1.0,
 ) -> str:
     """ASS con los subtítulos (si hay palabras) y el texto en pantalla de las escenas.
     `raised`: el texto de escena sube arriba; por defecto, cuando hay subtítulos."""
@@ -272,6 +484,11 @@ def build_ass(
                 scene_text_size(width, height, True, text_style.size),
                 width,
             ),
+            # Textos de las pistas manuales: todo su formato va en los tags de cada línea.
+            "Style: Overlay,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            "0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1",
+            "Style: OverlayBox,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,"
+            "0,0,0,0,100,100,0,0,3,0,0,5,0,0,0,1",
             "",
             "[Events]",
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -316,4 +533,6 @@ def build_ass(
             )
     for item in texts or []:
         events += _text_events(item, text_style, width, height, raised)
+    for item in overlays or []:
+        events += _overlay_events(item, width, height, overlay_scale)
     return header + "\n" + "\n".join(events) + "\n"

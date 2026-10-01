@@ -24,6 +24,19 @@ export const EFFECTS: { id: SceneEffect; label: string }[] = [
   { id: "camara_rapida", label: "Cámara rápida" },
   { id: "deriva_suave", label: "Deriva suave" },
   { id: "zoom_divino", label: "Zoom celestial" },
+  { id: "paneo_izquierda", label: "Paneo a la izquierda" },
+  { id: "paneo_vertical", label: "Paneo hacia arriba" },
+  { id: "zoom_rapido", label: "Zoom rápido" },
+  { id: "temblor", label: "Cámara en mano" },
+  { id: "blanco_negro", label: "Blanco y negro" },
+  { id: "sepia", label: "Sepia" },
+  { id: "contraste_alto", label: "Contraste alto" },
+  { id: "vhs", label: "VHS retro" },
+  { id: "vineta", label: "Viñeta" },
+  { id: "cinematico", label: "Cinematográfico" },
+  { id: "fundido_entrada", label: "Aparecer desde negro" },
+  { id: "destello", label: "Destello" },
+  { id: "camara_lenta", label: "Cámara lenta" },
 ];
 
 export const EFFECT_LABEL = Object.fromEntries(EFFECTS.map((e) => [e.id, e.label])) as Record<

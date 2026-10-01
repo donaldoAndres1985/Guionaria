@@ -305,6 +305,19 @@ export type SceneEffect =
   | "camara_rapida"
   | "deriva_suave"
   | "zoom_divino"
+  | "paneo_izquierda"
+  | "paneo_vertical"
+  | "zoom_rapido"
+  | "temblor"
+  | "blanco_negro"
+  | "sepia"
+  | "contraste_alto"
+  | "vhs"
+  | "vineta"
+  | "cinematico"
+  | "fundido_entrada"
+  | "destello"
+  | "camara_lenta"
   | "ninguno";
 export type SceneStatus = "pending" | "candidates" | "approved" | "manual" | "review";
 
@@ -590,6 +603,8 @@ export interface TimelineScene {
   scene_id?: number | null;
   asset_id?: number | null;
   is_video?: boolean;
+  /** Efecto de la escena (null: ninguno); se cambia desde el timeline. */
+  effect?: string | null;
 }
 
 /** Receta de la vista previa en vivo (sin renderizar). */
@@ -631,6 +646,8 @@ export interface TransitionCut {
   /** La que se aplica; null = corte directo. */
   transition: string | null;
   duration_s: number;
+  /** Duración propia de este corte; null = la de por defecto. */
+  chosen_s?: number | null;
 }
 
 export interface TransitionsState {
@@ -649,6 +666,106 @@ export interface PreviewSound {
   loop?: boolean;
   /** Volumen propio (0–1,5); sin él, el de la pista. */
   volume?: number | null;
+  /** Entrada y salida suaves (SFX de las pistas propias). */
+  fade_in_s?: number;
+  fade_out_s?: number;
+}
+
+// --- Pistas propias del timeline (textos con formato y SFX, como en CapCut) ---
+
+export type TextFont =
+  | "Montserrat"
+  | "Arial"
+  | "Impact"
+  | "Verdana"
+  | "Segoe UI"
+  | "Georgia"
+  | "Times New Roman"
+  | "Courier New"
+  | "Comic Sans MS"
+  | "Trebuchet MS"
+  | "Tahoma"
+  | "Bahnschrift";
+export type TextAnimationIn =
+  | "none"
+  | "fade"
+  | "pop"
+  | "zoom"
+  | "slide_up"
+  | "slide_down"
+  | "slide_left"
+  | "slide_right"
+  | "blur"
+  | "typewriter";
+export type TextAnimationOut = Exclude<TextAnimationIn, "typewriter">;
+
+/** Formato de un texto (px del cuadro del proyecto; posición en fracciones del cuadro). */
+export interface TextOverlayStyle {
+  font: TextFont;
+  size: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  uppercase: boolean;
+  align: "left" | "center" | "right";
+  letter_spacing: number;
+  max_width: number;
+  x: number;
+  y: number;
+  rotation: number;
+  opacity: number;
+  outline: boolean;
+  outline_color: string;
+  outline_width: number;
+  shadow: boolean;
+  shadow_color: string;
+  shadow_opacity: number;
+  shadow_distance: number;
+  shadow_blur: number;
+  background: boolean;
+  background_color: string;
+  background_opacity: number;
+  background_padding: number;
+  animation_in: TextAnimationIn;
+  animation_out: TextAnimationOut;
+  animation_s: number;
+}
+
+export type OverlayTrackKind = "text" | "sfx";
+
+export interface OverlayItem {
+  id: number;
+  track_id: number;
+  start_s: number;
+  duration_s: number;
+  text: string | null;
+  style: TextOverlayStyle | null;
+  sound_id: number | null;
+  sound_title: string | null;
+  sound_url: string | null;
+  sound_duration_s: number | null;
+  volume: number;
+  fade_in_s: number;
+  fade_out_s: number;
+}
+
+export interface OverlayTrack {
+  id: number;
+  kind: OverlayTrackKind;
+  name: string;
+  position: number;
+  items: OverlayItem[];
+}
+
+/** Texto de una pista propia en la vista previa (como el ASS del render). */
+export interface PreviewOverlay {
+  start_s: number;
+  duration_s: number;
+  text: string;
+  style: TextOverlayStyle;
+  /** Las pistas de más arriba se dibujan encima. */
+  layer: number;
 }
 
 /** Audio de fondo en bucle del proyecto. */
@@ -679,6 +796,8 @@ export interface PreviewState {
   sfx: PreviewSound[];
   music: PreviewSound[];
   words: PreviewWord[];
+  /** Textos de las pistas propias. */
+  overlays?: PreviewOverlay[];
   subtitle_style: SubtitleStyle;
   text_style?: TextStyle;
   look?: VideoLook;
@@ -712,6 +831,10 @@ export interface TimelineState {
   warnings: string[];
   folder: string;
   exports: { format: TimelineFormat; file: string; updated_at: string }[];
+  /** Pistas agregadas a mano (las de Guionaria no se pueden borrar). */
+  overlay_tracks?: OverlayTrack[];
+  /** El timeline se puede editar (no está programado ni publicado). */
+  editable?: boolean;
 }
 
 export interface TimelineExport {

@@ -120,11 +120,53 @@ export function TransitionsPanel({ projectId, disabled }: { projectId: number; d
   );
 }
 
-/** Marcas de los cortes sobre la pista de video: clic para elegir la transición de ese corte. */
-export function CutMarkers({ projectId, duration, disabled }: { projectId: number; duration: number; disabled?: boolean }) {
+/**
+ * Marcas de los cortes sobre la pista de video: clic para elegir la transición de ese corte
+ * (con `onOpen`, en la ventana de efectos y transiciones; si no, en un menú).
+ */
+export function CutMarkers({
+  projectId,
+  duration,
+  disabled,
+  onOpen,
+}: {
+  projectId: number;
+  duration: number;
+  disabled?: boolean;
+  onOpen?: (sceneId: number) => void;
+}) {
   const { data: state } = useTransitions(projectId);
   const { cut } = useSaveTransitions(projectId);
   if (!state || !duration) return null;
+  if (onOpen) {
+    return (
+      <>
+        {state.cuts.map((c) => (
+          <button
+            key={c.scene_id}
+            type="button"
+            data-track-item
+            disabled={disabled}
+            aria-label={`Transición entre las escenas ${c.position} y ${c.position + 1}: ${transitionLabel(state, c.transition)}`}
+            title={`${transitionLabel(state, c.transition)}${c.transition ? ` · ${c.duration_s.toFixed(1)} s` : ""} · clic para cambiarla`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen(c.scene_id);
+            }}
+            className={cn(
+              "absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border shadow-sm transition-colors disabled:cursor-default",
+              c.transition
+                ? "border-brand bg-brand text-primary-foreground"
+                : "border-border bg-panel text-subtle opacity-60 hover:opacity-100",
+            )}
+            style={{ left: `${pct(c.at_s, duration)}%` }}
+          >
+            <Blend className="size-3" />
+          </button>
+        ))}
+      </>
+    );
+  }
   return (
     <>
       {state.cuts.map((c) => (

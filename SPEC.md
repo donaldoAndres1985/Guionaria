@@ -296,6 +296,12 @@ Pantalla clave. Layout de lista + detalle (referencia 03):
   - **EDL** como respaldo.
   - **Paquete del proyecto**: carpeta con todo + `LEEME.txt` con tabla de escenas, efectos y SFX por tiempo.
 - Proyecto base de Resolve por canal (plantilla con presets de efectos) documentado en Ajustes.
+- **Edición como en CapCut** (hasta que el video se programa o publica, sin desbloquear escenas ni medios):
+  - **Pistas propias**: con «+ Pista» se agregan pistas de **texto** (arriba del video) o de **efectos de sonido** (debajo de la voz); se renombran (doble clic) y se borran con confirmación. Las pistas de Guionaria no se pueden borrar.
+  - Sus elementos se **arrastran** para moverlos, se **estiran** por los bordes (se pegan a cortes, cabezal y otros elementos), se abren con un clic y se borran con Supr.
+  - **Textos con formato**: fuente (Montserrat incluida y las de Windows), tamaño, color, negrita, cursiva, subrayado, mayúsculas, alineación, espacio entre letras, ancho, opacidad, rotación, borde, sombra (con desenfoque), caja de fondo, posición (cuadrícula o arrastrando sobre el cuadro), animación de entrada y salida y estilos rápidos. Van al render en el ASS (libass), con los mismos cálculos que la vista previa.
+  - **SFX**: de la biblioteca, con volumen (0–200 %) y entrada/salida suaves; entran en la mezcla y en los créditos (no se puede borrar un sonido usado en una pista).
+  - **Efecto y transición de cada escena** en una ventana con vista previa animada: 22 efectos (movimiento, color y textura, luz y fundidos, encuadre, velocidad) y transiciones de entrada o salida con duración propia por corte; «aplicar a todas las escenas de este tipo».
 
 ### 5.11 Biblioteca
 - Todos los medios descargados de todos los proyectos, con vista tabla (referencia 04) y vista cuadrícula.

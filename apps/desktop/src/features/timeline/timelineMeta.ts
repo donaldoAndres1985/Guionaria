@@ -5,11 +5,20 @@ export function rulerStep(duration: number): number {
   return [1, 2, 5, 10, 15, 30, 60].find((s) => duration / s <= 12) ?? 120;
 }
 
-export function rulerTicks(duration: number): number[] {
-  const step = rulerStep(duration);
+/** Marcas de la regla; con zoom, el paso sale de lo que se ve a la vez (duración / zoom). */
+export function rulerTicks(duration: number, zoom = 1): number[] {
+  const step = rulerStep(duration / Math.max(zoom, 1));
   const ticks: number[] = [];
   for (let t = 0; t <= duration + 1e-6; t += step) ticks.push(Math.round(t * 1000) / 1000);
   return ticks;
+}
+
+/** Zoom máximo: unos 3 s de video a lo ancho de la pantalla (al menos 4×, aun en videos cortos). */
+export const maxZoom = (duration: number) => Math.max(4, Math.round((duration / 3) * 100) / 100);
+
+/** Siguiente nivel de zoom (cada paso, 1,5 veces). */
+export function nextZoom(zoom: number, direction: 1 | -1): number {
+  return Math.round((direction > 0 ? zoom * 1.5 : zoom / 1.5) * 100) / 100;
 }
 
 /** Posición en % del ancho del timeline. */
