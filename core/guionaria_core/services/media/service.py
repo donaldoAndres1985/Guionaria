@@ -919,6 +919,23 @@ def unapprove_asset(session: Session, scene_id: int, asset_id: int) -> SceneMedi
     return scene_media(session, scene_id)
 
 
+def set_media_kind(session: Session, scene_id: int, kind: str) -> SceneMediaRead:
+    """Cambia el tipo de medio de la escena entre video e imagen (sección 5.4/5.6): solo afecta
+    qué se busca de ahora en adelante. No toca lo ya aprobado ni exige desbloquear las escenas
+    (el timeline usa el tipo real de cada archivo, no el de la escena)."""
+    scene = get_scene(session, scene_id)
+    project = _open_project(session, scene.project_id)
+    if scene.media_kind not in ("video", "image"):
+        raise DomainError("Solo se puede cambiar entre video e imagen")
+    if scene.media_kind == kind:
+        return scene_media(session, scene_id)
+    scene.media_kind = kind
+    project.updated_at = now_iso()
+    log_operation(session, "update", "scene", scene_id, {"media_kind": kind})
+    session.commit()
+    return scene_media(session, scene_id)
+
+
 def _expected_name(session: Session, scene: Scene, row: SceneAsset, ext: str) -> str:
     if row.role == "main":
         return naming.approved_name(scene, ext)

@@ -1,4 +1,4 @@
-import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Search, Sparkles, Star, Type, Unlock, X } from "lucide-react";
+import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Repeat, Search, Sparkles, Star, Type, Unlock, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -222,6 +222,18 @@ export function MediaStage({
                 <span className="font-medium">
                   Escena {scene.position} · {KIND_LABEL[scene.media_kind]}
                 </span>
+                {ctl.editable && (scene.media_kind === "video" || scene.media_kind === "image") && (
+                  <button
+                    type="button"
+                    disabled={ctl.changingKind}
+                    title={`Cambiar el tipo de medio de la escena a ${scene.media_kind === "video" ? "imagen" : "video"}`}
+                    onClick={() => ctl.setMediaKind(scene.media_kind === "video" ? "image" : "video")}
+                    className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-panel-2 hover:text-foreground disabled:opacity-50"
+                  >
+                    <Repeat className="size-3" />
+                    Cambiar a {scene.media_kind === "video" ? "imagen" : "video"}
+                  </button>
+                )}
                 <span className="font-mono text-[11px] text-subtle">
                   {formatSceneTime(scene.start_s)} – {formatSceneTime(scene.end_s)}
                 </span>

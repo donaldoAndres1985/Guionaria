@@ -305,6 +305,36 @@ def test_unapprove_main(client, media_project, web, home):
     assert client.post(f"/api/scenes/{scene}/assets/{a1['id']}:unapprove").status_code == 404
 
 
+def test_set_media_kind_toggles_video_and_image(client, media_project, web):
+    video, _image, real, text = media_project["scenes"]
+    a1, *_ = downloaded(client, video)
+    client.post(f"/api/scenes/{video}/assets/{a1['id']}:approve")
+
+    resp = client.put(f"/api/scenes/{video}/media-kind", json={"kind": "image"})
+    assert resp.status_code == 200, resp.text
+    media = resp.json()
+    assert (media["media_kind"], media["search_kind"]) == ("image", "image")
+    assert media["approved"][0]["asset"]["id"] == a1["id"]  # lo aprobado no se toca
+
+    back = client.put(f"/api/scenes/{video}/media-kind", json={"kind": "video"}).json()
+    assert (back["media_kind"], back["search_kind"]) == ("video", "video")
+
+    for scene in (real, text):
+        resp = client.put(f"/api/scenes/{scene}/media-kind", json={"kind": "image"})
+        assert resp.status_code == 400
+
+
+def test_set_media_kind_requires_open_media_stage(client, media_project, web):
+    video, image, real, _text = media_project["scenes"]
+    for scene in (video, image, real):
+        a, *_ = downloaded(client, scene)
+        client.post(f"/api/scenes/{scene}/assets/{a['id']}:approve")
+    assert client.post(f"/api/projects/{media_project['id']}/media:approve").status_code == 200
+    resp = client.put(f"/api/scenes/{video}/media-kind", json={"kind": "image"})
+    assert resp.status_code == 409
+    assert "desbloquéalos" in resp.json()["detail"]
+
+
 def test_approve_foreign_asset_rejected(client, media_project, web):
     a, b = media_project["scenes"][:2]
     [asset, *_] = downloaded(client, b)

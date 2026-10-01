@@ -66,6 +66,10 @@ describe("flujo de medios en pantalla", () => {
         if (path === "/api/projects/1/media:unlock") return ok({ ...overview, approved: false, editable: true });
         if (path === "/api/projects/1/scenes") return ok({ scenes: [], review_count: 0 });
         if (path.match(/\/api\/scenes\/\d+\/media$/)) return ok(sceneMedia(Number(path.split("/")[3])));
+        if (init?.method === "PUT" && path === "/api/scenes/1/media-kind") {
+          const body = JSON.parse(String(init.body)) as { kind: "video" | "image" };
+          return ok({ ...sceneMedia(1), media_kind: body.kind, search_kind: body.kind });
+        }
         if (path === "/api/projects/1/media:download-selected") {
           return ok({ id: 6, type: "download_selected", project_id: 1, status: "running", progress: 0.4,
             message: null, result: null, error: null, created_at: "", finished_at: null });
@@ -134,6 +138,14 @@ describe("flujo de medios en pantalla", () => {
     overview = { ...overview, with_media: 3, selected_pending: 0 };
     renderStage();
     await waitFor(() => expect(screen.getByText("Aprobar medios").closest("button")!.disabled).toBe(false));
+  });
+
+  it("cambia el tipo de la escena entre video e imagen sin desbloquear las escenas", async () => {
+    renderStage();
+    const toggle = await screen.findByText("Cambiar a video");
+    fireEvent.click(toggle);
+    expect(await screen.findByText("Cambiar a imagen")).toBeTruthy();
+    expect(screen.getByText("Escena 1 · Video")).toBeTruthy();
   });
 
   it("con medios ya aprobados, ofrece desbloquearlos para cambiar el principal de la escena", async () => {
