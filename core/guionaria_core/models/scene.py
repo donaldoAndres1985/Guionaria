@@ -26,6 +26,8 @@ class Scene(SQLModel, table=True):
     # Transición hacia la escena siguiente: None = la de por defecto; «none» = corte.
     transition: str | None = None
     transition_s: float | None = None  # su duración; None = la de por defecto
+    # Segmentos siguientes que también cubre («Unir con la siguiente»), en JSON.
+    joined_seg_keys: str | None = None
 
 
 class SceneCandidate(SQLModel, table=True):

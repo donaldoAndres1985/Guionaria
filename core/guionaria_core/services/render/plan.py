@@ -27,8 +27,7 @@ COLOR_EFFECTS: dict[str, str] = {
     "sepia": "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
     "contraste_alto": "eq=contrast=1.3:saturation=1.2:brightness=-0.02",
     "vhs": (
-        "rgbashift=rh=-4:bh=4,eq=saturation=0.7:contrast=1.1,"
-        "noise=alls=10:allf=t,gblur=sigma=0.7"
+        "rgbashift=rh=-4:bh=4,eq=saturation=0.7:contrast=1.1,noise=alls=10:allf=t,gblur=sigma=0.7"
     ),
     "vineta": "vignette=angle=PI/4",
     "cinematico": (

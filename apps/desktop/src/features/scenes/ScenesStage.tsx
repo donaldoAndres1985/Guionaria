@@ -54,7 +54,12 @@ export function ScenesStage({
     (id: number, a: SceneAction) =>
       action.mutate(
         { id, action: a },
-        { onSuccess: () => a === "delete" && toast.success("Escena eliminada") },
+        {
+          onSuccess: () => {
+            if (a === "delete") toast.success("Escena eliminada");
+            if (a === "join-next") toast.success("Escenas unidas: los tiempos se sumaron");
+          },
+        },
       ),
     [action.mutate],
   );

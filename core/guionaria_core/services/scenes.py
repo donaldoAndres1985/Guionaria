@@ -60,6 +60,19 @@ def _current_segments(session: Session, project_id: int) -> list[SegmentRead]:
     return read_script(session, project_id).segments
 
 
+def joined_keys(scene: Scene) -> list[str]:
+    return json.loads(scene.joined_seg_keys) if scene.joined_seg_keys else []
+
+
+def scene_keys(scene: Scene) -> list[str]:
+    """Los segmentos que cubre la escena: el suyo y los que se le unieron, en orden."""
+    return [scene.seg_key, *joined_keys(scene)]
+
+
+def _set_joined(scene: Scene, keys: list[str]) -> None:
+    scene.joined_seg_keys = json.dumps(keys) if keys else None
+
+
 def _to_read(scene: Scene, known_keys: set[str]) -> SceneRead:
     return SceneRead(
         id=scene.id,
@@ -83,6 +96,7 @@ def _to_read(scene: Scene, known_keys: set[str]) -> SceneRead:
         sfx_sound_id=scene.sfx_sound_id,
         music_sound_id=scene.music_sound_id,
         segment_missing=scene.seg_key not in known_keys,
+        joined_seg_keys=joined_keys(scene),
     )
 
 
@@ -91,7 +105,7 @@ def list_scenes(session: Session, project_id: int) -> ScenesRead:
     scenes = _scenes(session, project_id)
     segments = _current_segments(session, project_id)
     keys = {s.seg_key for s in segments}
-    covered = {s.seg_key for s in scenes}
+    covered = {k for s in scenes for k in scene_keys(s)}
     return ScenesRead(
         project_id=project_id,
         editable=project.status in EDITABLE,
@@ -129,13 +143,17 @@ def recompute_timings(session: Session, project_id: int) -> None:
         segment = segments.get(scene.seg_key)
         seg_duration = segment.est_duration_s if segment else FALLBACK_SEGMENT_S
         duration = seg_duration / per_segment[scene.seg_key]
+        for key in joined_keys(scene):  # escena unida: suma el tiempo de los otros
+            joined = segments.get(key)
+            duration += joined.est_duration_s if joined else 0
         scene.position = position
         scene.start_s = round(t, 2)
         t += duration
         scene.end_s = round(t, 2)
         scene.timing_source = "estimated"
         if segment:
-            scene.narration = segment.text
+            texts = [segments[k].text for k in scene_keys(scene) if k in segments]
+            scene.narration = " ".join(texts)
 
     # Con voz vigente (generada o transcrita), cada segmento toma su tiempo real y lo reparte
     # entre sus escenas (sección 5.9). Imports locales: voice y media dependen de scenes.
@@ -153,6 +171,11 @@ def recompute_timings(session: Session, project_id: int) -> None:
                 scene.start_s = round(start + step * i, 2)
                 scene.end_s = round(start + step * (i + 1), 2)
                 scene.timing_source = source
+        # Una escena unida termina donde termina el último segmento que cubre.
+        for scene in scenes:
+            joined = [real[k] for k in joined_keys(scene) if k in real]
+            if joined:
+                scene.end_s = round(joined[-1][1], 2)
 
     from .media.service import sync_approved_names
 
@@ -229,7 +252,7 @@ def build_scenes_prompt(
 
 
 def _pending_targets(scenes: list[Scene], segments: list[SegmentRead]) -> list[str]:
-    covered = {s.seg_key for s in scenes}
+    covered = {k for s in scenes for k in scene_keys(s)}
     review = {s.seg_key for s in scenes if s.status == "review"}
     return [s.seg_key for s in segments if s.seg_key not in covered or s.seg_key in review]
 
@@ -314,6 +337,11 @@ def _store_scenes(
         if mode == "all" or scene.seg_key in target_set or scene.seg_key not in current_keys:
             drop.append(scene)  # regenerada o su segmento ya no existe
         else:
+            # Los segmentos unidos que se regeneran (o ya no existen) se separan.
+            _set_joined(
+                scene,
+                [k for k in joined_keys(scene) if k in current_keys and k not in target_set],
+            )
             keep.setdefault(scene.seg_key, []).append(scene)
     _drop_scenes(session, drop)
 
@@ -411,7 +439,9 @@ def _insert_after(session: Session, scene: Scene, copy: Scene) -> None:
 
 
 def _copy(scene: Scene, keep_content: bool) -> Scene:
-    fields = scene.model_dump(exclude={"id", "position", "approved_asset_id", "status"})
+    fields = scene.model_dump(
+        exclude={"id", "position", "approved_asset_id", "status", "joined_seg_keys"}
+    )
     copy = Scene(**fields, position=0, status="pending")
     if not keep_content:
         copy.visual_description = None
@@ -423,9 +453,60 @@ def split_scene(session: Session, scene_id: int) -> ScenesRead:
     descripción vacía; el tiempo del segmento se reparte entre ambas."""
     scene = get_scene(session, scene_id)
     _editable_project(session, scene.project_id)
-    _insert_after(session, scene, _copy(scene, keep_content=False))
+    copy = _copy(scene, keep_content=False)
+    keys = joined_keys(scene)
+    if keys:  # escena unida: dividir la separa otra vez (el último segmento vuelve a su escena)
+        copy.seg_key = keys[-1]
+        _set_joined(scene, keys[:-1])
+    _insert_after(session, scene, copy)
     session.commit()
     return list_scenes(session, scene.project_id)
+
+
+def _joinable_project(session: Session, project_id: int) -> Project:
+    """Unir escenas se permite con las escenas en edición y también en la etapa de medios,
+    sin desbloquear las escenas (como cambiar el tipo de medio): no toca guion ni voz."""
+    project = get_project(session, project_id)
+    media_stage = (ProjectStatus.ESCENAS_APROBADAS, ProjectStatus.MEDIOS_EN_REVISION)
+    if project.status in EDITABLE or project.status in media_stage:
+        return project
+    if ORDER.index(project.status) < ORDER.index(ProjectStatus.GUION_APROBADO):
+        raise Conflict("Aprueba el guion antes de trabajar las escenas")
+    raise Conflict("Los medios están aprobados: desbloquéalos para unir escenas")
+
+
+def join_next_scene(session: Session, scene_id: int) -> ScenesRead:
+    """Une la escena con la siguiente: queda una sola que cubre el tiempo de ambas (la suma)
+    con la narración de las dos, y conserva el medio, el efecto y los textos de la primera.
+    La voz y el guion no cambian. «Dividir escena» las vuelve a separar."""
+    scene = get_scene(session, scene_id)
+    project = _joinable_project(session, scene.project_id)
+    scenes = _scenes(session, project.id)
+    nxt = next((s for s in scenes if s.position == scene.position + 1), None)
+    if nxt is None:
+        raise DomainError("Es la última escena: no hay una siguiente para unir")
+    if not scene.approved_asset_id and nxt.approved_asset_id:
+        raise DomainError(
+            f"La escena {scene.position} no tiene medio aprobado y la {nxt.position} sí: "
+            f"aprueba un medio en la {scene.position} antes de unirlas"
+        )
+    if nxt.seg_key != scene_keys(scene)[-1]:
+        if sum(1 for s in scenes if s.seg_key == nxt.seg_key) > 1:
+            raise DomainError(
+                f"La escena {nxt.position} comparte su frase con otras escenas: "
+                "únela primero con ellas"
+            )
+        _set_joined(scene, [*joined_keys(scene), *scene_keys(nxt)])
+    # Mismo segmento: basta con quitar la siguiente (el tiempo se reparte entre menos escenas).
+    removed = nxt.position
+    _drop_scenes(session, [nxt])
+    recompute_timings(session, project.id)
+    project.updated_at = now_iso()
+    log_operation(
+        session, "join", "scene", scene.id, {"with": removed, "segments": scene_keys(scene)}
+    )
+    session.commit()
+    return list_scenes(session, project.id)
 
 
 def duplicate_scene(session: Session, scene_id: int) -> ScenesRead:

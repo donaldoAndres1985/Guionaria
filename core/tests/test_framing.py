@@ -298,9 +298,7 @@ def test_extend_copies_crop_and_replaces_existing_next_media(
             Path(dst).write_bytes(b"encuadrado"),
         ),
     )
-    monkeypatch.setattr(
-        framing.process, "video_info", lambda p: MediaInfo(1080, 1920, 8.0, None)
-    )
+    monkeypatch.setattr(framing.process, "video_info", lambda p: MediaInfo(1080, 1920, 8.0, None))
     crop = center_crop(1920, 1080, 1080, 1920).model_dump()
     resp = client.post(eurl(video, asset["id"]), json={"mode": "crop", "crop": crop})
     assert resp.status_code == 200, resp.text

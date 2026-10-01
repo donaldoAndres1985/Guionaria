@@ -235,9 +235,7 @@ def test_overlay_box_typewriter_and_scale():
     # En el borrador (720 de ancho) todo se escala: tamaño, borde y posición.
     draft = [overlay(0, 2, "x", size=90)]
     small = dialogues(
-        captions.build_ass(
-            [], SubtitleStyle(), 720, 1280, overlays=draft, overlay_scale=720 / 1080
-        )
+        captions.build_ass([], SubtitleStyle(), 720, 1280, overlays=draft, overlay_scale=720 / 1080)
     )[0]
     assert r"\pos(360,640)" in small and r"\bord2.7" in small
 

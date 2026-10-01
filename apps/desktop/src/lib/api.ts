@@ -343,6 +343,8 @@ export interface Scene {
   sfx_sound_id?: number | null;
   music_sound_id?: number | null;
   segment_missing: boolean;
+  /** Segmentos siguientes que también cubre (escenas unidas con «Unir con la siguiente»). */
+  joined_seg_keys?: string[];
 }
 
 export type SceneUpdate = Partial<

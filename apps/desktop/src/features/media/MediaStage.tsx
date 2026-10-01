@@ -1,4 +1,4 @@
-import { Check, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Repeat, Search, Sparkles, Star, Type, Unlock, X } from "lucide-react";
+import { Check, Combine, Crop as CropIcon, ExternalLink, Film, HelpCircle, Scissors, Library, Image as ImageIcon, KeyRound, LoaderCircle, Repeat, Search, Sparkles, Star, Type, Unlock, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -17,7 +17,8 @@ import { TrimDialog, type TrimTarget } from "./TrimDialog";
 import { LibraryPickerDialog } from "@/features/library/LibraryPickerDialog";
 import { SceneSoundsBar } from "@/features/sounds/SceneSoundsBar";
 import { mediaKeys, useUnlockMedia } from "@/hooks/useMedia";
-import { useScenes } from "@/hooks/useScenes";
+import { useSceneAction, useScenes } from "@/hooks/useScenes";
+import { toast } from "sonner";
 import { useOpenUrl } from "@/hooks/useManualMedia";
 import { framingLabel } from "./framingMeta";
 import { MediaViewer } from "./MediaViewer";
@@ -45,6 +46,8 @@ export function MediaStage({
   const [trim, setTrim] = useState<TrimTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmUnlock, setConfirmUnlock] = useState(false);
+  const [confirmJoin, setConfirmJoin] = useState(false);
+  const sceneAction = useSceneAction(project.id);
   const unlock = useUnlockMedia(project.id);
   const [mergePicks, setMergePicks] = useState<number[]>([]); // id de candidato de hasta 2 videos
   const helpHidden = useUiStore((s) => s.mediaHelpHidden);
@@ -117,6 +120,8 @@ export function MediaStage({
       return [...picks, candidateId];
     });
   }
+
+  const nextScene = scene ? scenes.find((s) => s.position === scene.position + 1) : undefined;
 
   const mergeCandidates = mergePicks
     .map((id) => scene?.candidates.find((c) => c.id === id))
@@ -257,6 +262,18 @@ export function MediaStage({
                   >
                     <Repeat className="size-3" />
                     Cambiar a {scene.media_kind === "video" ? "imagen" : "video"}
+                  </button>
+                )}
+                {ctl.editable && nextScene && (
+                  <button
+                    type="button"
+                    disabled={sceneAction.isPending}
+                    title={`Unir con la escena ${nextScene.position}: queda una sola escena con la suma de los tiempos`}
+                    onClick={() => setConfirmJoin(true)}
+                    className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-panel-2 hover:text-foreground disabled:opacity-50"
+                  >
+                    <Combine className="size-3" />
+                    Unir con la {nextScene.position}
                   </button>
                 )}
                 <span className="font-mono text-[11px] text-subtle">
@@ -587,6 +604,23 @@ export function MediaStage({
           unlock.mutate();
         }}
       />
+      {scene && nextScene && (
+        <ConfirmDialog
+          open={confirmJoin}
+          onOpenChange={setConfirmJoin}
+          title={`¿Unir la escena ${scene.position} con la ${nextScene.position}?`}
+          description={`Queda una sola escena con la suma de los tiempos, la narración de ambas y el medio de la ${scene.position}; los medios de la ${nextScene.position} se descartan. La voz no cambia. En Escenas, «Separar la última frase unida» las vuelve a separar.`}
+          confirmLabel="Unir escenas"
+          pending={sceneAction.isPending}
+          onConfirm={() => {
+            setConfirmJoin(false);
+            sceneAction.mutate(
+              { id: scene.scene_id, action: "join-next" },
+              { onSuccess: () => toast.success("Escenas unidas: los tiempos se sumaron") },
+            );
+          }}
+        />
+      )}
       <FramingDialog projectId={project.id} target={framing} onClose={() => setFraming(null)} />
       <TrimDialog projectId={project.id} target={trim} onClose={() => setTrim(null)} />
       {!trim && ctl.trimQueue.length > 0 && (

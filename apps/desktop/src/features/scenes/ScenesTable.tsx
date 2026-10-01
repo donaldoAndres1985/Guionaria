@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import {
   Check,
+  Combine,
   Copy,
   EllipsisVertical,
   GripVertical,
@@ -139,7 +140,9 @@ export function ScenesTable({
               <p className="line-clamp-4 text-[12px] leading-snug text-muted-foreground">
                 {scene.narration}
               </p>
-              <span className="font-mono text-[10px] text-subtle">{scene.seg_key}</span>
+              <span className="font-mono text-[10px] text-subtle">
+                {[scene.seg_key, ...(scene.joined_seg_keys ?? [])].join(" + ")}
+              </span>
             </div>
           );
         },
@@ -251,8 +254,13 @@ export function ScenesTable({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => onAction(row.original.id, "split")}>
-                  <Scissors /> Dividir escena
+                  <Scissors /> {row.original.joined_seg_keys?.length ? "Separar la última frase unida" : "Dividir escena"}
                 </DropdownMenuItem>
+                {row.index < scenes.length - 1 && (
+                  <DropdownMenuItem onSelect={() => onAction(row.original.id, "join-next")}>
+                    <Combine /> Unir con la siguiente
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onSelect={() => onAction(row.original.id, "duplicate")}>
                   <Copy /> Duplicar
                 </DropdownMenuItem>
