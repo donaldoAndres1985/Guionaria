@@ -84,6 +84,30 @@ def split(scene_id: int, session: SessionDep) -> ScenesRead:
     return svc.split_scene(session, scene_id)
 
 
+@router.post("/api/scenes/{scene_id}:join-next", response_model=ScenesRead)
+async def join_next(scene_id: int, session: SessionDep) -> ScenesRead:
+    """Une la escena con la siguiente (una sola escena, con la suma de los tiempos). Si su
+    video tenía un final de tramo, se libera para cubrir la escena más larga; si tenía
+    encuadre, se vuelve a codificar en segundo plano."""
+    from ..services.media import framing
+
+    result = svc.join_next_scene(session, scene_id)
+    asset_id = svc.get_scene(session, scene_id).approved_asset_id
+    if asset_id and framing.release_trim_end(session, scene_id, asset_id):
+
+        async def work(ctx: JobContext) -> dict:
+            return await framing.render_framed_video(_session_factory, scene_id, asset_id, ctx)
+
+        jobs.submit(
+            "frame_media",
+            work,
+            project_id=result.project_id,
+            payload={"scene_id": scene_id, "asset_id": asset_id},
+            exclusive=False,
+        )
+    return svc.list_scenes(session, result.project_id)
+
+
 @router.post("/api/scenes/{scene_id}:duplicate", response_model=ScenesRead)
 def duplicate(scene_id: int, session: SessionDep) -> ScenesRead:
     return svc.duplicate_scene(session, scene_id)

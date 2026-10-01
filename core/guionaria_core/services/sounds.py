@@ -360,9 +360,7 @@ def delete_sound(session: Session, sound_id: int) -> None:
     from ..models import TimelineItem
 
     if session.exec(select(TimelineItem).where(TimelineItem.sound_id == sound.id)).first():
-        raise Conflict(
-            "El sonido está en una pista del timeline: quítalo de ahí antes de borrarlo"
-        )
+        raise Conflict("El sonido está en una pista del timeline: quítalo de ahí antes de borrarlo")
     (get_paths().home / sound.file_path).unlink(missing_ok=True)
     log_operation(session, "delete", "sound", sound.id, {"title": sound.title})
     session.delete(sound)

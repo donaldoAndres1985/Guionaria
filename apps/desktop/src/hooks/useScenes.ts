@@ -78,7 +78,7 @@ export function useReorderScenes(projectId: number) {
   });
 }
 
-export type SceneAction = "split" | "duplicate" | "delete" | "reviewed";
+export type SceneAction = "split" | "duplicate" | "delete" | "reviewed" | "join-next";
 
 export function useSceneAction(projectId: number) {
   const client = useQueryClient();
@@ -92,9 +92,15 @@ export function useSceneAction(projectId: number) {
       }
       return api.post<ScenesState>(`/api/scenes/${id}:${action}`, {});
     },
-    onSuccess: (state) => {
+    onSuccess: (state, { action }) => {
       if (state) setScenes(state);
       else void client.invalidateQueries({ queryKey: key(projectId) });
+      if (action === "join-next") {
+        // Unir cambia medios y tiempos: se recargan medios y timeline.
+        void client.invalidateQueries({ queryKey: ["media"] });
+        void client.invalidateQueries({ queryKey: ["timeline"] });
+        void client.invalidateQueries({ queryKey: ["scene-media"] });
+      }
     },
   });
 }

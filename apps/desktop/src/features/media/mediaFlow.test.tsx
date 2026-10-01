@@ -91,6 +91,9 @@ describe("flujo de medios en pantalla", () => {
           const body = JSON.parse(String(init.body)) as { kind: "video" | "image" };
           return ok({ ...sceneMedia(1), media_kind: body.kind, search_kind: body.kind });
         }
+        if (path === "/api/scenes/1:join-next") {
+          return ok({ project_id: 1, editable: false, approved: true, scenes: [], total_s: 0, review_count: 0, segments_without_scenes: [] });
+        }
         if (path === "/api/scenes/1/assets:merge") {
           mergeBody = JSON.parse(String(init?.body));
           return ok({ id: 7, type: "merge_media", project_id: 1, status: "running", progress: 0.1,
@@ -220,5 +223,13 @@ describe("flujo de medios en pantalla", () => {
     expect(screen.getByText(/se descarga 1 antes/)).toBeTruthy();
     fireEvent.click(screen.getByText("Fusionar en un video"));
     await waitFor(() => expect(mergeBody).toEqual({ candidate_ids: [201, 202] }));
+  });
+
+  it("«Unir con la siguiente» pide confirmación y une las escenas sin desbloquearlas", async () => {
+    renderStage();
+    fireEvent.click(await screen.findByRole("button", { name: "Unir con la 2" }));
+    expect(screen.getByText("¿Unir la escena 1 con la 2?")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Unir escenas" }));
+    await waitFor(() => expect(posts).toContain("/api/scenes/1:join-next"));
   });
 });

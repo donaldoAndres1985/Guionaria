@@ -425,3 +425,41 @@ def test_export_without_scenes(client, approved):
 
 def test_delete_project_with_scenes(client, with_scenes):
     assert client.delete(purl(with_scenes)).status_code == 204
+
+
+def test_join_next_scene_sums_time_and_split_separates_again(client, with_scenes):
+    a, b, c, d = ids(client, with_scenes)
+
+    # b y c comparten seg_002: unirlas solo quita c y b cubre todo el segmento.
+    state = client.post(f"/api/scenes/{b}:join-next").json()
+    assert [s["id"] for s in state["scenes"]] == [a, b, d]
+    assert timings(state) == [(0.0, 2.5), (2.5, 5.0), (5.0, 8.0)]
+    assert state["scenes"][1]["joined_seg_keys"] == []
+
+    # b (seg_002) + d (seg_003): una sola escena con la suma de los tiempos y ambas frases.
+    state = client.post(f"/api/scenes/{b}:join-next").json()
+    assert [s["id"] for s in state["scenes"]] == [a, b]
+    assert timings(state) == [(0.0, 2.5), (2.5, 8.0)]
+    joined = state["scenes"][1]
+    assert joined["seg_key"] == "seg_002"
+    assert joined["joined_seg_keys"] == ["seg_003"]
+    assert joined["narration"] == "Ocurrió en 2008 en CDMX. Tenía 19 años y nadie contestó."
+    assert state["segments_without_scenes"] == []
+    assert state["total_s"] == 8.0
+
+    # Dividir la escena unida devuelve el último segmento a una escena propia.
+    state = client.post(f"/api/scenes/{b}:split").json()
+    assert timings(state) == [(0.0, 2.5), (2.5, 5.0), (5.0, 8.0)]
+    assert [s["seg_key"] for s in state["scenes"]] == ["seg_001", "seg_002", "seg_003"]
+    assert all(s["joined_seg_keys"] == [] for s in state["scenes"])
+    assert state["scenes"][1]["narration"] == "Ocurrió en 2008 en CDMX."
+
+
+def test_join_next_scene_rules(client, with_scenes):
+    a, b, c, d = ids(client, with_scenes)
+    shared = client.post(f"/api/scenes/{a}:join-next")
+    assert shared.status_code == 400
+    assert "comparte su frase" in shared.json()["detail"]
+    last = client.post(f"/api/scenes/{d}:join-next")
+    assert last.status_code == 400
+    assert "última escena" in last.json()["detail"]

@@ -395,6 +395,21 @@ def save_framing(
     return framing_read(session, project, row, asset), pending_job
 
 
+def release_trim_end(session: Session, scene_id: int, asset_id: int) -> bool:
+    """La escena creció (se unió con la siguiente): el video principal ya no corta donde
+    terminaba antes, sigue hasta cubrirla. Devuelve si hay que volver a codificarlo."""
+    row = session.get(SceneAsset, (scene_id, asset_id))
+    if not row or row.trim_out_s is None:
+        return False
+    data = load(row)
+    crop = Crop(**data["crop"]) if data.get("crop") else None
+    framed = FramingIn(
+        mode=data.get("mode", "none"), crop=crop, trim_in_s=row.trim_in_s, trim_out_s=None
+    )
+    _state, pending = save_framing(session, scene_id, asset_id, framed)
+    return pending
+
+
 class ExtendedFraming(BaseModel):
     """Resultado de extender un video a la escena siguiente (sección 5.6)."""
 

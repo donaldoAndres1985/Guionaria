@@ -238,6 +238,7 @@ Equivalente a la tabla que hoy haces a mano, pero editable y conectada:
 
 - Generada por Claude desde el guion aprobado (JSON validado, sección 11).
 - Edición en celda, reordenar, dividir escena, duplicar, eliminar.
+- **Unir con la siguiente**: dos escenas seguidas quedan en una sola que cubre la suma de sus tiempos (puede abarcar varios segmentos: `joined_seg_keys`), con la narración de ambas y el medio, efecto y textos de la primera; los medios de la segunda se descartan. Si el video principal tenía final de tramo, se libera para cubrir la escena más larga (y se recodifica si tenía encuadre). No cambia guion ni voz. Se permite también en la etapa de medios sin desbloquear las escenas (botón «Unir con la N»), mientras los medios no estén aprobados. «Dividir escena» sobre una escena unida devuelve su último segmento a una escena propia.
 - Filtros por estado y tipo (tabs como referencia 04: *Todas 24 · Video 10 · Imagen 8 · Real 4 · Texto 2*).
 - Exportar tabla a Markdown/CSV/PDF (para trabajar fuera de la app).
 

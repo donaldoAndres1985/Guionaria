@@ -88,6 +88,7 @@ class SceneRead(BaseModel):
     sfx_sound_id: int | None = None
     music_sound_id: int | None = None
     segment_missing: bool  # su segmento ya no está en el guion
+    joined_seg_keys: list[str] = []  # segmentos siguientes que también cubre
 
 
 class ScenesRead(BaseModel):
