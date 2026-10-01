@@ -9,6 +9,7 @@ from ..db import get_engine, get_session
 from ..schemas.media import (
     ApproveRequest,
     DownloadRequest,
+    MediaKindRequest,
     MediaOverview,
     SceneMediaRead,
     SearchRequest,
@@ -116,6 +117,12 @@ def approve_asset(
 @router.post("/api/scenes/{scene_id}/assets/{asset_id}:unapprove", response_model=SceneMediaRead)
 def unapprove_asset(scene_id: int, asset_id: int, session: SessionDep) -> SceneMediaRead:
     return svc.unapprove_asset(session, scene_id, asset_id)
+
+
+@router.put("/api/scenes/{scene_id}/media-kind", response_model=SceneMediaRead)
+def set_media_kind(scene_id: int, data: MediaKindRequest, session: SessionDep) -> SceneMediaRead:
+    """Cambia el tipo de la escena entre video e imagen sin desbloquear las escenas."""
+    return svc.set_media_kind(session, scene_id, data.kind)
 
 
 @router.get("/api/assets/{asset_id}/file")

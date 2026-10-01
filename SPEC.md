@@ -262,6 +262,7 @@ Pantalla clave. Layout de lista + detalle (referencia 03):
   - `Copiar URL` · `Mostrar en carpeta` (si ya está descargado)
 - Si la descarga falla (bloqueo, 403, marca de agua, baja resolución): la tarjeta pasa a estado **"Manual"** con botones `Abrir en navegador` y una **zona de arrastre** para soltar el archivo que descargues tú.
 - Acciones sobre el medio aprobado: `Cambiar`, `Ver otros`, `Recortar/encuadre` (elegir el área visible en 16:9 o 9:16), `Marcar recorte de tiempo` (inicio/fin del clip), `Quitar`.
+- **Cambiar el tipo de la escena** entre video e imagen (botón junto al título) sin desbloquear las escenas: solo cambia qué se busca de ahí en adelante, no toca lo ya aprobado (el timeline usa el tipo real de cada archivo).
 - Barra inferior: "Seleccionados 12 medios · 340 MB" + `Descargar seleccionados` / `Aprobar escena`.
 
 ### 5.7 Arrastrar y soltar / portapapeles

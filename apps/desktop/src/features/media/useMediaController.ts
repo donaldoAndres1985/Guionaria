@@ -10,6 +10,7 @@ import {
   useSceneMedia,
   useSearchMedia,
   useSelectCandidate,
+  useSetMediaKind,
   useSuggestQueries,
   useUnapproveAsset,
 } from "@/hooks/useMedia";
@@ -97,6 +98,7 @@ export function useMediaController(project: Project) {
   );
   const approveMutation = useApproveAsset(project.id);
   const unapproveMutation = useUnapproveAsset(project.id);
+  const kindMutation = useSetMediaKind(project.id);
   const importMutation = useImportMedia(project.id);
   const videoMutation = useVideoFromUrl();
   const [videoDialogUrl, setVideoDialogUrl] = useState<string | null>(null);
@@ -268,6 +270,10 @@ export function useMediaController(project: Project) {
     if (sceneId != null) unapproveMutation.mutate({ sceneId, assetId });
   }
 
+  function setMediaKind(kind: "video" | "image") {
+    if (sceneId != null) kindMutation.mutate({ sceneId, kind });
+  }
+
   function move(delta: 1 | -1) {
     if (!needing.length) return;
     const index = Math.max(0, needing.findIndex((s) => s.scene_id === sceneId));
@@ -335,6 +341,8 @@ export function useMediaController(project: Project) {
     approve,
     unapprove,
     approving: approveMutation.isPending,
+    setMediaKind,
+    changingKind: kindMutation.isPending,
     next: () => move(1),
     prev: () => move(-1),
   };

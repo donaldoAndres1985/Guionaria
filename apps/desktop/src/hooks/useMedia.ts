@@ -122,6 +122,16 @@ export function useUnapproveAsset(projectId: number) {
   });
 }
 
+/** Cambia el tipo de la escena entre video e imagen sin desbloquear las escenas. */
+export function useSetMediaKind(projectId: number) {
+  const onScene = useOnSceneMedia(projectId);
+  return useMutation({
+    mutationFn: ({ sceneId, kind }: { sceneId: number; kind: "video" | "image" }) =>
+      api.put<SceneMedia>(`/api/scenes/${sceneId}/media-kind`, { kind }),
+    onSuccess: onScene,
+  });
+}
+
 function useStageChange(projectId: number) {
   const client = useQueryClient();
   return (overview: MediaOverview) => {

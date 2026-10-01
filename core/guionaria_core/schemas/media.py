@@ -144,5 +144,9 @@ class ApproveRequest(BaseModel):
     role: Literal["main", "alt"] = "main"
 
 
+class MediaKindRequest(BaseModel):
+    kind: Literal["video", "image"]
+
+
 class SuggestResult(BaseModel):
     queries: list[str]
