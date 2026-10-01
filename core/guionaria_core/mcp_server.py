@@ -49,7 +49,9 @@ guion → escenas → medios → voz → timeline → render. Cada etapa se apru
 siguiente. Tú redactas el guion y las escenas y los guardas con save_script y save_scenes: la app
 no vuelve a llamar a Claude. Usa get_project para ver el estado y el paso siguiente.
 Medios: busca con search_media, elige con choose_media (el primero es el principal) y baja todo
-con download_and_approve; afina el momento exacto de un video con set_trim.
+con download_and_approve; afina el momento exacto de un video con set_trim. Si el usuario ya dejó
+material real en el disco (fotos, capturas, video), agrégalo directo con add_local_media (rutas
+absolutas: el núcleo corre en otra carpeta, no en la de la terminal donde se invocó Claude).
 Voz: generate_voice con Piper (gratis) o ElevenLabs (list_elevenlabs_voices para elegir la voz).
 Render: render_video con quality (draft, standard, high, max) y subtitle_preset (reel, clasico,
 caja); cancel_job lo detiene. Las herramientas que devuelven un trabajo (job) corren en segundo
@@ -1004,6 +1006,36 @@ def build_mcp() -> MCPServer:
             exclusive=False,
         )
         return _job_summary(job)
+
+    @tool
+    async def add_local_media(scene_id: int, paths: list[str]) -> dict[str, Any]:
+        """Agrega a la escena imágenes o videos que ya están en el disco del usuario (p. ej.
+        material real que dejó en la carpeta donde arrancó Claude): copia cada archivo al
+        proyecto igual que arrastrarlo en la app (miniatura, medidas y hash). El primero, si la
+        escena todavía no tiene medio principal, queda aprobado; el resto queda como candidato
+        para elegir en la app. Admite JPG/PNG/WebP/GIF y MP4/MOV/WebM/MKV/M4V. Las rutas deben
+        ser absolutas (resuélvelas con tus herramientas de archivos): el núcleo corre en su
+        propia carpeta, no en la de la terminal donde se invocó Claude."""
+        imported: list[str] = []
+        failed: list[dict[str, str]] = []
+        with _session() as s:
+            media.get_scene(s, scene_id)
+            for raw in paths:
+                source = Path(raw)
+                try:
+                    if not source.is_absolute():
+                        raise DomainError("Usa una ruta absoluta (el núcleo corre en otra carpeta)")
+                    if not source.is_file():
+                        raise DomainError("No se encontró el archivo")
+                    await manual.import_file(s, scene_id, source, original_name=source.name)
+                    imported.append(source.name)
+                except DomainError as exc:
+                    failed.append({"path": raw, "error": str(exc)})
+            return {
+                "imported": imported,
+                "failed": failed,
+                **_scene_media(media.scene_media(s, scene_id)),
+            }
 
     # --- SFX y música ---
 

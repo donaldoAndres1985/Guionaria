@@ -73,8 +73,8 @@ def test_initialize_and_list_tools(mcp):
         "list_channels", "create_project", "list_projects", "get_project", "save_script",
         "get_script", "update_segment", "approve_script", "save_scenes", "update_scene",
         "approve_scenes", "search_media", "select_candidates", "approve_media", "list_pending",
-        "add_media_from_url", "generate_voice", "transcribe_voice", "export_timeline",
-        "get_credits", "job_status",
+        "add_media_from_url", "add_local_media", "generate_voice", "transcribe_voice",
+        "export_timeline", "get_credits", "job_status",
     }  # fmt: skip
     assert expected <= set(tools)  # sección 12, más approve_all_media e import_voice
     assert "zoom_lento_in" in tools["save_scenes"]["description"]
@@ -252,6 +252,27 @@ def test_video_site_url_goes_to_yt_dlp(client, mcp, media_project, monkeypatch):
     assert job["type"] == "download_url"
     assert wait(client, job)["result"] == {"title": "clip"}
     assert calls == [(scene, "https://www.youtube.com/watch?v=abc", 5, 9)]
+
+
+def test_add_local_media_imports_files_already_on_disk(mcp, media_project, tmp_path):
+    from tests.test_manual import png_file
+
+    real_scene = media_project["scenes"][2]
+    good = png_file(tmp_path / "foto real.png")
+    missing = tmp_path / "no-existe.png"
+    result = mcp.call(
+        "add_local_media",
+        scene_id=real_scene,
+        paths=[str(good), "foto-relativa.png", str(missing)],
+    )
+    assert result["imported"] == ["foto real.png"]
+    assert result["status"] == "approved"  # el primero sin medio principal queda aprobado
+    errors = {f["path"]: f["error"] for f in result["failed"]}
+    assert "ruta absoluta" in errors["foto-relativa.png"]
+    assert errors[str(missing)] == "No se encontró el archivo"
+
+    with pytest.raises(ToolFailed, match="La escena no existe"):
+        mcp.call("add_local_media", scene_id=999999, paths=[str(good)])
 
 
 def test_structured_content_is_json_text_too(mcp, channel):

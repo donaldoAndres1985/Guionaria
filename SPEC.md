@@ -666,6 +666,7 @@ Reglas de validación: `tipo` ∈ enum; `busqueda_en` obligatoria si `tipo` ∈ 
 | `approve_media` | scene_id, asset_id | ok |
 | `list_pending` | project_id | escenas sin medio / manuales |
 | `add_media_from_url` | scene_id, url | asset o job |
+| `add_local_media` | scene_id, paths[] (rutas absolutas en disco) | medios importados / fallidos |
 | `generate_voice` | project_id, engine, voice | job |
 | `transcribe_voice` | project_id | tiempos reales aplicados |
 | `export_timeline` | project_id, format (otio/fcpxml/edl) | rutas |
