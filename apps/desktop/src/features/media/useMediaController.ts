@@ -253,12 +253,22 @@ export function useMediaController(project: Project) {
 
   function approve(assetId: number, role: "main" | "alt" = "main") {
     if (sceneId == null) return;
+    // Ya tenía principal: es un cambio de medio, no la primera elección. Se queda en la misma
+    // escena en vez de saltar a la siguiente sin medio.
+    const hadMain = scene?.scene_id === sceneId && scene.approved.some((a) => a.role === "main");
     approveMutation.mutate(
       { sceneId, assetId, role },
       {
         onSuccess: () => {
           if (role !== "main") return;
-          // Tras aprobar el principal se pasa a la siguiente escena que aún no tiene medio.
+          if (hadMain) {
+            // Sin esto, si se llegó aquí por el salto automático (sin elegirla a mano en la
+            // lista), al quedar con medio la propia escena se recalcularía como «la siguiente
+            // sin medio» y saltaría sola a otra.
+            setPickedId(sceneId);
+            return;
+          }
+          // Primera vez que se aprueba: se pasa a la siguiente escena que aún no tiene medio.
           const next = needing.find((s) => s.scene_id !== sceneId && !hasMedia(s.status));
           if (next) setPickedId(next.scene_id);
         },
