@@ -211,6 +211,23 @@ describe("edición del timeline (como CapCut)", () => {
     await waitFor(() => expect(call("PATCH", "/api/overlay-items/101")?.body).toEqual({ duration_s: 2 }));
   });
 
+  it("zoom: «+» y «−» agrandan la línea de tiempo con scroll horizontal; «Ajustar» vuelve", async () => {
+    renderStage();
+    await ready();
+    const area = screen.getByTestId("tracks-viewport").firstElementChild as HTMLElement;
+    expect(area.style.width).toBe("100%");
+    expect((screen.getByLabelText("Alejar la línea de tiempo") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("Acercar la línea de tiempo"));
+    expect(screen.getByTestId("timeline-zoom").textContent).toBe("1.5×");
+    expect(area.style.width).toBe("150%");
+    fireEvent.click(screen.getByLabelText("Acercar la línea de tiempo"));
+    expect(area.style.width).toBe("225%");
+    fireEvent.click(screen.getByLabelText("Alejar la línea de tiempo"));
+    expect(area.style.width).toBe("150%");
+    fireEvent.click(screen.getByRole("button", { name: "Ajustar" }));
+    expect(area.style.width).toBe("100%");
+  });
+
   it("borrar una pista propia pide confirmación", async () => {
     renderStage();
     await ready();

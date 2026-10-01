@@ -14,8 +14,10 @@ import {
   SkipForward,
   Type,
   Volume2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { NoticeBanner } from "@/components/JobProgress";
 import { Button } from "@/components/ui/button";
@@ -55,7 +57,7 @@ import { CutMarkers, TransitionsPanel, transitionsSummary } from "./TransitionsP
 import { LookPanel, lookSummary } from "./LookPanel";
 import { BackgroundAudioPanel, backgroundSummary, useBackground } from "./BackgroundAudioPanel";
 import { useTransitions } from "@/hooks/useTransitions";
-import { exportedAt, FORMAT_FILES, MARKER_TONE, pct, resolutionLabel, rulerTicks } from "./timelineMeta";
+import { exportedAt, FORMAT_FILES, MARKER_TONE, maxZoom, nextZoom, pct, resolutionLabel, rulerTicks } from "./timelineMeta";
 
 const TONE = Object.fromEntries(KINDS.map((k) => [k.id, k.tone]));
 
@@ -596,18 +598,73 @@ function Tracks({
   addMenu?: React.ReactNode;
 }) {
   const area = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   const scrubbing = useRef(false);
+  // Zoom horizontal: 1 = todo el video a la vista; más = se agranda y se recorre con scroll.
+  const [zoom, setZoom] = useState(1);
+  const top = maxZoom(duration);
   const at = (clientX: number) => {
     const rect = area.current!.getBoundingClientRect();
     return ((clientX - rect.left) / (rect.width || 1)) * duration;
   };
+  const changeZoom = (next: number) => setZoom(Math.min(Math.max(next, 1), top));
+  // Al cambiar el zoom, el cabezal queda a la vista (centrado).
+  useLayoutEffect(() => {
+    const v = viewport.current;
+    if (!v || !duration) return;
+    const x = (time / duration) * v.scrollWidth;
+    v.scrollLeft = Math.max(x - v.clientWidth / 2, 0);
+  }, [zoom]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Ctrl + rueda: acercar/alejar (oyente nativo no pasivo, para que no haga zoom la página).
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  useEffect(() => {
+    const v = viewport.current;
+    if (!v) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom(Math.min(Math.max(nextZoom(zoomRef.current, e.deltaY < 0 ? 1 : -1), 1), maxZoom(duration)));
+    };
+    v.addEventListener("wheel", onWheel, { passive: false });
+    return () => v.removeEventListener("wheel", onWheel);
+  }, [duration]);
+  // Al reproducir, la vista sigue al cabezal cuando se sale de pantalla.
+  useEffect(() => {
+    const v = viewport.current;
+    if (!v || zoom <= 1 || !duration) return;
+    const x = (time / duration) * v.scrollWidth;
+    if (x < v.scrollLeft || x > v.scrollLeft + v.clientWidth - 8) v.scrollLeft = Math.max(x - v.clientWidth * 0.1, 0);
+  }, [time, zoom, duration]);
   return (
     <div className="shrink-0 border-t bg-panel">
-      <div className="grid grid-cols-[96px_minmax(0,1fr)]">
+      <div className="flex h-7 items-center gap-1 border-b px-2 text-[11px] text-muted-foreground">
+        <span className="mr-auto">Ctrl + rueda del mouse: acercar o alejar</span>
+        <button type="button" aria-label="Alejar la línea de tiempo" title="Alejar (−)" disabled={zoom <= 1} onClick={() => changeZoom(nextZoom(zoom, -1))} className="rounded p-1 hover:bg-panel-2 hover:text-foreground disabled:opacity-40">
+          <ZoomOut className="size-3.5" />
+        </button>
+        <input
+          type="range"
+          aria-label="Zoom de la línea de tiempo"
+          min={0}
+          max={100}
+          value={top > 1 ? Math.round((Math.log(zoom) / Math.log(top)) * 100) : 0}
+          onChange={(e) => changeZoom(Math.round(top ** (Number(e.target.value) / 100) * 100) / 100)}
+          className="w-28 accent-[var(--accent)]"
+        />
+        <button type="button" aria-label="Acercar la línea de tiempo" title="Acercar (+)" disabled={zoom >= top} onClick={() => changeZoom(nextZoom(zoom, 1))} className="rounded p-1 hover:bg-panel-2 hover:text-foreground disabled:opacity-40">
+          <ZoomIn className="size-3.5" />
+        </button>
+        <span className="w-10 text-right font-mono" data-testid="timeline-zoom">{zoom < 10 ? zoom.toFixed(1) : Math.round(zoom)}×</span>
+        <button type="button" disabled={zoom === 1} onClick={() => changeZoom(1)} className="rounded px-1.5 py-0.5 hover:bg-panel-2 hover:text-foreground disabled:opacity-40">
+          Ajustar
+        </button>
+      </div>
+      <div className="grid grid-cols-[150px_minmax(0,1fr)]">
         <div className="grid">
           <div className="flex h-6 items-center border-r border-b px-1">{addMenu}</div>
           {rows.map((r) => (
-            <div key={r.id} className={cn("flex items-center gap-1.5 border-r border-b px-2 text-[11px] text-muted-foreground", r.height)}>
+            <div key={r.id} className={cn("flex min-w-0 items-center gap-1.5 overflow-hidden border-r border-b px-2 text-[11px] text-muted-foreground", r.height)}>
               {r.header ?? (
                 <>
                   <r.icon className="size-3.5" /> {r.label}
@@ -617,9 +674,15 @@ function Tracks({
           ))}
         </div>
         <div
+          ref={viewport}
+          data-testid="tracks-viewport"
+          className="min-w-0 overflow-x-auto overflow-y-hidden"
+        >
+        <div
           ref={area}
           data-testid="tracks"
           className="relative cursor-text select-none"
+          style={{ width: `${zoom * 100}%` }}
           onPointerDown={(e) => {
             if ((e.target as HTMLElement).closest("[data-track-item]")) return;
             scrubbing.current = true;
@@ -630,7 +693,7 @@ function Tracks({
           onPointerUp={() => (scrubbing.current = false)}
         >
           <div className="relative h-6 border-b">
-            {rulerTicks(duration).map((t) => (
+            {rulerTicks(duration, zoom).map((t) => (
               <span
                 key={t}
                 className="absolute top-1 -translate-x-1/2 font-mono text-[10px] text-subtle first:translate-x-0"
@@ -653,6 +716,7 @@ function Tracks({
           >
             <span className="absolute -top-0.5 left-1/2 size-2.5 -translate-x-1/2 rotate-45 bg-brand" />
           </div>
+        </div>
         </div>
       </div>
     </div>

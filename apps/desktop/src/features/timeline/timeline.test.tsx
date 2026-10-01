@@ -6,7 +6,7 @@ import { useUiStore } from "@/stores/ui";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
 import { PreviewCanvas } from "./PreviewPlayer";
-import { clipCount, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
+import { clipCount, maxZoom, nextZoom, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
 
 const project = { id: 7, status: "VOZ_LISTA", title: "P", format: "reel" } as Project;
 
@@ -75,6 +75,12 @@ describe("utilidades del timeline", () => {
     expect(rulerStep(45)).toBe(5);
     expect(rulerStep(600)).toBe(60);
     expect(rulerTicks(4.9)).toEqual([0, 1, 2, 3, 4]);
+    // Con zoom, la regla marca más fino; nunca más de unos 3 s a lo ancho.
+    expect(rulerTicks(45, 5)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]);
+    expect(maxZoom(4.9)).toBe(4);
+    expect(maxZoom(60)).toBe(20);
+    expect(nextZoom(1, 1)).toBe(1.5);
+    expect(nextZoom(1.5, -1)).toBe(1);
     expect(pct(2.45, 4.9)).toBe(50);
     expect(pct(1, 0)).toBe(0);
   });

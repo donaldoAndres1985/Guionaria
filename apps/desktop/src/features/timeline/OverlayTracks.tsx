@@ -224,17 +224,18 @@ export function OverlayTrackLane({
             }}
             onKeyDown={(e) => e.key === "Enter" && onOpen(item)}
             className={cn(
-              "group absolute inset-y-1 flex cursor-grab items-center overflow-hidden rounded-sm border px-1.5 text-[10px] leading-none active:cursor-grabbing",
+              "group absolute inset-y-1 flex cursor-grab items-center overflow-hidden rounded-sm border px-2.5 text-[10px] leading-none active:cursor-grabbing",
               tone,
               selected && "ring-2 ring-brand ring-offset-1 ring-offset-panel",
             )}
-            style={{ left: `${pct(shown.start, duration)}%`, width: `max(${pct(shown.dur, duration)}%, 6px)` }}
+            style={{ left: `${pct(shown.start, duration)}%`, width: `max(${pct(shown.dur, duration)}%, 16px)` }}
           >
             {editable && (
               <span
                 aria-label="Mover el inicio"
                 onPointerDown={begin(item, "start")}
-                className="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-white/0 group-hover:bg-white/40"
+                title="Arrastra para cambiar el inicio"
+                className="absolute inset-y-0 left-0 z-10 flex w-2 cursor-ew-resize items-center justify-center bg-white/20 hover:bg-white/60"
               />
             )}
             <span className="pointer-events-none flex min-w-0 items-center gap-1 truncate">
@@ -245,7 +246,8 @@ export function OverlayTrackLane({
               <span
                 aria-label="Mover el final"
                 onPointerDown={begin(item, "end")}
-                className="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-white/0 group-hover:bg-white/40"
+                title="Arrastra para alargar o acortar"
+                className="absolute inset-y-0 right-0 z-10 flex w-2 cursor-ew-resize items-center justify-center bg-white/20 hover:bg-white/60"
               />
             )}
           </div>
