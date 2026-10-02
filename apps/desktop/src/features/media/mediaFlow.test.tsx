@@ -58,11 +58,13 @@ describe("flujo de medios en pantalla", () => {
   let posts: string[];
   let scene1Candidates: Candidate[];
   let mergeBody: unknown;
+  let scene1Over: Partial<SceneMedia>;
 
   beforeEach(() => {
     posts = [];
     scene1Candidates = [];
     mergeBody = undefined;
+    scene1Over = {};
     useUiStore.setState({ mediaHelpHidden: false });
     overview = {
       project_id: 1, orientation: "portrait", editable: true, approved: false, configured_providers: ["pexels"],
@@ -85,7 +87,7 @@ describe("flujo de medios en pantalla", () => {
         if (path === "/api/projects/1/scenes") return ok({ scenes: [], review_count: 0 });
         if (path.match(/\/api\/scenes\/\d+\/media$/)) {
           const id = Number(path.split("/")[3]);
-          return ok(id === 1 ? { ...sceneMedia(1), candidates: scene1Candidates } : sceneMedia(id));
+          return ok(id === 1 ? { ...sceneMedia(1), candidates: scene1Candidates, ...scene1Over } : sceneMedia(id));
         }
         if (init?.method === "PUT" && path === "/api/scenes/1/media-kind") {
           const body = JSON.parse(String(init.body)) as { kind: "video" | "image" };
@@ -179,6 +181,13 @@ describe("flujo de medios en pantalla", () => {
     fireEvent.click(toggle);
     expect(await screen.findByText("Cambiar a imagen")).toBeTruthy();
     expect(screen.getByText("Escena 1 · Video")).toBeTruthy();
+  });
+
+  it("una escena de material real también se puede pasar a video", async () => {
+    scene1Over = { media_kind: "real" };
+    renderStage();
+    fireEvent.click(await screen.findByText("Cambiar a video"));
+    expect(await screen.findByText("Escena 1 · Video")).toBeTruthy();
   });
 
   it("con medios ya aprobados, ofrece desbloquearlos para cambiar el principal de la escena", async () => {

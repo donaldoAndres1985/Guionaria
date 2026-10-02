@@ -252,7 +252,7 @@ export function MediaStage({
                 <span className="font-medium">
                   Escena {scene.position} · {KIND_LABEL[scene.media_kind]}
                 </span>
-                {ctl.editable && (scene.media_kind === "video" || scene.media_kind === "image") && (
+                {ctl.editable && (scene.media_kind === "video" || scene.media_kind === "image" || scene.media_kind === "real") && (
                   <button
                     type="button"
                     disabled={ctl.changingKind}
