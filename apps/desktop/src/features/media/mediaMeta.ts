@@ -22,6 +22,13 @@ export function orientationMismatch(c: Candidate, target: "landscape" | "portrai
   return target === "landscape" ? c.width < c.height : c.height < c.width;
 }
 
+/** ¿El video dura menos que la escena? (el último cuadro quedaría congelado en el timeline) */
+export function shortDuration(c: Candidate, sceneDurationS: number | null): boolean {
+  if (c.kind !== "video" || sceneDurationS == null) return false;
+  const duration = c.asset?.duration_s ?? c.duration_s;
+  return duration != null && duration < sceneDurationS;
+}
+
 export function canSelect(c: Candidate): boolean {
   return c.download_status === "none" || c.download_status === "failed";
 }

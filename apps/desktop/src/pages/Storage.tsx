@@ -21,6 +21,7 @@ import { BottomBar } from "@/components/layout/BottomBar";
 import { PageLayout } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
 import { CleanupDialog } from "@/features/storage/CleanupDialog";
+import { FullCleanupDialog } from "@/features/storage/FullCleanupDialog";
 import { formatSize, pathTo, percent, squarify } from "@/features/storage/treemap";
 import { useCleanupPreview, useStorageUsage } from "@/hooks/useStorage";
 import type { StorageNode } from "@/lib/api";
@@ -47,6 +48,7 @@ export function StoragePage() {
   const [currentId, setCurrentId] = useState("root");
   const [view, setView] = useState<"treemap" | "list">("treemap");
   const [cleaning, setCleaning] = useState(false);
+  const [fullCleaning, setFullCleaning] = useState(false);
 
   const trail = usage ? pathTo(usage.tree, currentId) : [];
   const current = trail.at(-1) ?? usage?.tree;
@@ -70,6 +72,9 @@ export function StoragePage() {
         >
           <Button size="lg" disabled={!preview?.total_count} onClick={() => setCleaning(true)}>
             <Trash2 /> Liberar {formatSize(preview?.total_bytes ?? 0)} de candidatos sin usar
+          </Button>
+          <Button size="lg" variant="outline" className="bg-panel" onClick={() => setFullCleaning(true)}>
+            <Trash2 /> Limpieza completa…
           </Button>
         </BottomBar>
       }
@@ -122,6 +127,7 @@ export function StoragePage() {
         </div>
       )}
       <CleanupDialog open={cleaning} preview={preview} onClose={() => setCleaning(false)} />
+      <FullCleanupDialog open={fullCleaning} usage={usage} onClose={() => setFullCleaning(false)} />
     </PageLayout>
   );
 }

@@ -515,7 +515,10 @@ def build_mcp() -> MCPServer:
     ) -> dict[str, Any]:
         """Busca medios para una escena con su búsqueda por defecto o la que indiques.
         provider: pexels, pixabay, unsplash, openverse, wikimedia o searxng (por defecto, los
-        adecuados al tipo de escena). Devuelve candidatos para select_candidates."""
+        adecuados al tipo de escena). Devuelve candidatos para select_candidates.
+        Para video: elige en choose_media un candidato con duration_s mayor o igual que
+        scene_duration_s cuando lo haya; uno más corto deja el último cuadro congelado en el
+        timeline. Si ninguno alcanza, busca con otra consulta o página antes de conformarte."""
         from .schemas.media import SearchRequest
 
         with _session() as s:
@@ -526,9 +529,13 @@ def build_mcp() -> MCPServer:
                 any_orientation=any_orientation,
             )
             result = await media.search_scene(s, scene_id, req)
+            scene = result.scene
+            has_span = scene.end_s is not None and scene.start_s is not None
+            duration = (scene.end_s - scene.start_s) if has_span else None
             return {
                 "warnings": result.warnings,
                 "has_more": result.has_more,
+                "scene_duration_s": duration,
                 "candidates": [_candidate(c) for c in result.scene.candidates],
             }
 
@@ -554,7 +561,8 @@ def build_mcp() -> MCPServer:
     def choose_media(scene_id: int, candidate_ids: list[int]) -> dict[str, Any]:
         """Marca candidatos como elegidos (en ese orden: el primero será el principal) sin
         descargarlos todavía. Después usa download_and_approve para bajar lo elegido de todas
-        las escenas a la vez."""
+        las escenas a la vez. En video, prioriza candidatos con duration_s >= scene_duration_s
+        (de search_media): uno más corto congela el último cuadro en el timeline."""
         with _session() as s:
             result = None
             for cid in candidate_ids:

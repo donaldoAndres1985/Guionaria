@@ -532,6 +532,7 @@ export function MediaStage({
                         candidate={c}
                         index={i}
                         orientation={ctl.overview!.orientation}
+                        sceneDurationS={scene.end_s != null && scene.start_s != null ? scene.end_s - scene.start_s : null}
                         selected={ctl.selected.includes(c.id)}
                         approvedRole={scene.approved.find((a) => a.asset.id === c.asset?.id)?.role ?? null}
                         editable={ctl.editable}

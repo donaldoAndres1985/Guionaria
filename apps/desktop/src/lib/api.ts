@@ -997,6 +997,9 @@ export interface CleanupPreview {
   total_bytes: number;
 }
 
+/** Partes que se pueden borrar a mano desde «Limpieza completa» (storage.py: CLEANABLE_PARTS). */
+export type CleanablePart = "manual" | "approved" | "audio" | "timeline" | "render";
+
 export type HistoryActor = "ui" | "mcp" | "system";
 
 export interface HistoryItem {

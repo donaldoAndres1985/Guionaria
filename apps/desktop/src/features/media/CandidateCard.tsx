@@ -2,13 +2,15 @@ import { Check, Expand, LoaderCircle, RotateCw, Star, TriangleAlert, Upload } fr
 import { useRef } from "react";
 import { coreUrl, type Candidate } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { canSelect, formatClip, formatResolution, orientationMismatch } from "./mediaMeta";
+import { canSelect, formatClip, formatResolution, orientationMismatch, shortDuration } from "./mediaMeta";
 import { PROVIDER_LABEL } from "./useMediaController";
 
 interface CandidateCardProps {
   candidate: Candidate;
   index: number;
   orientation: "landscape" | "portrait";
+  /** Duración de la escena (s): un video más corto deja el último cuadro congelado. */
+  sceneDurationS?: number | null;
   selected: boolean;
   approvedRole: "main" | "alt" | null;
   editable: boolean;
@@ -28,6 +30,7 @@ export function CandidateCard({
   candidate: c,
   index,
   orientation,
+  sceneDurationS = null,
   selected,
   approvedRole,
   editable,
@@ -151,6 +154,11 @@ export function CandidateCard({
           {orientationMismatch(c, orientation) && (
             <span title="Otra orientación: se recortará" className="text-warning">
               ⤢
+            </span>
+          )}
+          {shortDuration(c, sceneDurationS) && (
+            <span title="Más corto que la escena: el último cuadro quedará congelado" className="text-warning">
+              <TriangleAlert className="size-3" />
             </span>
           )}
           {c.asset?.low_res && (
