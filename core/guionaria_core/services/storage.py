@@ -17,7 +17,7 @@ from ..config import get_paths
 from ..domain.states import ORDER, ProjectStatus
 from ..models import Asset, Channel, Project, Scene, SceneAsset, SceneCandidate
 from ..models._base import now_iso
-from .errors import NotFound
+from .errors import DomainError, NotFound
 from .oplog import log_operation
 from .projects import project_dir
 
@@ -285,5 +285,50 @@ def cleanup_candidates(session: Session, project_ids: list[int]) -> CleanupResul
             project = session.get(Project, project_id)
             project.updated_at = now_iso()
             log_operation(session, "cleanup", "project", project_id, {"deleted": len(assets)})
+    session.commit()
+    return CleanupResult(deleted=deleted, freed_bytes=freed)
+
+
+# --- limpieza de medios usados (videos renderizados, aprobados, voz) ---
+
+# Partes que se pueden borrar a mano cuando el proyecto ya está terminado. "candidates" tiene su
+# propio flujo (cleanup_candidates, que conserva el candidato para volver a descargarlo) y "other"
+# es el guion y las escenas: no se tocan aquí.
+CLEANABLE_PARTS: tuple[str, ...] = ("manual", "approved", "audio", "timeline", "render")
+
+
+def cleanup_media(session: Session, project_ids: list[int], parts: list[str]) -> CleanupResult:
+    """Borra del disco las carpetas elegidas (aprobados, agregados a mano, voz, timeline o
+    render) de los proyectos indicados: para cuando el video ya está terminado y sobra el
+    material usado para hacerlo. No toca la base de datos ni las filas de medios: si hace falta
+    reeditar, la app avisa del archivo que falta en vez de fallar (igual que con un proyecto
+    movido a mano)."""
+    bad = [p for p in parts if p not in CLEANABLE_PARTS]
+    if bad:
+        raise DomainError(f"Eso no se puede borrar así: {', '.join(bad)}")
+    if not parts:
+        raise DomainError("Elige qué borrar")
+    sub_map = {key: subs for key, _label, subs in PROJECT_PARTS}
+    deleted = freed = 0
+    for project_id in project_ids:
+        project = session.get(Project, project_id)
+        if not project:
+            raise NotFound(f"El proyecto {project_id} no existe")
+        folder = project_dir(project)
+        touched = False
+        for key in parts:
+            for sub in sub_map[key]:
+                target = folder / sub
+                if not target.exists():
+                    continue
+                for path in target.rglob("*"):
+                    if path.is_file():
+                        freed += _freeable(path)
+                        deleted += 1
+                shutil.rmtree(target, ignore_errors=True)
+                touched = True
+        if touched:
+            project.updated_at = now_iso()
+            log_operation(session, "cleanup", "project", project_id, {"parts": parts}, actor="user")
     session.commit()
     return CleanupResult(deleted=deleted, freed_bytes=freed)

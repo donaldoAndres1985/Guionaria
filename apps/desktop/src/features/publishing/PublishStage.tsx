@@ -38,6 +38,13 @@ function copy(text: string, what: string) {
   );
 }
 
+/** Título + descripción + etiquetas en un solo bloque, para pegar de una vez. */
+function titleBundle(pub: Publication): string {
+  const parts = [pub.title, pub.full_text];
+  if (pub.tags.length) parts.push(`Etiquetas: ${pub.tags.join(", ")}`);
+  return parts.filter(Boolean).join("\n\n");
+}
+
 /** Controlador de la etapa: estado, trabajos (textos con Claude y subida a YouTube) y acciones. */
 export function usePublishController(project: Project, enabled = true) {
   const [waitingGoogle, setWaitingGoogle] = useState(false);
@@ -507,7 +514,7 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
         <div className="flex items-center justify-between text-[12px] text-muted-foreground">
           Texto listo para pegar {youtube || pub.platform === "facebook" ? "(con capítulos y créditos)" : ""}
           <div className="flex gap-3">
-            <button type="button" className="text-brand hover:underline" onClick={() => copy(pub.title, "Título")}>
+            <button type="button" className="text-brand hover:underline" onClick={() => copy(titleBundle(pub), "Título")}>
               <Copy className="inline size-3" /> Título
             </button>
             <button type="button" className="text-brand hover:underline" onClick={() => copy(pub.full_text, "Descripción")}>
