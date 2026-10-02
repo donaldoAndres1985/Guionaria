@@ -49,6 +49,10 @@ class Quality:
     crf: int
     audio_bitrate: str = "192k"
     hardware_ok: bool = False  # admite el codificador por hardware (borrador y estándar)
+    # Tope de bitrate (kbps) para el codificador de GPU: su VBR con «-b:v 0» no tiene techo y,
+    # en escenas con mucho detalle o ruido (p. ej. el efecto VHS), puede inflar el archivo muy
+    # por encima de lo que pesaría el mismo video con x264 a ese CRF.
+    max_bitrate_k: int = 0
 
     @property
     def size(self) -> str:
@@ -77,13 +81,13 @@ def quality(width: int, height: int, level: Level | bool) -> Quality:
         level = "draft" if level else "standard"
     if level == "draft":
         w, h = _scaled(width, height, 720)
-        return Quality(w, h, "veryfast", 28, hardware_ok=True)
+        return Quality(w, h, "veryfast", 28, hardware_ok=True, max_bitrate_k=6000)
     if level == "high":
         return Quality(width, height, "slow", 17, "256k")
     if level == "max":
         w, h = _scaled(width, height, 2160)
         return Quality(w, h, "slow", 17, "320k")
-    return Quality(width, height, "faster", 20, hardware_ok=True)
+    return Quality(width, height, "faster", 20, hardware_ok=True, max_bitrate_k=12000)
 
 
 def find_font() -> str | None:
@@ -322,9 +326,21 @@ def encoder(q: Quality, intermediate: bool, hardware: str | None = None) -> list
     if hardware and q.hardware_ok:
         # Su escala de calidad rinde un poco menos que el CRF de x264: 2 puntos más fino.
         level = str(max(crf - 2, 10))
+        cap_args: list[str] = []
+        if q.max_bitrate_k:
+            # Un tope de bitrate: sin él, su VBR («-b:v 0») puede disparar el peso del archivo
+            # en escenas con mucho detalle o ruido. El intermedio se re-codifica después: con
+            # menos techo alcanza (es solo de paso).
+            cap = max(q.max_bitrate_k // 2, 1500) if intermediate else q.max_bitrate_k
+            cap_args = ["-maxrate", f"{cap}k", "-bufsize", f"{cap * 2}k"]
         if hardware == "h264_nvenc":
-            return ["-c:v", hardware, "-preset", "p4", "-rc", "vbr", "-cq", level, "-b:v", "0"]
-        return ["-c:v", hardware, "-preset", "medium", "-global_quality", level]
+            return [
+                "-c:v", hardware, "-preset", "p4", "-rc", "vbr", "-cq", level,
+                "-b:v", "0", *cap_args,
+            ]  # fmt: skip
+        return [
+            "-c:v", hardware, "-preset", "medium", "-global_quality", level, *cap_args,
+        ]  # fmt: skip
     preset = "veryfast" if intermediate else q.preset
     return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf)]
 
