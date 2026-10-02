@@ -9,7 +9,21 @@ import { useRevealProject } from "@/hooks/useManualMedia";
 import { useProjectJob } from "@/hooks/useProjectJob";
 import { useCancelJob, useRenderState, useStartRender } from "@/hooks/useRender";
 import { coreUrl, type Project, type RenderQuality, type RenderState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
+import { formatDuration } from "@/lib/project";
 import { cn } from "@/lib/utils";
+
+/** Segundos desde `startIso`, actualizado cada segundo mientras `active` (para el temporizador
+ * del render). `null` si no hay inicio. */
+function useElapsedSeconds(startIso: string | undefined, active: boolean): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  if (!startIso) return null;
+  return Math.max(0, (now - new Date(startIso).getTime()) / 1000);
+}
 import { useUiStore } from "@/stores/ui";
 import { SubtitleStylePanel } from "./SubtitleStylePanel";
 import { NEUTRAL_LOOK } from "./previewMeta";
@@ -79,7 +93,15 @@ export function useRenderController(project: Project) {
         text_style: textStyle,
         look,
       }),
-    (done) => toast.success(`Render listo: ${String(done.result?.file ?? "")}`),
+    (done) => {
+      const secs =
+        done.created_at && done.finished_at
+          ? (new Date(done.finished_at).getTime() - new Date(done.created_at).getTime()) / 1000
+          : null;
+      toast.success(
+        `Render listo${secs != null ? ` en ${formatDuration(secs)}` : ""}: ${String(done.result?.file ?? "")}`,
+      );
+    },
   );
 
   // Aviso al cancelar (el render anterior queda intacto).
@@ -152,6 +174,7 @@ export function Section({
 /** Calidad + Renderizar / Cancelar + progreso (siempre visible arriba del panel). */
 export function RenderControls({ ctl }: { ctl: RenderController }) {
   const { state, job } = ctl;
+  const elapsed = useElapsedSeconds(job.job?.created_at, job.running);
   if (!state) return null;
   return (
     <div className="grid gap-3 border-b p-4" aria-label="Render" role="region">
@@ -200,6 +223,7 @@ export function RenderControls({ ctl }: { ctl: RenderController }) {
           <Progress value={(job.job?.progress ?? 0) * 100} aria-label="Progreso del render" />
           <span className="text-[12px] text-muted-foreground">
             {qualityLabel(ctl.chosenQuality)} · {job.job?.message ?? "Preparando…"}
+            {elapsed != null && ` · ${formatDuration(elapsed)}`}
           </span>
         </div>
       )}

@@ -12,7 +12,7 @@ Status = Literal["draft", "scheduled", "uploading", "published", "failed"]
 class PlataformaClaude(BaseModel):
     plataforma: Platform
     titulos: list[str] = Field(min_length=1, max_length=3)
-    descripcion: str
+    descripcion: str = Field(min_length=20)
     hashtags: list[str] = Field(default_factory=list, description="Sin el símbolo #")
     etiquetas: list[str] = Field(default_factory=list, description="Solo YouTube")
     comentario_fijado: str | None = None

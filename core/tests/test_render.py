@@ -320,14 +320,14 @@ def test_encoder_choice():
     # La GPU lleva un tope de bitrate: sin él, su VBR puede disparar el peso del archivo.
     assert plan.encoder(std, False, "h264_qsv") == [
         "-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "18",
-        "-maxrate", "12000k", "-bufsize", "24000k",
+        "-maxrate", "8000k", "-bufsize", "16000k",
     ]  # fmt: skip
     nv = plan.encoder(std, False, "h264_nvenc")
     assert nv[:2] == ["-c:v", "h264_nvenc"] and nv[nv.index("-cq") + 1] == "18"
-    assert nv[-4:] == ["-maxrate", "12000k", "-bufsize", "24000k"]
+    assert nv[-4:] == ["-maxrate", "8000k", "-bufsize", "16000k"]
     # Intermedio: la mitad del tope (es solo de paso; el final vuelve a codificar).
     nv_int = plan.encoder(std, True, "h264_nvenc")
-    assert nv_int[-4:] == ["-maxrate", "6000k", "-bufsize", "12000k"]
+    assert nv_int[-4:] == ["-maxrate", "4000k", "-bufsize", "8000k"]
     # Alta y 4K no usan la GPU: se eligen por calidad.
     high = plan.quality(1920, 1080, "high")
     assert plan.encoder(high, False, "h264_qsv")[:2] == ["-c:v", "libx264"]

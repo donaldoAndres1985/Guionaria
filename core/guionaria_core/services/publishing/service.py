@@ -664,7 +664,8 @@ def apply_metadata(session: Session, project: Project, data: MetadatosClaude) ->
         meta.pinned_comment = got.comentario_fijado
         meta.chapters = data.capitulos if pub.platform == "youtube" else []
         pub.title = titles[0] if titles else pub.title
-        pub.description = got.descripcion.strip()
+        if got.descripcion.strip():  # por si acaso: nunca vaciar una descripción ya escrita
+            pub.description = got.descripcion.strip()
         if pub.platform == "youtube":
             tags, total = [], 0
             for tag in (t.strip() for t in got.etiquetas if t.strip()):

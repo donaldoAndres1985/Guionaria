@@ -73,7 +73,8 @@ def quality(width: int, height: int, level: Level | bool) -> Quality:
     """Niveles de render:
     - draft: 720p (lado corto) y rápido, para revisar.
     - standard: la resolución del formato (1080p), equilibrado: x264 «faster» (medium tardaba
-      2,5 veces más con casi la misma calidad) o el codificador de la GPU si lo hay.
+      2,5 veces más con casi la misma calidad) o el codificador de la GPU si lo hay, con el
+      bitrate que recomienda YouTube para esa resolución (no el que dé la gana su VBR).
     - high: 1080p más nítido (crf 17, preset slow) y audio a 256 kbps; tarda más.
     - max: reescalado a 4K (2160p): YouTube le asigna más bitrate y se ve mejor incluso en 1080p.
     """
@@ -81,13 +82,13 @@ def quality(width: int, height: int, level: Level | bool) -> Quality:
         level = "draft" if level else "standard"
     if level == "draft":
         w, h = _scaled(width, height, 720)
-        return Quality(w, h, "veryfast", 28, hardware_ok=True, max_bitrate_k=6000)
+        return Quality(w, h, "veryfast", 28, hardware_ok=True, max_bitrate_k=5000)
     if level == "high":
         return Quality(width, height, "slow", 17, "256k")
     if level == "max":
         w, h = _scaled(width, height, 2160)
         return Quality(w, h, "slow", 17, "320k")
-    return Quality(width, height, "faster", 20, hardware_ok=True, max_bitrate_k=12000)
+    return Quality(width, height, "faster", 20, hardware_ok=True, max_bitrate_k=8000)
 
 
 def find_font() -> str | None:
