@@ -83,7 +83,8 @@ def test_texts_use_the_transcript(client, channel, tmp_path, engines_fake, fake_
     fake_claude.queue(
         {
             "plataformas": [
-                {"plataforma": "youtube", "titulos": ["Un título"], "descripcion": "Texto.",
+                {"plataforma": "youtube", "titulos": ["Un título"],
+                 "descripcion": "Texto de descripción de prueba.",
                  "hashtags": [], "etiquetas": [], "comentario_fijado": None}
             ],
             "capitulos": [],

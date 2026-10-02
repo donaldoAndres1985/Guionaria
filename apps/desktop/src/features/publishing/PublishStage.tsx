@@ -313,6 +313,12 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
   const pinned = useField(pub.meta.pinned_comment ?? "", (v) => save({ pinned_comment: v || null }));
   const [when, setWhen] = useState(toLocalInput(pub.scheduled_at));
   const youtube = pub.platform === "youtube";
+  const copyEditorBundle = () => {
+    const parts = [title.value, description.value];
+    if (hashtags.value.trim()) parts.push(hashtags.value.trim());
+    if (youtube && tags.value.trim()) parts.push(`Etiquetas: ${tags.value.trim()}`);
+    copy(parts.filter(Boolean).join("\n\n"), "Título, descripción y etiquetas");
+  };
   const playlists = usePlaylists(state.channel_id, youtube && state.youtube.connected);
   const uploading = ctl.upload.running; // solo YouTube se sube desde la app
 
@@ -343,9 +349,15 @@ function PublicationEditor({ pub, state, ctl }: { pub: Publication; state: Publi
 
       {/* Título */}
       <div className="grid gap-1.5">
-        <label className="flex items-center justify-between text-[12px] text-muted-foreground" htmlFor={`title-${pub.id}`}>
-          Título <Counter value={title.value.length} max={pub.limits.title} />
-        </label>
+        <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+          <label htmlFor={`title-${pub.id}`}>Título</label>
+          <span className="flex items-center gap-3">
+            <button type="button" className="flex items-center gap-1 text-brand hover:underline" onClick={copyEditorBundle}>
+              <Copy className="size-3" /> Copiar título, descripción y etiquetas
+            </button>
+            <Counter value={title.value.length} max={pub.limits.title} />
+          </span>
+        </div>
         {pub.meta.title_options.length > 1 && (
           <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Títulos propuestos">
             {pub.meta.title_options.map((t) => (
