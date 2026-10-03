@@ -23,7 +23,7 @@ def test_quality_levels():
     high = plan.quality(1080, 1920, "high")
     assert (high.size, high.preset, high.crf, high.audio_bitrate) == (
         "1080x1920",
-        "slow",
+        "medium",
         17,
         "256k",
     )

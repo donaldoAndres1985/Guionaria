@@ -228,6 +228,21 @@ def _effect(effect: str | None, kind: str | None, look: VideoLook | None) -> str
     return chosen
 
 
+# Al unir, todas las escenas están abiertas a la vez y cada decodificador reserva cuadros
+# por hilo: con decenas de escenas en 1080p eran varios GB. Solo se leen una o dos a la vez,
+# así que con 2 hilos cada una alcanza.
+SEGMENT_DECODE = ["-threads", "2"]
+
+
+def _starts(m: TimelineModel) -> list[float]:
+    """Inicio nominal (s) de cada escena en el video final."""
+    starts, acc = [], 0
+    for span in m.scenes:
+        starts.append(acc / m.fps)
+        acc += span.duration
+    return starts
+
+
 def _join_with_transitions(
     m: TimelineModel,
     files: list[Path],
@@ -240,14 +255,10 @@ def _join_with_transitions(
 ) -> None:
     """Une los segmentos con xfade. Si el paso final vuelve a codificar (subtítulos o
     texto), este va rápido y casi sin pérdida; si no, con la calidad elegida."""
-    starts, acc = [], 0
-    for span in m.scenes:
-        starts.append(acc / m.fps)
-        acc += span.duration
-    graph, label = plan.join_filter(len(files), cuts, starts)
+    graph, label = plan.join_filter(len(files), cuts, _starts(m))
     args = ["ffmpeg", "-y", "-v", "error"]
     for f in files:
-        args += ["-i", f.name]
+        args += [*SEGMENT_DECODE, "-i", f.name]
     args += [
         "-filter_complex", graph, "-map", f"[{label}]",
         *plan.encoder(q, encode_again, hardware), "-pix_fmt", "yuv420p",
@@ -501,7 +512,12 @@ def _render_pass(
         _run_segments(commands, report, cancel)
 
         video = tmp / "video.mp4"
-        if any(c.transition for c in cuts):
+        # Con transiciones y un paso final que vuelve a codificar, la unión va dentro de ese
+        # paso: unir a un archivo intermedio era codificar el video entero una vez de más.
+        merged = again and any(c.transition for c in cuts)
+        if merged:
+            report(0.82, "Uniendo las escenas…")
+        elif any(c.transition for c in cuts):
             report(0.82, "Uniendo las escenas con sus transiciones…")
             _join_with_transitions(m, files, cuts, q, video, again, cancel, hardware)
         else:
@@ -528,17 +544,21 @@ def _render_pass(
         music = [
             plan.AudioClip(c.path, sec(c.start), sec(c.duration), c.loop, c.volume) for c in m.music
         ]
-        afilter, audio_inputs = plan.audio_filter(voice, sfx, music, first_input=1)
+        video_inputs = files if merged else [video]
+        afilter, audio_inputs = plan.audio_filter(voice, sfx, music, first_input=len(video_inputs))
 
-        args = ["ffmpeg", "-y", "-v", "error", "-i", video.name]
+        args = ["ffmpeg", "-y", "-v", "error"]
+        for f in video_inputs:
+            args += [*(SEGMENT_DECODE if merged else []), "-i", f.name]
         for clip in audio_inputs:
             if clip.loop:  # el audio de fondo se repite hasta el final del video
                 args += ["-stream_loop", "-1"]
             args += ["-i", str(clip.path)]
         # El audio va en -filter_complex y el video en -vf: son grafos separados, así que si
         # FFmpeg reinicia los filtros de video (cambio de formato entre escenas) no toca el
-        # audio. En un mismo grafo, ese reinicio adelantaba la voz a los subtítulos.
-        if afilter:
+        # audio. En un mismo grafo, ese reinicio adelantaba la voz a los subtítulos. Al unir
+        # aquí las escenas cada una es una entrada propia de formato fijo: no hay reinicio.
+        if afilter and not merged:
             args += ["-filter_complex", afilter]
         vfilter = None
         texts = scene_texts(m)
@@ -576,12 +596,18 @@ def _render_pass(
         graded = looks.look_filter(look, lut) if look else None
         if graded:
             vfilter = f"{graded},{vfilter}" if vfilter else graded
-        args += ["-map", "0:v"]
-        if vfilter:
-            args += ["-vf", vfilter]
+        if merged:
+            graph, label = plan.join_filter(len(files), cuts, _starts(m))
+            graph += f";[{label}]{vfilter or 'null'}[vout]"
+            args += ["-filter_complex", f"{graph};{afilter}" if afilter else graph]
+            args += ["-map", "[vout]"]
+        else:
+            args += ["-map", "0:v"]
+            if vfilter:
+                args += ["-vf", vfilter]
         if afilter:
             args += ["-map", "[aout]", "-c:a", "aac", "-b:a", q.audio_bitrate]
-        if vfilter:
+        if vfilter or merged:
             args += [*plan.encoder(q, False, hardware), "-pix_fmt", "yuv420p"]
         else:
             args += ["-c:v", "copy"]
@@ -589,8 +615,9 @@ def _render_pass(
         output = folder / (names or OUTPUTS)[kind]
         partial = tmp / "salida.mp4"
         args += ["-t", f"{total:.3f}", "-movflags", "+faststart", partial.name]
-        report(0.85, "Mezclando el audio" + (" y escribiendo los textos…" if vfilter else "…"))
-        _run_with_progress(args, total, tmp, lambda f: report(0.85 + 0.12 * f, None), cancel)
+        step = "Uniendo las escenas, mezclando el audio" if merged else "Mezclando el audio"
+        report(0.82, step + (" y escribiendo los textos…" if vfilter else "…"))
+        _run_with_progress(args, total, tmp, lambda f: report(0.82 + 0.15 * f, None), cancel)
         output.unlink(missing_ok=True)
         partial.replace(output)
         legacy = folder / OUTPUTS[kind]
