@@ -420,6 +420,40 @@ def _overlay_events(item, width: int, height: int, scale: float) -> list[str]:
     return events
 
 
+FONT_FILES = {  # archivo de las fuentes incluidas, para medir el ancho de las frases
+    ("Montserrat", False): "Montserrat-ExtraBold.ttf",
+    ("Montserrat", True): "Montserrat-ExtraBoldItalic.ttf",
+}
+
+
+def _measurer(font: str, italic: bool, size: int):
+    """Ancho en píxeles de un texto con la fuente de los subtítulos (`size` en px de CSS, el
+    mismo que ve libass tras ASS_FONT_SCALE). Sin el archivo de la fuente, se estima."""
+    name = FONT_FILES.get((font, italic))
+    if name and (FONTS_DIR / name).exists():
+        from PIL import ImageFont
+
+        face = ImageFont.truetype(str(FONTS_DIR / name), size)
+        return lambda text: face.getlength(text)
+    return lambda text: sum(0.72 if c.isupper() else 0.58 for c in text) * size
+
+
+def _line_breaks(words: list[str], measure, avail: float) -> set[int]:
+    """Dónde partir la frase (índices de palabra que empiezan línea). En una sola línea si
+    cabe con la palabra más ancha agrandada por el «pop»; si no, en líneas parejas."""
+    grow = (POP_SCALE - 100) / 100 * max(measure(w) for w in words)
+    space = measure(" ")
+
+    def width(part: list[str]) -> float:
+        return sum(measure(w) for w in part) + space * (len(part) - 1)
+
+    if width(words) + grow <= avail or len(words) == 1:
+        return set()
+    # Dos líneas lo más parejas posible (las frases son cortas: alcanza con probar todas).
+    best = min(range(1, len(words)), key=lambda k: max(width(words[:k]), width(words[k:])))
+    return {best}
+
+
 def build_ass(
     words: list[Word],
     style: SubtitleStyle,
@@ -497,9 +531,18 @@ def build_ass(
 
     prefix = f"{{\\blur{blur}}}" if blur and not style.background else ""
 
+    pop = style.animation == "pop"
+    # Ocultar una palabra sin cambiar el diseño de la línea: relleno, borde y sombra
+    # transparentes, y de vuelta a los del estilo (la sombra es semitransparente). Con caja,
+    # la caja la dibuja la capa de abajo entera: solo se oculta el relleno.
+    if style.background:
+        hidden, visible, top = r"{\1a&HFF&}", r"{\1a&H00&}", r"{\3a&HFF&\4a&HFF&}"
+    else:
+        hidden, visible, top = r"{\1a&HFF&\3a&HFF&\4a&HFF&}", r"{\1a&H00&\3a&H00&\4a&H70&}", ""
+
     def active(text: str) -> str:
         color = f"\\1c{high_c}" if style.highlight else ""
-        if style.animation == "pop":
+        if pop:
             tags = f"{color}\\fscx{POP_SCALE}\\fscy{POP_SCALE}\\t(0,{POP_MS},\\fscx100\\fscy100)"
             return f"{{{tags}}}{text}{{\\1c{text_c}\\fscx100\\fscy100}}"
         return f"{{{color}}}{text}{{\\1c{text_c}}}"
@@ -508,6 +551,13 @@ def build_ass(
         text = _clean(w.text)
         return text.upper() if style.uppercase else text
 
+    def joined(parts: list[str], breaks: set[int]) -> str:
+        return "".join(
+            ("" if k == 0 else (r"\N" if k in breaks else " ")) + p for k, p in enumerate(parts)
+        )
+
+    measure = _measurer(style.font, style.italic, size)
+    avail = width * (1 - 2 * SUBTITLE_MARGIN)
     events: list[str] = []
     groups = group_words([w for w in words if _clean(w.text)], per_line, max_chars)
     for i, group in enumerate(groups):
@@ -522,14 +572,33 @@ def build_ass(
                 f"{prefix}{' '.join(shown_words)}"
             )
             continue
+        # Con «pop», los saltos de línea los fija el núcleo (\q2): si libass partiera la
+        # frase, la palabra agrandada podría cortarla en otro lugar que la capa de abajo.
+        breaks = _line_breaks(shown_words, measure, avail) if pop else set()
+        wrap = r"{\q2}" if pop else ""
         for j, _word in enumerate(group):
             w_start = start if j == 0 else group[j].start
             w_end = group[j + 1].start if j + 1 < len(group) else end
             if w_end <= w_start:
                 continue
-            line = " ".join(active(t) if k == j else t for k, t in enumerate(shown_words))
+            clock = f"{_clock(w_start)},{_clock(w_end)}"
+            if not pop:
+                line = " ".join(active(t) if k == j else t for k, t in enumerate(shown_words))
+                events.append(f"Dialogue: 0,{clock},Default,,0,0,0,,{prefix}{line}")
+                continue
+            # Agrandar la palabra dentro de la frase cambia el ancho de la línea y libass la
+            # vuelve a centrar en cada cuadro: todo el texto se corría hacia los lados. Como
+            # transform: scale en la vista previa, la frase queda fija (capa 0, con la palabra
+            # oculta) y la palabra salta en otra capa (2), con el resto transparente: al estar
+            # centrada, el centro de la palabra cae justo en su lugar a cualquier escala.
+            ghost = [hidden + t + visible for t in shown_words]
+            base = [ghost[k] if k == j else t for k, t in enumerate(shown_words)]
+            word = [active(t) if k == j else ghost[k] for k, t in enumerate(shown_words)]
             events.append(
-                f"Dialogue: 0,{_clock(w_start)},{_clock(w_end)},Default,,0,0,0,,{prefix}{line}"
+                f"Dialogue: 0,{clock},Default,,0,0,0,,{prefix}{wrap}{joined(base, breaks)}"
+            )
+            events.append(
+                f"Dialogue: 2,{clock},Default,,0,0,0,,{prefix}{wrap}{top}{joined(word, breaks)}"
             )
     for item in texts or []:
         events += _text_events(item, text_style, width, height, raised)

@@ -137,14 +137,39 @@ def test_reel_style_italic_shadow_and_pop():
     assert fields[1] == "Montserrat ExtraBold"  # familia real de la fuente incluida
     assert (fields[7], fields[8]) == ("0", "-1")  # sin negrita sintética, cursiva
     assert int(fields[16]) <= 2 and int(fields[17]) > 0  # borde fino y sombra
-    line = events(ass)[1]
-    assert r"{\blur3}" in line  # sombra suave
-    assert r"\fscx118\fscy118\t(0,140,\fscx100\fscy100)}LANZÓ" in line  # la palabra salta
+    base, word = events(ass)[2:4]  # «lanzó»: la frase y la palabra que salta
+    assert r"{\blur3}" in base and r"{\blur3}" in word  # sombra suave
+    assert r"\fscx118\fscy118\t(0,140,\fscx100\fscy100)}LANZÓ" in word  # la palabra salta
+
+
+def test_pop_word_jumps_on_its_own_layer_without_moving_the_phrase():
+    style = SubtitleStyle(animation="pop", edge="shadow", uppercase=True)
+    lines = events(captions.build_ass(WORDS, style, 1920, 1080))
+    assert len(lines) == 2 * len(WORDS)
+    base, word = lines[2:4]
+    hide, show = r"{\1a&HFF&\3a&HFF&\4a&HFF&}", r"{\1a&H00&\3a&H00&\4a&H70&}"
+    # Abajo, la frase sin agrandar nada (y la palabra oculta): su ancho no cambia.
+    assert base.startswith("Dialogue: 0,") and "fscx118" not in base
+    assert f"SE {hide}LANZÓ{show} DEL" in base
+    # Arriba, la misma frase transparente salvo la palabra, que crece en su lugar.
+    assert word.startswith("Dialogue: 2,") and f"{hide}SE{show} " in word
+    assert r"\fscx118" in word and f"{hide}DEL{show}" in word
+    assert r"{\q2}" in base and r"{\q2}" in word  # mismos cortes de línea en las dos capas
+
+
+def test_pop_long_phrase_is_split_in_balanced_lines():
+    words = ["UNO", "DOS", "TRES", "CUATRO"]
+    measure = lambda text: 10.0 * len(text)  # noqa: E731
+    assert captions._line_breaks(words, measure, 210) == set()  # 190 px + lo que crece
+    assert captions._line_breaks(words, measure, 150) == {2}  # «UNO DOS» / «TRES CUATRO»
+    # Montserrat se mide con su archivo: más ancho en mayúsculas que en minúsculas.
+    real = captions._measurer("Montserrat", False, 50)
+    assert real("CUATRO") > real("cuatro") > 0
 
 
 def test_pop_without_highlight_keeps_the_color():
     style = SubtitleStyle(highlight=False, animation="pop")
-    line = events(captions.build_ass(WORDS, style, 1080, 1920))[1]
+    line = events(captions.build_ass(WORDS, style, 1080, 1920))[3]
     assert r"\fscx118" in line and "&H0000D4FF" not in line
 
 
