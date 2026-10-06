@@ -218,7 +218,7 @@ export interface Project extends ProjectInput {
   /** Ficha de «Investigar con fuentes». */
   research?: Research | null;
   /** Plataformas activas de la publicación: estado y enlace publicado. */
-  publications?: { id?: number | null; platform: string; status: string; url: string | null }[];
+  publications?: { id?: number | null; platform: string; status: string; url: string | null; published_at?: string | null }[];
   /** guionaria: hecho con las etapas de la app; importado: video terminado en otro editor. */
   origin?: "guionaria" | "importado";
   /** Portada (miniatura de publicación o del render) y medios aprobados, para las miniaturas. */

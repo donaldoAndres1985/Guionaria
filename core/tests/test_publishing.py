@@ -154,8 +154,17 @@ def test_schedule_publish_and_project_status(client, pub_project):
     client.post(f"/api/publications/{tt['id']}:published", json={"url": "https://tiktok.com/@x/1"})
     assert status_of(client, pid) == "PUBLICADO"
     badges = client.get(f"/api/projects/{pid}").json()["publications"]
+    # La fecha del enlace ubica el proyecto en el calendario.
+    published_at = badges[1].pop("published_at")
+    assert published_at and published_at.startswith(datetime.now(UTC).strftime("%Y-%m-%d")[:4])
     assert badges == [
-        {"id": yt["id"], "platform": "youtube", "status": "scheduled", "url": None},
+        {
+            "id": yt["id"],
+            "platform": "youtube",
+            "status": "scheduled",
+            "url": None,
+            "published_at": None,
+        },
         {
             "id": tt["id"],
             "platform": "tiktok",
