@@ -284,6 +284,7 @@ def _segments(
                 source_in=(c.source_in / m.fps) if c else 0,
                 effect=_effect(span.effect, c.kind if c else None, look),
                 text=span.text,
+                loop_s=(c.loop_length / m.fps) if c and c.kind == "video" and c.loop else None,
             )
         )
     return out

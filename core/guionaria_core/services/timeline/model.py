@@ -8,18 +8,19 @@ Todo se expresa en cuadros enteros para que los tres formatos coincidan exactame
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from sqlmodel import Session, col, select
 
-from ...config import get_paths
+from ...config import get_paths, load_settings
 from ...models import Asset, Project, Scene, SceneAsset, Sound
 from ...schemas.scene import TIPO_FROM_KIND
 from ..voice.service import latest_track
 
 FPS = 30
 NEEDS_MEDIA = ("video", "image", "real")
+MIN_LOOP = FPS  # un tramo de menos de 1 s no se repite (se vería como un parpadeo)
 
 
 @dataclass
@@ -33,10 +34,34 @@ class Clip:
     media_duration: int | None = None  # None: imagen fija (sin límite)
     scene_position: int | None = None
     sound_id: int | None = None  # pistas de SFX y música
-    loop: bool = False  # audio de fondo: se repite hasta cubrir la duración
+    # Audio de fondo: se repite hasta cubrir la duración. Video más corto que su escena: se
+    # repite desde `source_in` hasta `media_duration` (con un fundido en cada unión).
+    loop: bool = False
     volume: float | None = None  # volumen propio (audio de fondo, SFX de pistas manuales)
     fade_in: float = 0.0  # segundos (SFX de pistas manuales)
     fade_out: float = 0.0
+
+    @property
+    def loop_length(self) -> int:
+        """Cuadros del tramo que se repite (de `source_in` al final del archivo)."""
+        return max((self.media_duration or self.duration) - self.source_in, 1)
+
+    def source_frame(self, offset: int) -> int:
+        """Cuadro del archivo que se ve `offset` cuadros después del inicio del clip."""
+        if self.kind == "video" and self.loop:
+            offset %= self.loop_length
+        return self.source_in + min(max(offset, 0), max(self.duration - 1, 0))
+
+    def loop_pieces(self) -> list["Clip"]:
+        """El clip partido en vueltas del tramo; sin bucle (o si alcanza), él mismo."""
+        if self.kind != "video" or not self.loop or self.duration <= self.loop_length:
+            return [self]
+        out, done = [], 0
+        while done < self.duration:
+            length = min(self.loop_length, self.duration - done)
+            out.append(replace(self, start=self.start + done, duration=length, loop=False))
+            done += length
+        return out
 
 
 @dataclass
@@ -102,7 +127,8 @@ class TimelineModel:
 
     def video_items(self) -> list[tuple[int, int, Clip | None]]:
         """Pista de video como (inicio, duración, clip); None es un hueco. Los huecos seguidos
-        (video corto + escena sin medio) se unen en uno."""
+        (video corto + escena sin medio) se unen en uno. Un video en bucle se escribe como
+        copias seguidas del tramo (los editores no conocen el bucle de un clip)."""
         items: list[tuple[int, int, Clip | None]] = []
 
         def gap(start: int, duration: int) -> None:
@@ -118,7 +144,8 @@ class TimelineModel:
             if c:
                 if c.start > cursor:
                     gap(cursor, c.start - cursor)
-                items.append((c.start, c.duration, c))
+                for piece in c.loop_pieces():
+                    items.append((piece.start, piece.duration, piece))
                 cursor = c.start + c.duration
             end = span.start + span.duration
             if end > cursor:
@@ -166,6 +193,7 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
     main = _main_rows(session, [s.id for s in scenes])
     track = latest_track(session, project.id)
     warnings: list[str] = []
+    loop_videos = load_settings().loop_short_videos
 
     voice = None
     if track and track.file_path and (home / track.file_path).exists():
@@ -209,13 +237,20 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                 else:
                     source_in, media_len = 0, None
                 clip_len = duration
+                loop = False
                 if media_len is not None and source_in + clip_len > media_len:
-                    clip_len = max(media_len - source_in, 1)
-                    warnings.append(
-                        f"Escena {scene.position}: el video alcanza para "
-                        f"{(media_len - source_in) / FPS:.1f} s de "
-                        f"{duration / FPS:.1f} s; el último cuadro queda congelado"
-                    )
+                    available = max(media_len - source_in, 1)
+                    if loop_videos and is_video and available >= MIN_LOOP:
+                        # Típico de los videos hechos con IA (5–10 s) en escenas largas: se
+                        # repite hasta cubrir la escena en vez de quedar un cuadro quieto.
+                        loop = True
+                    else:
+                        clip_len = available
+                        warnings.append(
+                            f"Escena {scene.position}: el video alcanza para "
+                            f"{available / FPS:.1f} s de "
+                            f"{duration / FPS:.1f} s; el último cuadro queda congelado"
+                        )
                 clip = Clip(
                     path.name,
                     path,
@@ -225,6 +260,7 @@ def build_timeline(session: Session, project: Project) -> TimelineModel:
                     source_in,
                     media_len,
                     scene.position,
+                    loop=loop,
                 )
         elif scene.media_kind in NEEDS_MEDIA:
             warnings.append(f"Escena {scene.position}: no tiene medio aprobado")

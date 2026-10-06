@@ -8,7 +8,7 @@ from sqlmodel import Session, col, select
 
 from ..config import get_paths
 from ..domain.states import ProjectStatus
-from ..models import Channel, Job, Project, Publication, Scene, SceneAsset
+from ..models import Asset, Channel, Job, Project, Publication, Scene, SceneAsset
 from ..models._base import now_iso
 from ..schemas.project import (
     DEFAULT_DURATION_S,
@@ -78,15 +78,18 @@ def media_previews(session: Session, ids: list[int]) -> dict[int, tuple[list[int
     if not ids:
         return {}
     rows = session.exec(
-        select(Scene.project_id, SceneAsset.asset_id)
+        select(Scene.project_id, SceneAsset.asset_id, Asset.thumb_path)
         .join(SceneAsset, SceneAsset.scene_id == Scene.id)
+        .join(Asset, Asset.id == SceneAsset.asset_id)
         .where(col(Scene.project_id).in_(ids), SceneAsset.role == "main")
         .order_by(Scene.project_id, Scene.position)
     ).all()
+    home = get_paths().home
     out: dict[int, tuple[list[int], int]] = {}
-    for project_id, asset_id in rows:
+    for project_id, asset_id, thumb in rows:
         thumbs, count = out.get(project_id, ([], 0))
-        if len(thumbs) < MEDIA_THUMBS:
+        # Solo miniaturas que siguen en disco: tras una limpieza la lista mostraba imágenes rotas.
+        if len(thumbs) < MEDIA_THUMBS and thumb and (home / thumb).exists():
             thumbs.append(asset_id)
         out[project_id] = (thumbs, count + 1)
     return out

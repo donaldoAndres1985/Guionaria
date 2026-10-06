@@ -18,7 +18,7 @@ def pick_source(m: TimelineModel) -> tuple[Path, float] | None:
     for span in m.scenes:
         c = span.clip
         if c and c.path.exists():
-            return c.path, (c.source_in + c.duration / 2) / m.fps if c.kind == "video" else 0.0
+            return c.path, c.source_frame(c.duration // 2) / m.fps if c.kind == "video" else 0.0
     return None
 
 

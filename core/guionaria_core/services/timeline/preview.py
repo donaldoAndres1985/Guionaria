@@ -17,6 +17,7 @@ class PreviewMedia(BaseModel):
     url: str
     source_in_s: float  # dónde empieza el tramo dentro del archivo
     duration_s: float  # lo que se ve en la escena (puede ser menor: se congela el último cuadro)
+    loop_s: float | None = None  # video en bucle: segundos del tramo que se repite
 
 
 class PreviewScene(BaseModel):
@@ -108,6 +109,7 @@ def preview_state(session: Session, project: Project) -> PreviewState:
                 + _version(s.clip.path),
                 source_in_s=_sec(m, s.clip.source_in),
                 duration_s=_sec(m, s.clip.duration),
+                loop_s=_sec(m, s.clip.loop_length) if s.clip.loop else None,
             )
         scenes.append(
             PreviewScene(

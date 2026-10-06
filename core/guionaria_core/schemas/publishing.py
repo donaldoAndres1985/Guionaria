@@ -126,6 +126,7 @@ class PublishingState(BaseModel):
     reason: str | None
     video_url: str | None
     video_file: str | None
+    render_dir: str  # carpeta render/ (para pegarla en «Abrir archivo» de la plataforma)
     subtitles: bool
     credits: str
     publications: list[PublicationRead]

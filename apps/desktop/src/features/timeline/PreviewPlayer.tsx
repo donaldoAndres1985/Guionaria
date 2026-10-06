@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { coreUrl, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
+import { coreUrl, type PreviewMedia, type PreviewScene, type PreviewSound, type PreviewState, type SubtitleStyle, type TextStyle, type VideoLook } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { OverlayTexts } from "./OverlayText";
 import {
@@ -351,6 +351,13 @@ function SceneLayer({
   );
 }
 
+/** Instante del archivo que se ve `local` segundos después del inicio de la escena. En bucle
+ * (video más corto que la escena), el tramo vuelve a empezar al terminar, como en el render. */
+export function videoTime(media: PreviewMedia, local: number, rate = 1): number {
+  const shown = Math.min(Math.max(local, 0), media.duration_s) * rate;
+  return media.source_in_s + (media.loop_s ? shown % media.loop_s : shown);
+}
+
 function VideoLayer({
   scene,
   local,
@@ -373,8 +380,7 @@ function VideoLayer({
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    const shown = Math.min(local, media.duration_s);
-    const target = media.source_in_s + shown * rate;
+    const target = videoTime(media, local, rate);
     v.playbackRate = rate;
     const frozen = local >= media.duration_s - 0.02; // el video es más corto: se congela
     if (playing && !frozen) {
@@ -384,7 +390,7 @@ function VideoLayer({
       if (!v.paused) v.pause();
       if (Math.abs(v.currentTime - target) > 0.04) v.currentTime = target;
     }
-  }, [local, playing, visible, rate, media.duration_s, media.source_in_s]);
+  }, [local, playing, visible, rate, media.duration_s, media.source_in_s, media.loop_s]);
   return <video ref={ref} src={coreUrl(media.url) ?? ""} muted playsInline preload="auto" className={className} style={style} />;
 }
 

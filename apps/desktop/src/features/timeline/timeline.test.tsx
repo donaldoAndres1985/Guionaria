@@ -5,7 +5,7 @@ import type { PreviewState, Project, RenderState, TimelineState, TransitionsStat
 import { useUiStore } from "@/stores/ui";
 import { TimelineBottomBar } from "./TimelineBottomBar";
 import { TimelineStage } from "./TimelineStage";
-import { PreviewCanvas } from "./PreviewPlayer";
+import { PreviewCanvas, videoTime } from "./PreviewPlayer";
 import { clipCount, maxZoom, nextZoom, pct, resolutionLabel, rulerStep, rulerTicks } from "./timelineMeta";
 
 const project = { id: 7, status: "VOZ_LISTA", title: "P", format: "reel" } as Project;
@@ -486,5 +486,22 @@ describe("etapa de timeline", () => {
     const render = await panel();
     expect(within(render).getByText("Aprueba los medios antes de renderizar")).toBeTruthy();
     expect((within(render).getByText("Renderizar").closest("button") as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("vista previa: videos cortos", () => {
+  const media = { kind: "video" as const, url: "/x.mp4", source_in_s: 2, duration_s: 24.5 };
+
+  it("en bucle, el tramo vuelve a empezar como en el render", () => {
+    const loop = { ...media, loop_s: 10 };
+    expect(videoTime(loop, 3)).toBe(5);
+    expect(videoTime(loop, 13)).toBe(5); // segunda vuelta
+    expect(videoTime(loop, 30)).toBeCloseTo(6.5); // nunca pasa del final de la escena
+    expect(videoTime(loop, 6, 0.5)).toBe(5); // cámara lenta: 3 s del archivo
+  });
+
+  it("sin bucle sigue el archivo hasta el final de la escena", () => {
+    expect(videoTime(media, 13)).toBe(15);
+    expect(videoTime({ ...media, duration_s: 4 }, 13)).toBe(6); // se congela
   });
 });
