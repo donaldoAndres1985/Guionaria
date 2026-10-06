@@ -40,6 +40,9 @@ class PublishBadge(BaseModel):
     platform: str
     status: str  # draft | scheduled | uploading | published | failed
     url: str | None = None
+    published_at: str | None = (
+        None  # cuándo se guardó el enlace (ubica el proyecto en el calendario)
+    )
 
 
 class ProjectRead(BaseModel):

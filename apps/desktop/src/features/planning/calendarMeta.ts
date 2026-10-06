@@ -40,12 +40,36 @@ export function weekDays(d: Date): Date[] {
   return Array.from({ length: 7 }, (_, i) => addDays(first, i));
 }
 
+type Badge = NonNullable<Project["publications"]>[number];
+
+/** Plataformas donde el proyecto ya tiene enlace guardado, de la primera a la última. */
+export function publishedLinks(project: Project): (Badge & { published_at: string })[] {
+  return (project.publications ?? [])
+    .filter((b): b is Badge & { published_at: string } => !!b.url && !!b.published_at)
+    .sort((a, b) => a.published_at.localeCompare(b.published_at));
+}
+
+/** Día (local) en que se publicó: el del primer enlace guardado; null si aún no tiene. */
+export function publishedOn(project: Project): string | null {
+  const first = publishedLinks(project)[0];
+  return first ? isoDate(new Date(first.published_at)) : null;
+}
+
+/** Día del proyecto en el calendario: cuándo se publicó o, si no, la fecha prevista. */
+export function calendarDate(project: Project): string | null {
+  return publishedOn(project) ?? project.target_publish_at?.slice(0, 10) ?? null;
+}
+
 export function byDate(projects: Project[]): Map<string, Project[]> {
   const out = new Map<string, Project[]>();
   for (const p of projects) {
-    if (!p.target_publish_at) continue;
-    const key = p.target_publish_at.slice(0, 10);
+    const key = calendarDate(p);
+    if (!key) continue;
     out.set(key, [...(out.get(key) ?? []), p]);
+  }
+  // Primero lo publicado, después lo previsto.
+  for (const [key, list] of out) {
+    out.set(key, [...list].sort((a, b) => Number(!publishedOn(a)) - Number(!publishedOn(b))));
   }
   return out;
 }
@@ -88,7 +112,8 @@ export function dueSoon(projects: Project[], today: Date, days = 1): Project[] {
       p.target_publish_at &&
       p.target_publish_at.slice(0, 10) >= from &&
       p.target_publish_at.slice(0, 10) <= limit &&
-      STATUS_ORDER.indexOf(p.status) < STATUS_ORDER.indexOf("PUBLICADO"),
+      STATUS_ORDER.indexOf(p.status) < STATUS_ORDER.indexOf("PUBLICADO") &&
+      !publishedOn(p), // ya tiene enlace: no hace falta recordarlo
   );
 }
 
@@ -96,11 +121,13 @@ export type DropAction =
   | { kind: "reschedule"; date: string | null }
   | { kind: "status"; status: ProjectStatus }
   | { kind: "blocked" }
+  | { kind: "published" }
   | null;
 
 /** Qué hacer al soltar una tarjeta en un día, en «Sin fecha» o en una columna del tablero. */
 export function dropAction(project: Project, target: string): DropAction {
   if (target.startsWith("date-") || target === "undated") {
+    if (publishedOn(project)) return { kind: "published" }; // su fecha es la del enlace
     const date = target === "undated" ? null : target.slice(5);
     return date === (project.target_publish_at?.slice(0, 10) ?? null) ? null : { kind: "reschedule", date };
   }

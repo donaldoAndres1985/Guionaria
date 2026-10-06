@@ -7,12 +7,14 @@ import { CalendarPage } from "@/pages/Calendar";
 import { IdeasPage } from "@/pages/Ideas";
 import {
   byDate,
+  calendarDate,
   COLUMNS,
   canMove,
   dropAction,
   dueSoon,
   isoDate,
   monthGrid,
+  publishedOn,
   weekDays,
 } from "./calendarMeta";
 import { reminderText, takeUnnotified } from "./useReminders";
@@ -69,6 +71,27 @@ describe("utilidades del calendario", () => {
     const g = byDate([project(1, { target_publish_at: "2026-09-30" }), project(2), project(3, { target_publish_at: "2026-09-30" })]);
     expect(g.get("2026-09-30")?.map((p) => p.id)).toEqual([1, 3]);
     expect(g.size).toBe(1);
+  });
+
+  it("con al menos un enlace guardado, el proyecto va al día en que se publicó", () => {
+    const link = (platform: string, at: string | null, url: string | null = "https://x") => ({ id: 1, platform, status: url ? "published" : "draft", url, published_at: at });
+    // 2 h de diferencia entre plataformas: cuenta el primer enlace (en hora local).
+    const firstAt = new Date(2026, 9, 3, 21, 30).toISOString();
+    const p = project(1, {
+      target_publish_at: "2026-09-30",
+      publications: [link("tiktok", new Date(2026, 9, 3, 23, 30).toISOString()), link("youtube", firstAt), link("facebook", null, null)],
+    });
+    expect(publishedOn(p)).toBe("2026-10-03");
+    expect(calendarDate(p)).toBe("2026-10-03");
+    expect(calendarDate(project(2, { target_publish_at: "2026-09-30", publications: [link("youtube", null, null)] }))).toBe("2026-09-30");
+    expect(publishedOn(project(3))).toBeNull();
+
+    const g = byDate([project(4, { target_publish_at: "2026-10-03" }), p]);
+    expect(g.get("2026-10-03")?.map((x) => x.id)).toEqual([1, 4]); // lo publicado primero
+    expect(g.has("2026-09-30")).toBe(false);
+    // Ya publicado: no se mueve de día ni se recuerda.
+    expect(dropAction(p, "date-2026-10-05")).toEqual({ kind: "published" });
+    expect(dueSoon([{ ...p, target_publish_at: "2026-10-03" }], new Date(2026, 9, 3))).toEqual([]);
   });
 
   it("solo las etapas finales se mueven a mano", () => {
@@ -208,5 +231,28 @@ describe("páginas de planificación", () => {
     fireEvent.click(screen.getByText("Tablero"));
     expect(within(screen.getByTestId("col-guion")).getAllByText(/Proyecto|Hoy sale|Sin fecha/)).toHaveLength(2);
     expect(within(screen.getByTestId("col-PROGRAMADO")).getByText("Ya programado")).toBeTruthy();
+  });
+
+  it("el calendario marca lo publicado el día de su enlace", async () => {
+    const now = new Date();
+    const today = isoDate(now);
+    projects = [
+      project(1, {
+        title: "Ya salió",
+        target_publish_at: null,
+        publications: [{ id: 9, platform: "youtube", status: "published", url: "https://youtu.be/x", published_at: now.toISOString() }],
+      }),
+    ];
+    renderPage(<CalendarPage />);
+    const chip = await waitFor(() => {
+      const el = document.querySelector(`[data-date="${today}"]`) as HTMLElement;
+      return within(el).getByText("Ya salió").closest("button")!;
+    });
+    expect(chip.dataset.published).toBe("true");
+    expect(chip.title).toContain("Publicado en YouTube");
+    expect(screen.getByTestId("calendar-legend")).toBeTruthy();
+    // No queda en «Sin fecha» aunque no tenga fecha prevista.
+    expect(screen.getAllByText("Ya salió")).toHaveLength(1);
+    expect(screen.getByText("Publicados este mes")).toBeTruthy();
   });
 });

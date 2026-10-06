@@ -7,7 +7,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CircleCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -25,12 +25,16 @@ import {
   isoDate,
   monthGrid,
   MONTHS,
+  publishedLinks,
+  publishedOn,
   weekDays,
   WEEKDAYS,
 } from "@/features/planning/calendarMeta";
 import { useChannels } from "@/hooks/useChannels";
+import { PLATFORM_LABEL } from "@/components/projects/ProjectMenu";
+import { PLATFORM_TONE } from "@/features/publishing/publishingMeta";
 import { useProjects, useRescheduleProject, useSetProjectStatus } from "@/hooks/useProjects";
-import type { Project } from "@/lib/api";
+import type { Project, PublishPlatform } from "@/lib/api";
 import { isThisMonth, STATUS_LABEL } from "@/lib/project";
 import { cn } from "@/lib/utils";
 import { useUiStore } from "@/stores/ui";
@@ -70,6 +74,8 @@ export function CalendarPage() {
       );
     } else if (action?.kind === "status") {
       setStatus.mutate({ id: project.id, status: action.status });
+    } else if (action?.kind === "published") {
+      toast.info("Ya está publicado: aparece el día en que guardaste su enlace");
     } else if (action?.kind === "blocked") {
       toast.info("Las etapas de producción avanzan aprobando cada una dentro del proyecto");
     }
@@ -79,7 +85,9 @@ export function CalendarPage() {
     setCursor((c) =>
       view === "week" ? addDays(c, dir * 7) : new Date(c.getFullYear(), c.getMonth() + dir, 1),
     );
-  const undated = projects.filter((p) => !p.target_publish_at && p.status !== "PUBLICADO");
+  const undated = projects.filter((p) => !p.target_publish_at && p.status !== "PUBLICADO" && !publishedOn(p));
+  const monthKey = isoDate(new Date()).slice(0, 7);
+  const publishedThisMonth = projects.filter((p) => publishedOn(p)?.startsWith(monthKey)).length;
   const title =
     view === "week"
       ? (() => {
@@ -97,7 +105,7 @@ export function CalendarPage() {
           stats={[
             { label: "Este mes", value: projects.filter((p) => isThisMonth(p.target_publish_at)).length, highlight: true },
             { label: "Sin fecha", value: undated.length },
-            { label: "Publicados", value: projects.filter((p) => p.status === "PUBLICADO").length },
+            { label: "Publicados este mes", value: publishedThisMonth },
           ]}
         />
       }
@@ -117,7 +125,17 @@ export function CalendarPage() {
           </button>
         ))}
         {view !== "board" && (
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground" data-testid="calendar-legend">
+            <span className="flex items-center gap-1">
+              <CircleCheck className="size-3.5 text-success-foreground" /> Publicado (fecha del enlace)
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="size-2.5 rounded-sm border border-muted-foreground/60" /> Previsto
+            </span>
+          </div>
+        )}
+        {view !== "board" && (
+          <div className="flex items-center gap-1">
             <Button size="icon-sm" variant="ghost" aria-label="Anterior" onClick={() => step(-1)}>
               <ChevronLeft />
             </Button>
@@ -278,7 +296,17 @@ function BoardColumn({ column, projects }: { column: (typeof COLUMNS)[number]; p
 
 function Chip({ project, detailed }: { project: Project; detailed?: boolean }) {
   const navigate = useNavigate();
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `project-${project.id}` });
+  const links = publishedLinks(project);
+  const published = links.length > 0;
+  // Lo publicado queda fijo en el día de su enlace: no se arrastra.
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `project-${project.id}`,
+    disabled: published,
+  });
+  const when = (iso: string) => new Date(iso).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+  const title = published
+    ? [project.title, ...links.map((l) => `Publicado en ${PLATFORM_LABEL[l.platform] ?? l.platform} · ${when(l.published_at)}`)].join("\n")
+    : `${project.title} · ${STATUS_LABEL[project.status]}`;
   return (
     <button
       ref={setNodeRef}
@@ -286,18 +314,34 @@ function Chip({ project, detailed }: { project: Project; detailed?: boolean }) {
       {...listeners}
       {...attributes}
       onClick={() => navigate(`/proyectos/${project.id}`)}
-      title={`${project.title} · ${STATUS_LABEL[project.status]}`}
+      title={title}
+      data-published={published || undefined}
       style={transform ? { transform: `translate(${transform.x}px, ${transform.y}px)` } : undefined}
       className={cn(
         "relative z-0 w-full rounded border bg-background px-2 py-1 text-left text-[12px] hover:border-brand/60",
+        published && "border-success-foreground/40 bg-success-foreground/10 hover:border-success-foreground/70",
         isDragging && "z-10 opacity-80 shadow-lg",
       )}
     >
-      <span className="block truncate font-medium">{project.title}</span>
+      <span className="flex items-center gap-1.5">
+        {published && <CircleCheck className="size-3.5 shrink-0 text-success-foreground" aria-label="Publicado" />}
+        <span className="block min-w-0 flex-1 truncate font-medium">{project.title}</span>
+        {published && (
+          <span className="flex shrink-0 gap-0.5">
+            {links.map((l) => (
+              <span key={l.platform} className={cn("size-1.5 rounded-full", PLATFORM_TONE[l.platform as PublishPlatform] ?? "bg-muted-foreground")} />
+            ))}
+          </span>
+        )}
+      </span>
       {detailed && (
         <span className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <FormatBadge format={project.format} />
-          <span className="truncate">{STATUS_LABEL[project.status]}</span>
+          <span className="truncate">
+            {published
+              ? `Publicado ${new Date(links[0].published_at).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" })} · ${links.map((l) => PLATFORM_LABEL[l.platform] ?? l.platform).join(", ")}`
+              : STATUS_LABEL[project.status]}
+          </span>
         </span>
       )}
     </button>

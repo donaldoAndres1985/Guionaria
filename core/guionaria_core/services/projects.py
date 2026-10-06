@@ -54,7 +54,11 @@ def publish_badges(session: Session, ids: list[int]) -> dict[int, list[PublishBa
     ):
         out.setdefault(r.project_id, []).append(
             PublishBadge(
-                id=r.id, platform=r.platform, status=r.status or "draft", url=r.external_url
+                id=r.id,
+                platform=r.platform,
+                status=r.status or "draft",
+                url=r.external_url,
+                published_at=r.published_at,
             )
         )
     return out
