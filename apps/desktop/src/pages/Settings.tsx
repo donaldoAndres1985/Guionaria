@@ -32,6 +32,7 @@ import { useHealth, useRefreshDependencies, useSaveSettings, useSettings } from 
 import type { AppSettings, DependencyStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ApiKeysSettings, KEYED_PROVIDERS } from "@/features/settings/ApiKeysSettings";
+import { BackupSettings } from "@/features/settings/BackupSettings";
 import { ClaudeSettings } from "@/features/settings/ClaudeSettings";
 import { McpSettings } from "@/features/settings/McpSettings";
 import { VoiceSelect } from "@/features/voice/VoiceSelect";
@@ -76,7 +77,7 @@ export function SettingsPage() {
       subtitle: current?.claude_model ? `Modelo: ${current.claude_model}` : "Modelo y prompts",
     },
     { id: "mcp", icon: Plug, title: "Conexión MCP", subtitle: "Usar Guionaria desde Claude" },
-    { id: "folders", icon: FolderOpen, title: "Carpetas", subtitle: "Datos, base de datos y ajustes" },
+    { id: "folders", icon: FolderOpen, title: "Carpetas", subtitle: "Datos y copia de seguridad" },
     {
       id: "keys",
       icon: KeyRound,
@@ -189,8 +190,10 @@ export function SettingsPage() {
                 deps.map((dep) => <DependencyRow key={dep.name} dep={dep} />)
               ))}
 
+            {category === "folders" && current && <BackupSettings settings={current} onChange={update} />}
+
             {category === "folders" && health.data && (
-              <div className="divide-y">
+              <div className="divide-y border-t">
                 <PathRow label="Carpeta de datos" value={health.data.home} />
                 <PathRow label="Base de datos" value={`${health.data.home}\\guionaria.db`} />
                 <PathRow label="Ajustes y claves" value={`${health.data.home}\\config\\settings.json`} />
@@ -268,6 +271,22 @@ export function SettingsPage() {
                     id="trim-after-download"
                     checked={current.trim_after_download}
                     onCheckedChange={(v) => update({ trim_after_download: v })}
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="grid gap-1">
+                    <Label htmlFor="loop-short-videos" className="text-[13px]">
+                      Repetir en bucle los videos más cortos que su escena
+                    </Label>
+                    <p className="text-[12px] text-muted-foreground">
+                      Típico de los videos hechos con IA (5–10 s): el video vuelve a empezar, con un fundido suave en la
+                      unión, hasta cubrir lo que dura la narración. Si lo apagas, se congela su último cuadro.
+                    </p>
+                  </div>
+                  <Switch
+                    id="loop-short-videos"
+                    checked={current.loop_short_videos ?? true}
+                    onCheckedChange={(v) => update({ loop_short_videos: v })}
                   />
                 </div>
                 <Field label="Descargas en paralelo" hint="Entre 1 y 16.">

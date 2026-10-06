@@ -389,6 +389,7 @@ def publishing_state(session: Session, project_id: int, redirect_uri: str = "") 
         if video.exists()
         else None,
         video_file=str(video) if video.exists() else None,
+        render_dir=str(project_dir(project) / "render"),
         subtitles=subtitles_file(project).exists(),
         credits=credits,
         publications=[_read(p, channel, project, credits, engine) for p in rows],
@@ -738,7 +739,7 @@ def make_cover(
     if span and span.clip and span.clip.path.exists():
         source = span.clip.path
         at = (
-            (span.clip.source_in + (frame_at - span.start)) / m.fps
+            span.clip.source_frame(frame_at - span.clip.start) / m.fps
             if span.clip.kind == "video"
             else 0.0
         )

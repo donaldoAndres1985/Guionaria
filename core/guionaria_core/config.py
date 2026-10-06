@@ -155,6 +155,14 @@ class TransitionPrefs(BaseModel):
     duration: float = Field(0.5, ge=0.2, le=1.5)
 
 
+class BackupPrefs(BaseModel):
+    """Copia de seguridad del video final y su portada (sección 5.11) en otra carpeta: una
+    unidad externa o la carpeta sincronizada de Google Drive, OneDrive o Dropbox."""
+
+    folder: str = ""  # vacío = sin copia de seguridad
+    before_cleanup: bool = True  # proponer copiar antes de «Limpieza completa»
+
+
 class AppSettings(BaseModel):
     claude_model: str = ""  # vacío = el modelo por defecto de la CLI (alias: sonnet, opus, haiku)
     searxng_url: str = "http://127.0.0.1:8888"
@@ -168,6 +176,9 @@ class AppSettings(BaseModel):
     elevenlabs: ElevenLabsPrefs = Field(default_factory=ElevenLabsPrefs)
     # Abrir «Ajustar tramo» tras «Descargar y aprobar» si el clip dura más que la escena.
     trim_after_download: bool = False
+    # Un video más corto que su escena se repite (con un fundido en la unión) hasta cubrirla;
+    # si no, se congela su último cuadro.
+    loop_short_videos: bool = True
     # «Investigar con fuentes»: tope de búsquedas web por caso (páginas leídas = el doble).
     research_max_searches: int = Field(default=6, ge=2, le=15)
     subtitle_style: SubtitleStyle = Field(default_factory=SubtitleStyle)
@@ -175,6 +186,7 @@ class AppSettings(BaseModel):
     transitions: TransitionPrefs = Field(default_factory=TransitionPrefs)
     look: VideoLook = Field(default_factory=VideoLook)
     youtube: YouTubeApp = Field(default_factory=YouTubeApp)
+    backup: BackupPrefs = Field(default_factory=BackupPrefs)
 
 
 def load_settings(paths: Paths | None = None) -> AppSettings:

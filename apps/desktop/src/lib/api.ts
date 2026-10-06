@@ -148,6 +148,10 @@ export interface AppSettings {
   text_style?: TextStyle;
   /** Cliente OAuth de Google (app de escritorio) para subir a YouTube. */
   youtube?: { client_id: string; client_secret: string };
+  /** Un video más corto que su escena se repite en bucle (si no, se congela el último cuadro). */
+  loop_short_videos?: boolean;
+  /** Copia de seguridad del video final y la portada antes de limpiar. */
+  backup?: { folder: string; before_cleanup: boolean };
 }
 
 export type Platform = "youtube" | "tiktok" | "instagram" | "facebook";
@@ -615,6 +619,8 @@ export interface PreviewMedia {
   url: string;
   source_in_s: number;
   duration_s: number;
+  /** Video más corto que la escena: segundos del tramo que se repite en bucle. */
+  loop_s?: number | null;
 }
 
 export interface PreviewScene {
@@ -1000,6 +1006,23 @@ export interface CleanupPreview {
 /** Partes que se pueden borrar a mano desde «Limpieza completa» (storage.py: CLEANABLE_PARTS). */
 export type CleanablePart = "manual" | "approved" | "audio" | "timeline" | "render";
 
+/** Carpeta de copia de seguridad (Ajustes → Carpetas): video final y portada. */
+export interface BackupStatus {
+  folder: string;
+  ok: boolean;
+  detail: string | null;
+  free_bytes: number | null;
+  /** Carpetas sincronizadas encontradas (Google Drive, OneDrive, Dropbox). */
+  suggestions: { label: string; path: string }[];
+}
+
+export interface BackupResult {
+  folder: string;
+  items: { project_id: number; title: string; folder: string; files: string[]; copied: number; bytes: number }[];
+  copied: number;
+  bytes: number;
+}
+
 export type HistoryActor = "ui" | "mcp" | "system";
 
 export interface HistoryItem {
@@ -1273,6 +1296,8 @@ export interface PublishingState {
   reason: string | null;
   video_url: string | null;
   video_file: string | null;
+  /** Carpeta render/ del proyecto (para pegarla en «Abrir archivo» al subir el video). */
+  render_dir?: string;
   subtitles: boolean;
   credits: string;
   publications: Publication[];

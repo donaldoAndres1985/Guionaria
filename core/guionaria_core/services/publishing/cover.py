@@ -40,7 +40,7 @@ def pick_frames(m: TimelineModel) -> list[Frame]:
     frames = []
     for i, span in enumerate(spans, start=1):
         c = span.clip
-        at = (c.source_in + c.duration / 2) / m.fps if c.kind == "video" else 0.0
+        at = c.source_frame(c.duration // 2) / m.fps if c.kind == "video" else 0.0
         frames.append(Frame(i, c.path, at, span.position))
     return frames
 

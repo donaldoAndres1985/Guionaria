@@ -5,6 +5,7 @@ y después se unen sin volver a codificar. Así el progreso es por escena y un v
 depende de un único filtro gigante.
 """
 
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -253,6 +254,34 @@ class Segment:
     source_in: float
     effect: str | None
     text: str | None
+    # Video en bucle: segundos del tramo que se repite (de `source_in` al final del archivo).
+    loop_s: float | None = None
+
+
+LOOP_FADE = 0.5  # segundos del fundido en cada unión del bucle
+MAX_LOOPS = 40  # tope de vueltas (cada una abre el archivo otra vez)
+LOOP_SLACK = 0.1  # el archivo puede traer un par de cuadros menos que su duración registrada
+
+
+def loop_plan(length: float, needed: float) -> tuple[int, float]:
+    """(vueltas, fundido) para cubrir `needed` segundos repitiendo un tramo de `length`:
+    n·length − (n−1)·fundido ≥ needed. Un tramo corto lleva un fundido más corto."""
+    fade = round(min(LOOP_FADE, length / 4), 3)
+    n = math.ceil((needed - fade) / (length - fade) - 1e-9)
+    return min(max(n, 2), MAX_LOOPS), fade
+
+
+def loop_graph(n: int, length: float, fade: float) -> tuple[str, str]:
+    """Las `n` entradas (el mismo tramo) encadenadas con fundidos: (grafo, etiqueta final)."""
+    parts = [f"[{k}:v]fps={FPS},settb=1/{FPS},setpts=PTS-STARTPTS[c{k}]" for k in range(n)]
+    prev = "c0"
+    for k in range(1, n):
+        offset = k * (length - fade)
+        parts.append(
+            f"[{prev}][c{k}]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}[x{k}]"
+        )
+        prev = f"x{k}"
+    return ";".join(parts), prev
 
 
 def segment_command(
@@ -275,16 +304,27 @@ def segment_command(
     dur = f"{frames / FPS:.3f}"
     args = ["ffmpeg", "-y", "-v", "error", "-nostdin"]
     speed = SPEED.get(seg.effect or "", 1.0) if seg.kind == "video" else 1.0
+    loops: tuple[int, float] | None = None
     if seg.kind == "image":
         args += ["-i", str(seg.path)]  # un solo cuadro: se repite con el filtro loop
     elif seg.kind == "video":
         read = frames / FPS * speed
-        args += ["-ss", f"{seg.source_in:.3f}", "-t", f"{read:.3f}", "-i", str(seg.path)]
+        if seg.loop_s and read > seg.loop_s + 1 / FPS:
+            # Más corto que la escena: el tramo se repite con un fundido en cada unión.
+            loops = loop_plan(seg.loop_s - LOOP_SLACK, read)
+            for _ in range(loops[0]):
+                args += ["-ss", f"{seg.source_in:.3f}", "-t", f"{seg.loop_s:.3f}"]
+                args += ["-i", str(seg.path)]
+        else:
+            args += ["-ss", f"{seg.source_in:.3f}", "-t", f"{read:.3f}", "-i", str(seg.path)]
     else:
         args += ["-f", "lavfi", "-i", f"color=c=black:s={q.size}:r={FPS}:d={dur}"]
 
     chain: list[str] = []
-    if seg.kind == "video":
+    if seg.kind == "video" and loops:
+        if speed != 1:  # el bucle ya sale a FPS: solo se cambia la velocidad
+            chain += [f"setpts={1 / speed:g}*PTS", f"fps={FPS}"]
+    elif seg.kind == "video":
         if speed > 1:
             chain += [f"fps={FPS}", f"setpts={1 / speed:g}*PTS"]
         elif speed < 1:  # a cámara lenta los cuadros se estiran: se igualan después
@@ -309,8 +349,12 @@ def segment_command(
     # Todos los segmentos con el mismo formato y rango: un JPG saldría en rango completo
     # (yuvj420p) y, al cambiar a mitad del video unido, FFmpeg reinicia los filtros.
     chain += ["scale=out_range=tv", "format=yuv420p"]
+    if loops:
+        graph, label = loop_graph(loops[0], (seg.loop_s or 0) - LOOP_SLACK, loops[1])
+        args += ["-filter_complex", f"{graph};[{label}]{','.join(chain)}[v]", "-map", "[v]"]
+    else:
+        args += ["-vf", ",".join(chain)]
     args += [
-        "-vf", ",".join(chain),
         "-r", str(FPS), "-an", "-color_range", "tv",
         *encoder(q, intermediate, hardware),
         str(out),

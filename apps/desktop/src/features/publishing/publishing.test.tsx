@@ -61,6 +61,7 @@ const baseState = (over: Partial<PublishingState> = {}): PublishingState => ({
   reason: null,
   video_url: "/api/projects/7/render/files/proyecto.mp4",
   video_file: "C:\\Guionaria\\proyecto.mp4",
+  render_dir: "C:\\Guionaria\\channels\\casos\\projects\\el-secuestro\\render",
   subtitles: true,
   credits: "Créditos — El secuestro",
   publications: [
@@ -136,6 +137,16 @@ describe("publicación", () => {
   }
 
   const patches = () => calls.filter((c) => c.method === "PATCH");
+
+  it("copia la ruta de la carpeta render para pegarla al subir el video", async () => {
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText, write: vi.fn() }, configurable: true });
+    renderStage();
+    const button = await screen.findByRole("button", { name: "Copiar ruta del render" });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("C:\\Guionaria\\channels\\casos\\projects\\el-secuestro\\render"));
+  });
 
   it("sin render invita a ir al Timeline", async () => {
     state = baseState({ can_publish: false, reason: "Renderiza el video final en el Timeline para publicarlo" });

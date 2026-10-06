@@ -5,6 +5,7 @@ import {
   FolderOpen,
   FolderSearch,
   FolderInput,
+  HardDriveUpload,
   Link2Off,
   MoreHorizontal,
   Send,
@@ -30,6 +31,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useOpenUrl, useRevealProject } from "@/hooks/useManualMedia";
 import { usePublishingActions } from "@/hooks/usePublishing";
+import { useBackupProjects } from "@/hooks/useStorage";
 import type { Project, PublishPlatform } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { PLATFORM_TONE } from "@/features/publishing/publishingMeta";
@@ -70,6 +72,7 @@ export function ProjectMenu({
   const navigate = useNavigate();
   const openUrl = useOpenUrl();
   const revealProject = useRevealProject();
+  const backup = useBackupProjects();
   const actions = usePublishingActions(project.id);
   const [linkFor, setLinkFor] = useState<{ badge: Badge; initial: string } | null>(null);
   const pubs = (project.publications ?? []).filter((p) => p.id != null);
@@ -177,6 +180,21 @@ export function ProjectMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => copy(project.title, "Título")}>
             <Copy /> Copiar título
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() =>
+              backup.mutate([project.id], {
+                onSuccess: (r) => {
+                  const item = r.items[0];
+                  if (!item?.files.length) toast.info("Todavía no hay video final ni portada para copiar");
+                  else if (r.copied) toast.success(`Copia de seguridad guardada en ${item.folder}`);
+                  else toast.success("La copia de seguridad ya estaba al día");
+                },
+                onError: (e) => toast.error(errorText(e)),
+              })
+            }
+          >
+            <HardDriveUpload /> Guardar copia de seguridad
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />

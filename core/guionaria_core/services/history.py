@@ -52,6 +52,16 @@ class HistoryPage(BaseModel):
     next_before: int | None  # para pedir los anteriores
 
 
+# Partes de la «Limpieza completa» (storage.CLEANABLE_PARTS), para el historial.
+PART_LABELS = {
+    "render": "render",
+    "approved": "aprobados",
+    "manual": "agregados a mano",
+    "audio": "voz",
+    "timeline": "timeline y subtítulos",
+}
+
+
 def describe(entity: str, action: str, d: dict[str, Any], scene_position: int | None) -> str:
     """Frase en español de una operación (sin sujeto: quién la hizo se muestra aparte)."""
 
@@ -76,7 +86,14 @@ def describe(entity: str, action: str, d: dict[str, Any], scene_position: int | 
         ("project", "purge"): "Proyecto borrado definitivamente",
         ("project", "status"): f"Movido a «{status}»",
         ("project", "rename"): f"{n('files')} archivos aprobados renombrados",
-        ("project", "cleanup"): f"{n('deleted')} candidatos sin usar borrados",
+        ("project", "cleanup"): (
+            f"Limpieza: {', '.join(PART_LABELS.get(p, p) for p in d['parts'])} borrados"
+            if d.get("parts")
+            else f"{n('deleted')} candidatos sin usar borrados"
+        ),
+        ("project", "backup"): (
+            f"Copia de seguridad: {', '.join(d.get('files', []))} en {d.get('folder', '')}"
+        ),
         ("script", "save"): f"Guion guardado{source} (versión {n('version')})",
         ("script", "approve"): f"Guion aprobado (versión {n('version')})",
         ("script", "unlock"): "Guion desbloqueado para editarlo",

@@ -7,13 +7,14 @@ sola vez: el espacio que se muestra es el que ocupan de verdad en el disco.
 
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
-from ..config import get_paths
+from ..config import get_paths, load_settings
 from ..domain.states import ORDER, ProjectStatus
 from ..models import Asset, Channel, Project, Scene, SceneAsset, SceneCandidate
 from ..models._base import now_iso
@@ -67,6 +68,8 @@ class _Walker:
             root_path = Path(root)
             dirs[:] = [d for d in dirs if root_path / d not in skip]
             for name in names:
+                if root_path / name in skip:
+                    continue
                 b, f = self._file(root_path / name)
                 total += b
                 files += f
@@ -119,13 +122,21 @@ def storage_usage(session: Session) -> StorageUsage:
         project_nodes = []
         for project in (p for p in projects if p.channel_id == channel.id):
             folder = project_dir(project)
+            # La portada no se borra al limpiar: cuenta en «otros», no en «Render».
+            kept = tuple(_kept_files(folder))
             parts = [
-                _leaf(walker, f"p{project.id}:{key}", label, [folder / sub for sub in subs])
+                _leaf(walker, f"p{project.id}:{key}", label, [folder / s for s in subs], kept)
                 for key, label, subs in PROJECT_PARTS
             ]
             known = tuple(folder / sub for _k, _l, subs in PROJECT_PARTS for sub in subs)
             parts.append(
-                _leaf(walker, f"p{project.id}:other", "Guion, escenas y otros", [folder], known)
+                _leaf(
+                    walker,
+                    f"p{project.id}:other",
+                    "Guion, escenas y otros",
+                    [folder, *kept],
+                    known,
+                )
             )
             project_nodes.append(
                 _node(
@@ -297,38 +308,249 @@ def cleanup_candidates(session: Session, project_ids: list[int]) -> CleanupResul
 CLEANABLE_PARTS: tuple[str, ...] = ("manual", "approved", "audio", "timeline", "render")
 
 
-def cleanup_media(session: Session, project_ids: list[int], parts: list[str]) -> CleanupResult:
+def cleanup_media(
+    session: Session, project_ids: list[int], parts: list[str], backup: bool = False
+) -> CleanupResult:
     """Borra del disco las carpetas elegidas (aprobados, agregados a mano, voz, timeline o
     render) de los proyectos indicados: para cuando el video ya está terminado y sobra el
     material usado para hacerlo. No toca la base de datos ni las filas de medios: si hace falta
     reeditar, la app avisa del archivo que falta en vez de fallar (igual que con un proyecto
-    movido a mano)."""
+    movido a mano). La portada se conserva siempre; con `backup`, antes se copian el video final
+    y la portada a la carpeta de respaldo."""
     bad = [p for p in parts if p not in CLEANABLE_PARTS]
     if bad:
         raise DomainError(f"Eso no se puede borrar así: {', '.join(bad)}")
     if not parts:
         raise DomainError("Elige qué borrar")
     sub_map = {key: subs for key, _label, subs in PROJECT_PARTS}
-    deleted = freed = 0
+    projects = []
     for project_id in project_ids:
         project = session.get(Project, project_id)
         if not project:
             raise NotFound(f"El proyecto {project_id} no existe")
+        projects.append(project)
+    if backup:
+        # Primero la copia: si la carpeta de respaldo no está (unidad desconectada), no se
+        # borra nada.
+        backup_projects(session, project_ids)
+    deleted = freed = 0
+    for project in projects:
         folder = project_dir(project)
+        keep = _kept_files(folder)
         touched = False
         for key in parts:
             for sub in sub_map[key]:
                 target = folder / sub
                 if not target.exists():
                     continue
-                for path in target.rglob("*"):
+                # De lo más hondo hacia arriba: archivos y luego las carpetas que quedan vacías.
+                for path in sorted(target.rglob("*"), reverse=True):
+                    if path in keep:
+                        continue
                     if path.is_file():
                         freed += _freeable(path)
                         deleted += 1
-                shutil.rmtree(target, ignore_errors=True)
+                        path.unlink(missing_ok=True)
+                    elif path.is_dir() and not any(path.iterdir()):
+                        path.rmdir()
+                if target.is_dir() and not any(target.iterdir()):
+                    target.rmdir()
                 touched = True
         if touched:
             project.updated_at = now_iso()
-            log_operation(session, "cleanup", "project", project_id, {"parts": parts}, actor="user")
+            log_operation(session, "cleanup", "project", project.id, {"parts": parts}, actor="user")
     session.commit()
     return CleanupResult(deleted=deleted, freed_bytes=freed)
+
+
+def _kept_files(folder: Path) -> set[Path]:
+    """Lo que la limpieza nunca borra: la portada del proyecto (la miniatura del render), que
+    es la imagen que lo representa en la lista de proyectos y en el calendario."""
+    from .render.service import THUMBNAIL
+
+    return {folder / "render" / THUMBNAIL}
+
+
+# --- copia de seguridad del video final y su portada ---
+
+
+class BackupSuggestion(BaseModel):
+    label: str  # Google Drive | OneDrive | Dropbox
+    path: str
+
+
+class BackupStatus(BaseModel):
+    folder: str  # la configurada en Ajustes ("" si no hay)
+    ok: bool  # existe (o se pudo crear) y se puede escribir
+    detail: str | None = None
+    free_bytes: int | None = None
+    suggestions: list[BackupSuggestion] = []
+
+
+class BackupItem(BaseModel):
+    project_id: int
+    title: str
+    folder: str  # dónde quedó la copia
+    files: list[str]
+    copied: int  # copiados ahora (los que ya estaban iguales no se vuelven a copiar)
+    bytes: int
+
+
+class BackupResult(BaseModel):
+    folder: str
+    items: list[BackupItem]
+    copied: int
+    bytes: int
+
+
+def _backup_root() -> Path:
+    raw = load_settings().backup.folder.strip()
+    if not raw:
+        raise DomainError(
+            "Configura la carpeta de copia de seguridad en Ajustes → Carpetas para guardar el "
+            "video y la portada antes de borrarlos"
+        )
+    return Path(raw).expanduser()
+
+
+def _check_root(root: Path) -> str | None:
+    """Por qué no sirve la carpeta, o None si sirve (la crea si la carpeta de arriba existe)."""
+    if not root.is_absolute():
+        return "Usa una ruta completa, por ejemplo G:\\Mi unidad\\Guionaria"
+    if not root.exists():
+        if not root.parent.exists():
+            return (
+                f"No se encuentra {root.parent}: ¿está conectada la unidad o abierto Google Drive?"
+            )
+        try:
+            root.mkdir()
+        except OSError as e:
+            return f"No se pudo crear la carpeta: {e.strerror or e}"
+    if not root.is_dir():
+        return "Esa ruta es un archivo, no una carpeta"
+    probe = root / ".guionaria-prueba"
+    try:
+        probe.write_bytes(b"ok")
+        probe.unlink()
+    except OSError as e:
+        return f"No se puede escribir en la carpeta: {e.strerror or e}"
+    return None
+
+
+def backup_suggestions() -> list[BackupSuggestion]:
+    """Carpetas sincronizadas habituales en Windows: Google Drive para escritorio (la unidad
+    con «Mi unidad»), OneDrive y Dropbox. Se propone una subcarpeta Guionaria dentro."""
+    found: list[tuple[str, Path]] = []
+    if sys.platform == "win32":
+        for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
+            for name in ("Mi unidad", "My Drive"):
+                base = Path(f"{letter}:/") / name
+                if base.is_dir():
+                    found.append(("Google Drive", base))
+    user = Path.home()
+    onedrive = os.environ.get("ONEDRIVE")  # en Windows no distingue mayúsculas
+    for label, base in (
+        ("Google Drive", user / "Google Drive"),
+        ("Google Drive", user / "Mi unidad"),
+        ("OneDrive", Path(onedrive) if onedrive else None),
+        ("Dropbox", user / "Dropbox"),
+    ):
+        if base and base.is_dir():
+            found.append((label, base))
+    out: list[BackupSuggestion] = []
+    for label, base in found:
+        path = str(base / "Guionaria")
+        if all(o.path != path for o in out):
+            out.append(BackupSuggestion(label=label, path=path))
+    return out
+
+
+def backup_status(folder: str | None = None) -> BackupStatus:
+    """Estado de la carpeta de respaldo: la guardada o `folder` (para probarla antes)."""
+    raw = (load_settings().backup.folder if folder is None else folder).strip()
+    suggestions = backup_suggestions()
+    if not raw:
+        return BackupStatus(folder="", ok=False, suggestions=suggestions)
+    root = Path(raw).expanduser()
+    problem = _check_root(root)
+    return BackupStatus(
+        folder=raw,
+        ok=problem is None,
+        detail=problem,
+        free_bytes=shutil.disk_usage(root).free if problem is None else None,
+        suggestions=suggestions,
+    )
+
+
+def _backup_files(project: Project) -> list[Path]:
+    """El video final y la portada: lo necesario para volver a publicarlo."""
+    from .projects import cover_path
+    from .render.service import find_output
+
+    return [p for p in (find_output(project, "final"), cover_path(project)) if p and p.exists()]
+
+
+def _same_file(src: Path, dest: Path) -> bool:
+    try:
+        a, b = src.stat(), dest.stat()
+    except OSError:
+        return False
+    return a.st_size == b.st_size and int(a.st_mtime) <= int(b.st_mtime)
+
+
+def backup_projects(session: Session, project_ids: list[int]) -> BackupResult:
+    """Copia el video final y la portada de cada proyecto a
+    <carpeta de respaldo>/<canal>/<carpeta del proyecto>/. Lo que ya está igual no se vuelve a
+    copiar; cada archivo se escribe con otro nombre y se renombra al terminar, para que Google
+    Drive (u otro) no suba un archivo a medias."""
+    root = _backup_root()
+    if problem := _check_root(root):
+        raise DomainError(problem)
+    items = []
+    for project_id in project_ids:
+        project = session.get(Project, project_id)
+        if not project:
+            raise NotFound(f"El proyecto {project_id} no existe")
+        channel = session.get(Channel, project.channel_id)
+        dest_dir = root / channel.slug / project_dir(project).name
+        copied = size = 0
+        names = []
+        for src in _backup_files(project):
+            dest = dest_dir / ("portada.jpg" if src.suffix.lower() == ".jpg" else src.name)
+            names.append(dest.name)
+            if _same_file(src, dest):
+                continue
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            part = dest.with_name(dest.name + ".parcial")
+            try:
+                shutil.copy2(src, part)
+                part.replace(dest)
+            except OSError as e:
+                part.unlink(missing_ok=True)
+                raise DomainError(
+                    f"No se pudo copiar {src.name} a la copia de seguridad: {e.strerror or e}"
+                ) from e
+            copied += 1
+            size += src.stat().st_size
+        if copied:
+            log_operation(
+                session, "backup", "project", project.id,
+                {"files": names, "folder": str(dest_dir)}, actor="user",
+            )  # fmt: skip
+        items.append(
+            BackupItem(
+                project_id=project.id,
+                title=project.title,
+                folder=str(dest_dir),
+                files=names,
+                copied=copied,
+                bytes=size,
+            )
+        )
+    session.commit()
+    return BackupResult(
+        folder=str(root),
+        items=items,
+        copied=sum(i.copied for i in items),
+        bytes=sum(i.bytes for i in items),
+    )

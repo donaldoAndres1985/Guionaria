@@ -631,14 +631,44 @@ export function PublishBottomBar({ ctl }: { ctl: PublishController }) {
           <LoaderCircle className="size-3.5 animate-spin" /> Whisper está transcribiendo el video: espera para que los textos lo usen
         </span>
       )}
-      <Button variant="ghost" onClick={() => ctl.actions.reveal.mutate()} disabled={!state}>
-        <FolderOpen /> Abrir carpeta
-      </Button>
+      <span className="flex items-center">
+        <Button variant="ghost" onClick={() => ctl.actions.reveal.mutate()} disabled={!state}>
+          <FolderOpen /> Abrir carpeta
+        </Button>
+        <CopyRenderPath path={state?.render_dir} />
+      </span>
       <Button size="lg" className="min-w-52" disabled={!state?.can_publish || generate.running} onClick={() => void generate.start()} title="Gasta cuota de tu plan de Claude">
         {generate.running ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
         {generate.running ? "Claude está escribiendo…" : hasText ? "Regenerar textos con Claude" : "Generar textos con Claude"}
       </Button>
     </BottomBar>
+  );
+}
+
+/** Copia la ruta de la carpeta render/ para pegarla en «Abrir archivo» al subir el video. */
+function CopyRenderPath({ path }: { path: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      disabled={!path}
+      aria-label="Copiar ruta del render"
+      title={path ? `Copiar ruta del render: ${path}` : "Copiar ruta del render"}
+      onClick={() => {
+        if (!path) return;
+        void navigator.clipboard?.writeText(path).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+            toast.success("Ruta del render copiada: pégala en «Abrir archivo» al subir el video");
+          },
+          () => toast.error("No se pudo copiar"),
+        );
+      }}
+    >
+      {copied ? <Check className="text-success-foreground" /> : <Copy />}
+    </Button>
   );
 }
 
